@@ -2,26 +2,96 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Custom CSS variables for dynamic values */
+    --color-primary-500: #A855F7;
+    --color-primary-600: #9333EA;
+  }
+  
+  * {
+    @apply border-gray-200;
+  }
+  
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* Processing border animation (from PDF spec) */
+  .processing-border {
+    position: relative;
+    background: linear-gradient(
+      90deg,
+      #A855F7,
+      #C084FC,
+      #EC4899,
+      #A855F7
+    );
+    background-size: 300% 100%;
+    animation: border-flow 3s linear infinite;
+    padding: 2px;
+    border-radius: 12px;
+  }
+  
+  .processing-border > * {
+    background: white;
+    border-radius: 10px;
+  }
+  
+  /* Form input consistent styling */
+  .form-input {
+    @apply w-full px-4 py-3 border border-gray-200 rounded-lg text-base;
+    @apply focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/10;
+    @apply transition-all duration-150;
+  }
+  
+  .form-input::placeholder {
+    @apply text-gray-400;
+  }
+  
+  /* Primary CTA button (48px height from PDF) */
+  .btn-primary {
+    @apply w-full h-12 bg-primary-500 hover:bg-primary-600 text-white;
+    @apply font-semibold text-sm rounded-lg shadow-sm;
+    @apply transition-all duration-150 ease-in-out;
+    @apply hover:shadow-md hover:-translate-y-0.5;
+    @apply active:scale-98 disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  
+  /* Secondary button */
+  .btn-secondary {
+    @apply px-4 py-2 bg-white border border-gray-300 text-gray-700;
+    @apply font-medium text-sm rounded-lg;
+    @apply hover:bg-gray-50 hover:border-gray-400;
+    @apply transition-all duration-150;
+  }
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
+  .animate-spin-slow {
+    animation: spin 1s linear infinite;
+  }
+}
+
+/* Print styles for result page */
+@media print {
+  @page {
+    margin: 0;
+    size: A4;
+  }
+  
+  body {
+    @apply bg-white;
+  }
+  
+  header,
+  .no-print {
+    display: none !important;
+  }
+  
+  .print-only {
+    display: block !important;
   }
 }
