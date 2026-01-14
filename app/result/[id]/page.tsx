@@ -5,18 +5,18 @@ import { ResultView } from '@/components/result/result-view'
 export const runtime = 'nodejs'
 
 type PageProps = {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 export default async function ResultPage({ params }: PageProps) {
-  const jobId = params.id
+  const { id } = await params
 
   const { data: job, error } = await supabaseAdmin
     .from('jobs')
     .select(
       'id,status,complexity,instructions,custom_text,upload_path,preview_url,result_url,is_paid,stripe_payment_id,created_at,updated_at,completed_at'
     )
-    .eq('id', jobId)
+    .eq('id', id)
     .single()
 
   if (error || !job) {
