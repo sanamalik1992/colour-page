@@ -1,39 +1,23 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
-type RouteContext = {
-  params: { id: string }
-}
-
 export async function GET(
-  _request: NextRequest,
-  { params }: RouteContext
+  _request: Request,
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const jobId = params.id
-
-    if (!jobId) {
-      return NextResponse.json(
-        { error: 'Missing job id' },
-        { status: 400 }
-      )
-    }
+    const { id } = await context.params
 
     const { data: job, error } = await supabaseAdmin
       .from('jobs')
-      .select(
-        'id,status,complexity,instructions,custom_text,upload_path,preview_url,result_url,is_paid,created_at,updated_at,completed_at'
-      )
-      .eq('id', jobId)
+      .select('*')
+      .eq('id', id)
       .single()
 
     if (error || !job) {
-      return NextResponse.json(
-        { error: 'Job not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
     let previewSignedUrl: string | null = null
@@ -43,7 +27,6 @@ export async function GET(
       const { data } = await supabaseAdmin.storage
         .from('uploads')
         .createSignedUrl(job.preview_url, 3600)
-
       previewSignedUrl = data?.signedUrl || null
     }
 
@@ -51,7 +34,6 @@ export async function GET(
       const { data } = await supabaseAdmin.storage
         .from('results')
         .createSignedUrl(job.result_url, 3600)
-
       resultSignedUrl = data?.signedUrl || null
     }
 
@@ -65,9 +47,6 @@ export async function GET(
     )
   } catch (error) {
     console.error('Job fetch error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
