@@ -63,6 +63,9 @@ const config: Config = {
         '18': '4.5rem', // 72px
         '22': '5.5rem', // 88px
       },
+      scale: {
+        '98': '0.98', // ADD THIS LINE - for button active state
+      },
       borderRadius: {
         'lg': '8px',      // buttons, inputs
         'xl': '12px',     // cards
