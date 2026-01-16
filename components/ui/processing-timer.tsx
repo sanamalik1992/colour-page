@@ -32,13 +32,11 @@ export function ProcessingTimer({ isProcessing, onStatusChange }: ProcessingTime
 
     const startTime = Date.now()
 
-    // Update elapsed time every 100ms
     const timerInterval = setInterval(() => {
       const elapsedSeconds = (Date.now() - startTime) / 1000
       setElapsed(elapsedSeconds)
     }, 100)
 
-    // Rotate status every 900ms
     const statusInterval = setInterval(() => {
       setStatusIndex(prev => {
         const nextIndex = (prev + 1) % STATUS_STEPS.length
@@ -49,7 +47,6 @@ export function ProcessingTimer({ isProcessing, onStatusChange }: ProcessingTime
       })
     }, 900)
 
-    // Show "Still working" message after 8 seconds
     const longRunningTimeout = setTimeout(() => {
       setStatus("Still working — nearly there.")
     }, 8000)

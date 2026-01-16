@@ -9,7 +9,6 @@ export function Header() {
     <header className="sticky top-0 z-50 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800">
       <div className="container mx-auto px-6">
         <div className="flex items-center justify-between h-20">
-          {/* Logo */}
           <Link href="/" className="flex items-center gap-3 group">
             <div className="relative w-12 h-12 group-hover:scale-105 transition-transform">
               <Image
@@ -23,7 +22,6 @@ export function Header() {
             </div>
           </Link>
           
-          {/* Nav */}
           <nav className="hidden md:flex items-center gap-1">
             <Link
               href="/"
@@ -39,7 +37,6 @@ export function Header() {
             </Link>
           </nav>
 
-          {/* Right Side */}
           <div className="flex items-center gap-3">
             <button className="hidden sm:flex items-center gap-2 w-56 h-10 px-4 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm text-gray-400 transition-colors border border-zinc-700 focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2 focus:ring-offset-zinc-900">
               <Search className="w-4 h-4" />
