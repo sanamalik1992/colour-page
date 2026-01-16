@@ -11,7 +11,6 @@ interface ResultPreviewProps {
 
 export function ResultPreview({ resultUrl, onReset }: ResultPreviewProps) {
   const handleDownload = () => {
-    // Download logic here
     console.log('Download clicked')
   }
 
@@ -30,7 +29,6 @@ export function ResultPreview({ resultUrl, onReset }: ResultPreviewProps) {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {/* Success Message */}
       <div className="bg-gradient-to-r from-emerald-500 to-green-600 rounded-2xl p-6 text-center">
         <h2 className="text-2xl font-bold text-white mb-2">
           Your colouring page is ready! 🎉
@@ -40,7 +38,6 @@ export function ResultPreview({ resultUrl, onReset }: ResultPreviewProps) {
         </p>
       </div>
 
-      {/* Preview */}
       <div className="bg-white rounded-2xl p-6 shadow-lg">
         <div className="relative w-full aspect-[8.5/11] bg-gray-50 rounded-xl overflow-hidden mb-6">
           <Image
@@ -51,7 +48,6 @@ export function ResultPreview({ resultUrl, onReset }: ResultPreviewProps) {
           />
         </div>
 
-        {/* Action Buttons */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <PrimaryButton
             onClick={handleDownload}
