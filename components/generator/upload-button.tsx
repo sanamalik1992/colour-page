@@ -33,25 +33,23 @@ export function UploadButton({ onFileSelect, disabled }: UploadButtonProps) {
       <label
         htmlFor="file-upload"
         className={`
-          block w-full min-h-[120px] border-2 border-dashed border-gray-300 rounded-xl
-          bg-gray-50 cursor-pointer transition-all duration-200
-          flex flex-col items-center justify-center gap-2.5
+          block w-full min-h-[160px] border-2 border-dashed rounded-xl
+          flex flex-col items-center justify-center gap-3
+          transition-all duration-200
           ${disabled 
-            ? 'opacity-50 cursor-not-allowed' 
-            : 'hover:border-primary-500 hover:bg-green-50/50 hover:shadow-sm'
+            ? 'border-gray-300 bg-gray-50 opacity-50 cursor-not-allowed' 
+            : 'border-gray-300 bg-gray-50 hover:border-emerald-400 hover:bg-emerald-50/50 cursor-pointer'
           }
         `}
       >
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{
-          background: 'linear-gradient(135deg, #22C55E 0%, #16A34A 100%)'
-        }}>
-          <Upload className="w-6 h-6 text-white" />
+        <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-lg">
+          <Upload className="w-8 h-8 text-white" />
         </div>
         <div className="text-center">
-          <span className="text-sm font-semibold text-gray-900 block mb-0.5">
+          <span className="text-base font-semibold text-gray-900 block mb-1">
             Choose Photo
           </span>
-          <span className="text-xs text-gray-500">
+          <span className="text-sm text-gray-500">
             PNG, JPG, WEBP up to 10MB
           </span>
         </div>

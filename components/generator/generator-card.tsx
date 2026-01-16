@@ -6,6 +6,7 @@ import { ImagePreview } from './image-preview'
 import { OptionalField } from './optional-field'
 import { ComplexityToggle } from './complexity-toggle'
 import { Loader2 } from 'lucide-react'
+import { AnimatedBorder } from '../ui/animated-border'
 
 type ProcessingState = {
   isProcessing: boolean
@@ -73,90 +74,96 @@ export function GeneratorCard() {
 
   const isProcessingState = processing.isProcessing
 
-  return (
-    <div className={isProcessingState ? 'processing-border' : ''}>
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-        {/* Card Header - Compact */}
-        <div className="flex items-center gap-2.5 mb-5 pb-4 border-b border-gray-200">
-          <div className="w-6 h-6 rounded-lg flex-shrink-0" style={{
-            background: 'linear-gradient(135deg, #22C55E 0%, #16A34A 100%)'
-          }} />
-          <h2 className="text-lg font-bold text-gray-900">
-            Colouring Page Generator
-          </h2>
-        </div>
+  // Wrap in AnimatedBorder when processing
+  const cardContent = (
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
+      {/* Card Header */}
+      <div className="flex items-center gap-2.5 mb-5 pb-4 border-b border-gray-200">
+        <div className="w-6 h-6 rounded-lg flex-shrink-0" style={{
+          background: 'linear-gradient(135deg, #22C55E 0%, #16A34A 100%)'
+        }} />
+        <h2 className="text-lg font-bold text-gray-900">
+          Colouring Page Generator
+        </h2>
+      </div>
 
-        {/* Processing Status - Compact */}
-        {isProcessingState && (
-          <div className="bg-green-50 rounded-xl px-4 py-3 mb-5 flex items-center justify-between border border-green-200 animate-in fade-in">
-            <div className="flex items-center gap-3">
-              <Loader2 className="w-4 h-4 animate-spin text-primary-600" />
-              <span className="text-sm font-semibold text-gray-900 animate-in fade-in">
-                {processing.message}
-              </span>
-            </div>
-            <span className="text-sm text-gray-600 font-medium">
-              {processing.progress}%
+      {/* Processing Status */}
+      {isProcessingState && (
+        <div className="bg-green-50 rounded-xl px-4 py-3 mb-5 flex items-center justify-between border border-green-200 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-4 h-4 animate-spin text-primary-600" />
+            <span className="text-sm font-semibold text-gray-900">
+              {processing.message}
             </span>
           </div>
+          <span className="text-sm text-gray-600 font-medium">
+            {processing.progress}%
+          </span>
+        </div>
+      )}
+
+      {/* Upload Area */}
+      <div className="mb-5">
+        {previewUrl ? (
+          <ImagePreview
+            src={previewUrl}
+            alt="Uploaded image"
+            onRemove={handleRemoveFile}
+          />
+        ) : (
+          <UploadButton
+            onFileSelect={handleFileSelect}
+            disabled={isProcessingState}
+          />
         )}
+      </div>
 
-        {/* Upload Area */}
-        <div className="mb-5">
-          {previewUrl ? (
-            <ImagePreview
-              src={previewUrl}
-              alt="Uploaded image"
-              onRemove={handleRemoveFile}
-            />
+      {/* Optional Fields */}
+      <div className="space-y-3 mb-5">
+        <OptionalField
+          label="Instructions"
+          placeholder="e.g., Make it more detailed"
+          value={instructions}
+          onChange={setInstructions}
+        />
+        
+        <OptionalField
+          label="Text"
+          placeholder="Add text to the image"
+          value={customText}
+          onChange={setCustomText}
+        />
+      </div>
+
+      {/* Controls */}
+      <div className="pt-5 border-t border-gray-200 space-y-3">
+        <ComplexityToggle
+          value={complexity}
+          onChange={setComplexity}
+        />
+        
+        <button
+          onClick={handleCreate}
+          disabled={!selectedFile || isProcessingState}
+          className="btn-primary"
+        >
+          {isProcessingState ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Creating...
+            </>
           ) : (
-            <UploadButton
-              onFileSelect={handleFileSelect}
-              disabled={isProcessingState}
-            />
+            'Create'
           )}
-        </div>
-
-        {/* Optional Fields */}
-        <div className="space-y-3 mb-5">
-          <OptionalField
-            label="Instructions"
-            placeholder="e.g., Make it more detailed"
-            value={instructions}
-            onChange={setInstructions}
-          />
-          
-          <OptionalField
-            label="Text"
-            placeholder="Add text to the image"
-            value={customText}
-            onChange={setCustomText}
-          />
-        </div>
-
-        {/* Controls */}
-        <div className="pt-5 border-t border-gray-200 space-y-3">
-          <ComplexityToggle
-            value={complexity}
-            onChange={setComplexity}
-          />
-          
-          <button
-            onClick={handleCreate}
-            disabled={!selectedFile || isProcessingState}
-            className="btn-primary"
-          >
-            {isProcessingState ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Creating...
-              </>
-            ) : (
-              'Create'
-            )}
-          </button>
-        </div>
+        </button>
       </div>
     </div>
+  )
+
+  // Return with or without border based on processing state
+  return isProcessingState ? (
+    <AnimatedBorder>{cardContent}</AnimatedBorder>
+  ) : (
+    cardContent
   )
 }
