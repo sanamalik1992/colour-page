@@ -4,8 +4,8 @@
 
 @layer base {
   :root {
-    --color-primary: #0066FF;
-    --color-primary-dark: #0052CC;
+    --color-primary: #22C55E;
+    --color-primary-dark: #16A34A;
   }
   
   * {
@@ -14,63 +14,50 @@
   
   body {
     @apply bg-white text-gray-900 antialiased;
-    font-feature-settings: "cv11", "ss01";
-    font-variation-settings: "opsz" 32;
   }
 }
 
 @layer components {
-  /* Processing border - SHINY GLOWING RAINBOW EFFECT (like colouring.page) */
+  /* Spinning border animation like the video */
   .processing-border {
     position: relative;
-    padding: 3px;
-    border-radius: 16px;
-    background: linear-gradient(
-      90deg,
-      #0066FF 0%,
-      #3B82F6 20%,
-      #60A5FA 40%,
-      #93C5FD 60%,
-      #60A5FA 80%,
-      #0066FF 100%
-    );
-    background-size: 300% 100%;
-    animation: border-flow 4s ease-in-out infinite;
-    box-shadow: 
-      0 0 15px rgba(0, 102, 255, 0.3),
-      0 0 30px rgba(59, 130, 246, 0.2),
-      0 0 45px rgba(147, 197, 253, 0.1);
+    border-radius: 24px;
+    padding: 4px;
+    background: #ffffff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
   }
   
-  /* Glowing aura behind the border */
   .processing-border::before {
     content: '';
     position: absolute;
-    inset: -8px;
-    border-radius: 20px;
-    background: linear-gradient(
-      90deg,
-      rgba(0, 102, 255, 0.5),
-      rgba(59, 130, 246, 0.5),
-      rgba(147, 197, 253, 0.5),
-      rgba(59, 130, 246, 0.5),
-      rgba(0, 102, 255, 0.5)
+    inset: 0;
+    border-radius: 24px;
+    padding: 4px;
+    background: conic-gradient(
+      from 0deg,
+      #22C55E 0deg,
+      #4ADE80 90deg,
+      #86EFAC 180deg,
+      #4ADE80 270deg,
+      #22C55E 360deg
     );
-    background-size: 300% 100%;
-    animation: border-flow 4s ease-in-out infinite, glow-pulse 2s ease-in-out infinite;
-    filter: blur(15px);
-    opacity: 0.6;
-    z-index: -1;
+    -webkit-mask: 
+      linear-gradient(#fff 0 0) content-box, 
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: border-spin 3s linear infinite;
+    filter: drop-shadow(0 0 20px rgba(34, 197, 94, 0.5));
   }
   
   .processing-border > * {
     position: relative;
-    background: white;
-    border-radius: 14px;
     z-index: 1;
   }
   
-  /* Form input - clean and minimal */
+  /* Form input */
   .form-input {
     @apply w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-base;
     @apply focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20;
@@ -78,23 +65,73 @@
     @apply placeholder:text-gray-400;
   }
   
-  /* Primary button - clean blue */
+  /* Primary button - green gradient */
   .btn-primary {
-    @apply w-full h-12 bg-primary-500 hover:bg-primary-600 text-white;
-    @apply font-semibold text-sm rounded-xl;
+    @apply w-full h-14 text-white font-bold text-base rounded-2xl;
     @apply transition-all duration-200;
-    @apply hover:shadow-md hover:-translate-y-0.5;
+    @apply hover:shadow-lg hover:-translate-y-0.5;
     @apply active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed;
     @apply flex items-center justify-center gap-2;
+    background: linear-gradient(135deg, #22C55E 0%, #16A34A 100%);
+  }
+  
+  .btn-primary:hover {
+    background: linear-gradient(135deg, #16A34A 0%, #15803D 100%);
   }
   
   /* Secondary button */
   .btn-secondary {
-    @apply px-4 py-2.5 bg-white border border-gray-300 text-gray-700;
-    @apply font-medium text-sm rounded-lg;
+    @apply px-6 py-3 bg-white border-2 border-gray-300 text-gray-700;
+    @apply font-semibold text-sm rounded-xl;
     @apply hover:bg-gray-50 hover:border-gray-400;
     @apply transition-all duration-150;
     @apply flex items-center justify-center gap-2;
+  }
+}
+
+/* Keyframes for spinning border */
+@keyframes border-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Animation utilities */
+@layer utilities {
+  .animate-in {
+    animation-duration: 0.5s;
+    animation-fill-mode: both;
+  }
+  
+  .fade-in {
+    animation-name: fadeIn;
+  }
+  
+  .slide-in-from-bottom-4 {
+    animation-name: slideInFromBottom;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInFromBottom {
+  from {
+    opacity: 0;
+    transform: translateY(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

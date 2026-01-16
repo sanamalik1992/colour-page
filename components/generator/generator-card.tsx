@@ -75,32 +75,34 @@ export function GeneratorCard() {
 
   return (
     <div className={isProcessingState ? 'processing-border' : ''}>
-      <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-200 max-w-[520px] mx-auto">
-        {/* Card Header */}
-        <div className="flex items-center gap-3 mb-6 pb-5 border-b border-gray-200">
-          <div className="w-7 h-7 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex-shrink-0" />
-          <h2 className="text-xl font-bold text-gray-900">
+      <div className="bg-white rounded-3xl p-10 shadow-lg border border-gray-200">
+        {/* Card Header - Larger font */}
+        <div className="flex items-center gap-4 mb-8 pb-6 border-b border-gray-200">
+          <div className="w-8 h-8 rounded-xl flex-shrink-0" style={{
+            background: 'linear-gradient(135deg, #22C55E 0%, #16A34A 100%)'
+          }} />
+          <h2 className="text-2xl font-black text-gray-900">
             Colouring Page Generator
           </h2>
         </div>
 
         {/* Processing Status */}
         {isProcessingState && (
-          <div className="bg-blue-50 rounded-xl px-5 py-4 mb-6 flex items-center justify-between border border-blue-100">
-            <div className="flex items-center gap-3">
-              <Loader2 className="w-4 h-4 animate-spin text-primary-500" />
-              <span className="text-sm font-semibold text-gray-900">
+          <div className="bg-green-50 rounded-2xl px-6 py-4 mb-8 flex items-center justify-between border-2 border-green-200 animate-in fade-in">
+            <div className="flex items-center gap-4">
+              <Loader2 className="w-5 h-5 animate-spin text-primary-600" />
+              <span className="text-base font-bold text-gray-900 animate-in fade-in">
                 {processing.message}
               </span>
             </div>
-            <span className="text-sm text-gray-600 font-medium">
+            <span className="text-base text-gray-600 font-bold">
               {processing.progress}%
             </span>
           </div>
         )}
 
         {/* Upload Area */}
-        <div className="mb-6">
+        <div className="mb-8">
           {previewUrl ? (
             <ImagePreview
               src={previewUrl}
@@ -116,7 +118,7 @@ export function GeneratorCard() {
         </div>
 
         {/* Optional Fields */}
-        <div className="space-y-4 mb-6">
+        <div className="space-y-5 mb-8">
           <OptionalField
             label="Instructions"
             placeholder="e.g., Make it more detailed"
@@ -133,7 +135,7 @@ export function GeneratorCard() {
         </div>
 
         {/* Controls */}
-        <div className="pt-6 border-t border-gray-200 space-y-4">
+        <div className="pt-8 border-t border-gray-200 space-y-5">
           <ComplexityToggle
             value={complexity}
             onChange={setComplexity}
@@ -146,7 +148,7 @@ export function GeneratorCard() {
           >
             {isProcessingState ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin" />
                 Creating...
               </>
             ) : (
