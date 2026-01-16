@@ -9,73 +9,76 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Warm purple/pink primary (from PDF)
+        // Blue primary (matching colouring.page exactly)
         primary: {
-          50: '#FAF5FF',
-          100: '#F3E8FF',
-          200: '#E9D5FF',
-          300: '#D8B4FE',
-          400: '#C084FC',
-          500: '#A855F7',
-          600: '#9333EA',
-          700: '#7C3AED',
+          50: '#EFF6FF',
+          100: '#DBEAFE',
+          200: '#BFDBFE',
+          300: '#93C5FD',
+          400: '#60A5FA',
+          500: '#0066FF', // Main blue
+          600: '#0052CC',
+          700: '#1E40AF',
+          800: '#1E3A8A',
+          900: '#1E3A8A',
         },
-        // Pink accent
-        accent: {
-          400: '#F472B6',
-          500: '#EC4899',
-          600: '#DB2777',
-        },
-        // Gray scale (unchanged)
+        // Gray scale (neutral, professional)
         gray: {
-          50: '#F9FAFB',
-          100: '#F3F4F6',
-          200: '#E5E7EB',
-          300: '#D1D5DB',
-          400: '#9CA3AF',
-          500: '#6B7280',
-          700: '#374151',
-          900: '#111827',
+          50: '#FAFAFA',
+          100: '#F5F5F5',
+          200: '#E5E5E5',
+          300: '#D4D4D4',
+          400: '#A3A3A3',
+          500: '#737373',
+          600: '#525252',
+          700: '#404040',
+          800: '#262626',
+          900: '#171717',
         },
       },
       fontFamily: {
         sans: [
-          'ui-sans-serif',
-          'system-ui',
           '-apple-system',
           'BlinkMacSystemFont',
-          'Segoe UI',
+          '"Segoe UI"',
           'Roboto',
-          'Helvetica Neue',
+          '"Helvetica Neue"',
           'Arial',
           'sans-serif',
         ],
       },
       fontSize: {
-        'xs': ['0.75rem', { lineHeight: '1.5' }],      // 12px
-        'sm': ['0.875rem', { lineHeight: '1.5' }],     // 14px
-        'base': ['1rem', { lineHeight: '1.5' }],       // 16px
-        'xl': ['1.25rem', { lineHeight: '1.375' }],    // 20px - card title
-        '5xl': ['3rem', { lineHeight: '1.25' }],       // 48px - hero H1
+        'xs': ['12px', { lineHeight: '16px' }],
+        'sm': ['14px', { lineHeight: '20px' }],
+        'base': ['16px', { lineHeight: '24px' }],
+        'lg': ['18px', { lineHeight: '28px' }],
+        'xl': ['20px', { lineHeight: '28px' }],
+        '2xl': ['24px', { lineHeight: '32px' }],
+        '3xl': ['30px', { lineHeight: '36px' }],
+        '4xl': ['36px', { lineHeight: '40px' }],
+        '5xl': ['48px', { lineHeight: '1' }],
       },
       spacing: {
-        // 4px base unit from PDF
-        '18': '4.5rem', // 72px
-        '22': '5.5rem', // 88px
+        '18': '4.5rem',
+        '22': '5.5rem',
       },
       scale: {
-        '98': '0.98', // ADD THIS LINE - for button active state
+        '98': '0.98',
       },
       borderRadius: {
-        'lg': '8px',      // buttons, inputs
-        'xl': '12px',     // cards
-        '2xl': '16px',    // modals
-        'full': '9999px', // pills, avatars
+        'lg': '8px',
+        'xl': '12px',
+        '2xl': '16px',
+        'full': '9999px',
       },
       boxShadow: {
-        'sm': '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
+        'sm': '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+        'DEFAULT': '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
         'md': '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+        'lg': '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+        'xl': '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
         '2xl': '0 25px 50px -12px rgb(0 0 0 / 0.25)',
+        'none': '0 0 #0000',
       },
       animation: {
         'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
@@ -85,10 +88,10 @@ const config: Config = {
       keyframes: {
         'glow-pulse': {
           '0%, 100%': {
-            boxShadow: '0 0 5px rgba(168, 85, 247, 0.5), 0 0 20px rgba(168, 85, 247, 0.3)',
+            boxShadow: '0 0 5px rgba(0, 102, 255, 0.5), 0 0 20px rgba(0, 102, 255, 0.3)',
           },
           '50%': {
-            boxShadow: '0 0 20px rgba(168, 85, 247, 0.8), 0 0 40px rgba(168, 85, 247, 0.5)',
+            boxShadow: '0 0 20px rgba(0, 102, 255, 0.8), 0 0 40px rgba(0, 102, 255, 0.5)',
           },
         },
         'border-flow': {

@@ -4,9 +4,8 @@
 
 @layer base {
   :root {
-    /* Custom CSS variables for dynamic values */
-    --color-primary-500: #A855F7;
-    --color-primary-600: #9333EA;
+    --color-primary: #0066FF;
+    --color-primary-dark: #0052CC;
   }
   
   * {
@@ -14,68 +13,63 @@
   }
   
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply bg-white text-gray-900 antialiased;
+    font-feature-settings: "cv11", "ss01";
+    font-variation-settings: "opsz" 32;
   }
 }
 
 @layer components {
-  /* Processing border animation (from PDF spec) */
+  /* Processing border animation (clean blue gradient) */
   .processing-border {
     position: relative;
     background: linear-gradient(
       90deg,
-      #A855F7,
-      #C084FC,
-      #EC4899,
-      #A855F7
+      #0066FF,
+      #3B82F6,
+      #60A5FA,
+      #0066FF
     );
     background-size: 300% 100%;
     animation: border-flow 3s linear infinite;
     padding: 2px;
-    border-radius: 12px;
+    border-radius: 16px;
   }
   
   .processing-border > * {
     background: white;
-    border-radius: 10px;
+    border-radius: 14px;
   }
   
-  /* Form input consistent styling */
+  /* Form input - clean and minimal */
   .form-input {
-    @apply w-full px-4 py-3 border border-gray-200 rounded-lg text-base;
-    @apply focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/10;
-    @apply transition-all duration-150;
+    @apply w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-base;
+    @apply focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20;
+    @apply transition-all duration-200;
+    @apply placeholder:text-gray-400;
   }
   
-  .form-input::placeholder {
-    @apply text-gray-400;
-  }
-  
-  /* Primary CTA button (48px height from PDF) */
+  /* Primary button - clean blue */
   .btn-primary {
     @apply w-full h-12 bg-primary-500 hover:bg-primary-600 text-white;
-    @apply font-semibold text-sm rounded-lg shadow-sm;
-    @apply transition-all duration-150 ease-in-out;
+    @apply font-semibold text-sm rounded-xl;
+    @apply transition-all duration-200;
     @apply hover:shadow-md hover:-translate-y-0.5;
-    @apply active:scale-98 disabled:opacity-60 disabled:cursor-not-allowed;
+    @apply active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply flex items-center justify-center gap-2;
   }
   
   /* Secondary button */
   .btn-secondary {
-    @apply px-4 py-2 bg-white border border-gray-300 text-gray-700;
+    @apply px-4 py-2.5 bg-white border border-gray-300 text-gray-700;
     @apply font-medium text-sm rounded-lg;
     @apply hover:bg-gray-50 hover:border-gray-400;
     @apply transition-all duration-150;
+    @apply flex items-center justify-center gap-2;
   }
 }
 
-@layer utilities {
-  .animate-spin-slow {
-    animation: spin 1s linear infinite;
-  }
-}
-
-/* Print styles for result page */
+/* Print styles */
 @media print {
   @page {
     margin: 0;
