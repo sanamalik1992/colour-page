@@ -2,20 +2,21 @@
 
 import Link from 'next/link'
 import { Search } from 'lucide-react'
+import { Logo } from './logo'
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200">
+    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-lg border-b border-gray-200">
       <div className="container mx-auto px-6">
         <div className="flex items-center justify-between h-16 max-w-6xl mx-auto">
           {/* Left: Logo + Nav */}
           <div className="flex items-center gap-8">
             {/* Logo */}
-            <Link href="/" className="flex items-center gap-2.5 group">
-              <div className="w-9 h-9 bg-primary-500 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow">
-                <span className="text-white text-lg">🎨</span>
+            <Link href="/" className="flex items-center gap-3 group">
+              <div className="text-gray-900 group-hover:scale-110 transition-transform">
+                <Logo className="w-10 h-10" />
               </div>
-              <span className="font-bold text-lg text-gray-900 hidden sm:inline">
+              <span className="font-bold text-xl text-gray-900 hidden sm:inline">
                 colour.page
               </span>
             </Link>
@@ -24,26 +25,26 @@ export function Header() {
             <nav className="hidden md:flex items-center gap-1">
               <Link
                 href="/"
-                className="px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                className="px-4 py-2 text-base font-semibold text-gray-900 hover:bg-gray-100 rounded-xl transition-colors"
               >
                 Create
               </Link>
               <Link
                 href="/print"
-                className="px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition-colors"
+                className="px-4 py-2 text-base font-semibold text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-xl transition-colors"
               >
                 Print
               </Link>
             </nav>
           </div>
 
-          {/* Right: Search + Pro + Avatar */}
+          {/* Right: Search + Pro */}
           <div className="flex items-center gap-3">
             {/* Search */}
-            <button className="hidden sm:flex items-center gap-2 w-64 h-9 px-3 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm text-gray-600 transition-colors">
+            <button className="hidden sm:flex items-center gap-2 w-64 h-10 px-4 bg-gray-100 hover:bg-gray-200 rounded-xl text-sm text-gray-600 transition-colors">
               <Search className="w-4 h-4" />
               <span>Search...</span>
-              <kbd className="ml-auto px-1.5 py-0.5 bg-white text-xs text-gray-500 rounded">
+              <kbd className="ml-auto px-2 py-0.5 bg-white text-xs text-gray-500 rounded-md border border-gray-300">
                 ⌘K
               </kbd>
             </button>
@@ -51,15 +52,13 @@ export function Header() {
             {/* Pro Button */}
             <Link
               href="/pro"
-              className="h-9 px-4 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-lg text-sm transition-all hover:shadow-md"
+              className="h-10 px-6 font-bold text-sm rounded-xl transition-all hover:shadow-md text-white"
+              style={{
+                background: 'linear-gradient(135deg, #22C55E 0%, #16A34A 100%)'
+              }}
             >
               Pro
             </Link>
-            
-            {/* Avatar */}
-            <button className="w-9 h-9 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-700 font-medium text-xs hover:border-primary-500 hover:bg-primary-50 transition-colors">
-              S
-            </button>
           </div>
         </div>
       </div>
