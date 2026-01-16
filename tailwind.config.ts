@@ -91,6 +91,7 @@ const config: Config = {
       },
       animation: {
         'border-spin': 'border-spin 3s linear infinite',
+        'border-rotate': 'rotate 3s linear infinite',
         'dash': 'dash 1.5s ease-in-out infinite',
         'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
         'zoom-in-95': 'zoom-in-95 300ms ease-out',
@@ -100,16 +101,20 @@ const config: Config = {
           '0%': { transform: 'rotate(0deg)' },
           '100%': { transform: 'rotate(360deg)' },
         },
+        'rotate': {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
         'dash': {
-          '0%': { strokeDashoffset: '1000' },
-          '100%': { strokeDashoffset: '0' },
+          '0%': { strokeDashoffset: '0' },
+          '100%': { strokeDashoffset: '-400' },
         },
         'glow-pulse': {
           '0%, 100%': {
-            boxShadow: '0 0 15px rgba(34, 197, 94, 0.3), 0 0 30px rgba(34, 197, 94, 0.15)',
+            opacity: '0.5',
           },
           '50%': {
-            boxShadow: '0 0 25px rgba(34, 197, 94, 0.5), 0 0 50px rgba(34, 197, 94, 0.25)',
+            opacity: '1',
           },
         },
         'zoom-in-95': {
