@@ -20,25 +20,54 @@
 }
 
 @layer components {
-  /* Processing border animation (clean blue gradient) */
+  /* Processing border - SHINY GLOWING RAINBOW EFFECT (like colouring.page) */
   .processing-border {
     position: relative;
+    padding: 3px;
+    border-radius: 16px;
     background: linear-gradient(
       90deg,
-      #0066FF,
-      #3B82F6,
-      #60A5FA,
-      #0066FF
+      #0066FF 0%,
+      #3B82F6 20%,
+      #60A5FA 40%,
+      #93C5FD 60%,
+      #60A5FA 80%,
+      #0066FF 100%
     );
     background-size: 300% 100%;
-    animation: border-flow 3s linear infinite;
-    padding: 2px;
-    border-radius: 16px;
+    animation: border-flow 4s ease-in-out infinite;
+    box-shadow: 
+      0 0 15px rgba(0, 102, 255, 0.3),
+      0 0 30px rgba(59, 130, 246, 0.2),
+      0 0 45px rgba(147, 197, 253, 0.1);
+  }
+  
+  /* Glowing aura behind the border */
+  .processing-border::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 20px;
+    background: linear-gradient(
+      90deg,
+      rgba(0, 102, 255, 0.5),
+      rgba(59, 130, 246, 0.5),
+      rgba(147, 197, 253, 0.5),
+      rgba(59, 130, 246, 0.5),
+      rgba(0, 102, 255, 0.5)
+    );
+    background-size: 300% 100%;
+    animation: border-flow 4s ease-in-out infinite, glow-pulse 2s ease-in-out infinite;
+    filter: blur(15px);
+    opacity: 0.6;
+    z-index: -1;
   }
   
   .processing-border > * {
+    position: relative;
     background: white;
     border-radius: 14px;
+    z-index: 1;
   }
   
   /* Form input - clean and minimal */
