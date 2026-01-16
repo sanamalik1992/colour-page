@@ -1,13 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Header } from '@/components/ui/header'
 import { GeneratorCard } from '@/components/generator/generator-card'
-import { TypewriterText } from '@/components/ui/typewriter-text'
 
 export default function Home() {
-  const [showLine2, setShowLine2] = useState(false)
-  const [showLine3, setShowLine3] = useState(false)
+  const [showContent, setShowContent] = useState(false)
+
+  useEffect(() => {
+    // Trigger animations on mount
+    const timer = setTimeout(() => {
+      setShowContent(true)
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [])
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white via-green-50/30 to-white">
@@ -15,45 +21,53 @@ export default function Home() {
       
       <main className="container mx-auto px-6 py-20">
         <div className="max-w-[680px] mx-auto">
-          {/* Hero Section - Typewriter effect */}
+          {/* Hero Section - Sequential fade-in */}
           <div className="text-center mb-16">
-            <h1 className="text-6xl font-black text-gray-900 mb-6 tracking-tight leading-tight min-h-[140px]">
-              <TypewriterText 
-                text="Upload a Photo,"
-                speed={80}
-                onComplete={() => setShowLine2(true)}
-              />
-              <br />
-              {showLine2 && (
-                <TypewriterText 
-                  text="Print & Colour"
-                  speed={80}
-                  onComplete={() => setShowLine3(true)}
-                />
-              )}
+            <h1 
+              className={`
+                text-6xl font-black text-gray-900 mb-6 tracking-tight leading-tight
+                transition-all duration-700 ease-out
+                ${showContent ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}
+              `}
+              style={{ transitionDelay: '0ms' }}
+            >
+              Upload a Photo,<br />
+              Print & Colour
             </h1>
             
-            {showLine3 && (
-              <div className="animate-in fade-in duration-500">
-                <p className="text-xl text-gray-600 mb-2">
-                  <TypewriterText 
-                    text="Generate colouring pages in seconds using AI."
-                    speed={40}
-                  />
-                </p>
-                <p className="text-xl text-gray-900 font-bold">
-                  Try it free.
-                </p>
-              </div>
-            )}
+            <p 
+              className={`
+                text-xl text-gray-600 mb-2
+                transition-all duration-700 ease-out
+                ${showContent ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}
+              `}
+              style={{ transitionDelay: '200ms' }}
+            >
+              Generate colouring pages in seconds using AI.
+            </p>
+            
+            <p 
+              className={`
+                text-xl text-gray-900 font-bold
+                transition-all duration-700 ease-out
+                ${showContent ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}
+              `}
+              style={{ transitionDelay: '400ms' }}
+            >
+              Try it free.
+            </p>
           </div>
 
-          {/* Generator Card - fades in after text */}
-          {showLine3 && (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-              <GeneratorCard />
-            </div>
-          )}
+          {/* Generator Card - fades in last */}
+          <div 
+            className={`
+              transition-all duration-700 ease-out
+              ${showContent ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}
+            `}
+            style={{ transitionDelay: '600ms' }}
+          >
+            <GeneratorCard />
+          </div>
         </div>
       </main>
     </div>
