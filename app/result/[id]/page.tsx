@@ -1,43 +1,28 @@
-import { notFound } from 'next/navigation'
-import { supabaseAdmin } from '@/lib/supabase/server'
-import { ResultView } from '@/components/result/result-view'
+'use client'
 
-export const runtime = 'nodejs'
+import { useState, useEffect } from 'react'
+import { Header } from '@/components/ui/header'
+import { Hero } from '@/components/sections/hero-v2'
+import { GeneratorSection } from '@/components/sections/generator-section-v2'
+import { HowItWorks } from '@/components/sections/how-it-works'
+import { Footer } from '@/components/sections/footer'
 
-type PageProps = {
-  params: Promise<{ id: string }>
-}
+export default function Home() {
+  const [mounted, setMounted] = useState(false)
 
-export default async function ResultPage({ params }: PageProps) {
-  const { id } = await params
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
-  const { data: job, error } = await supabaseAdmin
-    .from('jobs')
-    .select(
-      'id,status,complexity,instructions,custom_text,upload_path,preview_url,result_url,is_paid,stripe_payment_id,created_at,updated_at,completed_at'
-    )
-    .eq('id', id)
-    .single()
-
-  if (error || !job) {
-    notFound()
-  }
-
-  let resultSignedUrl: string | null = null
-
-  if (job.is_paid && job.result_url) {
-    const { data } = await supabaseAdmin.storage
-      .from('results')
-      .createSignedUrl(job.result_url, 3600)
-
-    resultSignedUrl = data?.signedUrl || null
-  }
+  if (!mounted) return null
 
   return (
-    <ResultView
-      job={job}
-      resultUrl={resultSignedUrl}
-      isPaid={job.is_paid}
-    />
+    <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
+      <Header />
+      <Hero />
+      <GeneratorSection />
+      <HowItWorks />
+      <Footer />
+    </div>
   )
 }

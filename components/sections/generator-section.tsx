@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { AnimatedBorderCard } from '@/components/ui/animated-border-card'
-import { ProcessingTimer } from '@/components/ui/processing-timer'
-import { PrimaryButton } from '@/components/ui/primary-button'
+import { useState, useEffect } from 'react'
+import { AnimatedBorderCard } from '@/components/ui/animated-border-card-v2'
+import { ProcessingTimer } from '@/components/ui/processing-timer-v2'
 import { UploadButton } from '@/components/generator/upload-button'
 import { ImagePreview } from '@/components/generator/image-preview'
 import { OptionalField } from '@/components/generator/optional-field'
@@ -11,23 +10,15 @@ import { ComplexityToggle } from '@/components/generator/complexity-toggle'
 import { ResultPreview } from '@/components/generator/result-preview'
 import { Sparkles } from 'lucide-react'
 
-type ProcessingState = {
-  isProcessing: boolean
-  status: string
-  startTime?: number
-}
-
 export function GeneratorSection() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [complexity, setComplexity] = useState<'simple' | 'detailed'>('simple')
   const [instructions, setInstructions] = useState('')
   const [customText, setCustomText] = useState('')
-  const [processing, setProcessing] = useState<ProcessingState>({
-    isProcessing: false,
-    status: '',
-  })
+  const [isProcessing, setIsProcessing] = useState(false)
   const [result, setResult] = useState<string | null>(null)
+  const [minLoaderTime, setMinLoaderTime] = useState(false)
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file)
@@ -46,31 +37,29 @@ export function GeneratorSection() {
   const handleCreate = async () => {
     if (!selectedFile) return
 
-    const stages = [
-      { status: 'Uploading image...', delay: 1500 },
-      { status: 'Analyzing photo...', delay: 2500 },
-      { status: 'Removing color...', delay: 3000 },
-      { status: 'Defining edges...', delay: 2500 },
-      { status: 'Generating colouring page...', delay: 3500 },
-      { status: 'Finalizing...', delay: 2000 },
-    ]
+    setIsProcessing(true)
+    setMinLoaderTime(false)
 
-    setProcessing({
-      isProcessing: true,
-      status: stages[0].status,
-      startTime: Date.now(),
+    // Minimum loader time of 700ms to avoid flicker
+    const minTimePromise = new Promise(resolve => {
+      setTimeout(() => {
+        setMinLoaderTime(true)
+        resolve(true)
+      }, 700)
     })
 
-    for (const stage of stages) {
-      await new Promise(resolve => setTimeout(resolve, stage.delay))
-      setProcessing(prev => ({
-        ...prev,
-        status: stage.status,
-      }))
-    }
+    // Simulate generation process (replace with actual API call)
+    const generationPromise = new Promise(resolve => {
+      setTimeout(() => {
+        setResult(previewUrl)
+        resolve(true)
+      }, 5000)
+    })
 
-    setResult(previewUrl)
-    setProcessing({ isProcessing: false, status: '' })
+    // Wait for both minimum time and generation
+    await Promise.all([minTimePromise, generationPromise])
+    
+    setIsProcessing(false)
   }
 
   const handleReset = () => {
@@ -84,31 +73,32 @@ export function GeneratorSection() {
   return (
     <section className="container mx-auto px-6 pb-20">
       <div className="max-w-3xl mx-auto">
-        {result && !processing.isProcessing && (
+        {/* Result Preview */}
+        {result && !isProcessing && (
           <ResultPreview
             resultUrl={result}
             onReset={handleReset}
           />
         )}
 
+        {/* Generator Card */}
         {!result && (
-          <AnimatedBorderCard isAnimating={processing.isProcessing}>
-            <div className="p-8">
-              <div className="flex items-center gap-3 mb-6 pb-6 border-b border-gray-200">
-                <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center">
-                  <Sparkles className="w-5 h-5 text-white" />
+          <AnimatedBorderCard isAnimating={isProcessing}>
+            <div className="p-8 md:p-10">
+              {/* Card Header */}
+              <div className="flex items-center gap-3 mb-8 pb-6 border-b border-gray-200">
+                <div className="w-10 h-10 bg-gradient-to-br from-brand-primary to-brand-border rounded-xl flex items-center justify-center shadow-glow">
+                  <Sparkles className="w-6 h-6 text-white" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900">
                   Colouring Page Generator
                 </h2>
               </div>
 
-              <ProcessingTimer
-                status={processing.status}
-                startTime={processing.startTime}
-                isProcessing={processing.isProcessing}
-              />
+              {/* Processing Timer */}
+              <ProcessingTimer isProcessing={isProcessing} />
 
+              {/* Upload Area */}
               <div className="mb-6">
                 {previewUrl ? (
                   <ImagePreview
@@ -119,11 +109,12 @@ export function GeneratorSection() {
                 ) : (
                   <UploadButton
                     onFileSelect={handleFileSelect}
-                    disabled={processing.isProcessing}
+                    disabled={isProcessing}
                   />
                 )}
               </div>
 
+              {/* Optional Fields */}
               <div className="space-y-4 mb-6">
                 <OptionalField
                   label="Instructions"
@@ -140,21 +131,35 @@ export function GeneratorSection() {
                 />
               </div>
 
+              {/* Controls */}
               <div className="pt-6 border-t border-gray-200 space-y-4">
                 <ComplexityToggle
                   value={complexity}
                   onChange={setComplexity}
                 />
                 
-                <PrimaryButton
+                <button
                   onClick={handleCreate}
-                  disabled={!selectedFile || processing.isProcessing}
-                  loading={processing.isProcessing}
-                  icon={<Sparkles className="w-4 h-4" />}
-                  className="w-full"
+                  disabled={!selectedFile || isProcessing}
+                  className="btn-primary w-full"
                 >
-                  {processing.isProcessing ? 'Creating...' : 'Create Colouring Page'}
-                </PrimaryButton>
+                  {isProcessing ? (
+                    <>
+                      <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-5 h-5" />
+                      Generate Colouring Page
+                    </>
+                  )}
+                </button>
+                
+                {/* Secondary text under CTA */}
+                <p className="text-sm text-gray-500 text-center">
+                  Free • No signup required • Instant download
+                </p>
               </div>
             </div>
           </AnimatedBorderCard>
