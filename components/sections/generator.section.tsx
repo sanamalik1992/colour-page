@@ -69,7 +69,6 @@ export function GeneratorSection() {
       }))
     }
 
-    // Simulate result
     setResult(previewUrl)
     setProcessing({ isProcessing: false, status: '' })
   }
@@ -85,7 +84,6 @@ export function GeneratorSection() {
   return (
     <section className="container mx-auto px-6 pb-20">
       <div className="max-w-3xl mx-auto">
-        {/* Result Preview */}
         {result && !processing.isProcessing && (
           <ResultPreview
             resultUrl={result}
@@ -93,11 +91,9 @@ export function GeneratorSection() {
           />
         )}
 
-        {/* Generator Card */}
         {!result && (
           <AnimatedBorderCard isAnimating={processing.isProcessing}>
             <div className="p-8">
-              {/* Card Header */}
               <div className="flex items-center gap-3 mb-6 pb-6 border-b border-gray-200">
                 <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center">
                   <Sparkles className="w-5 h-5 text-white" />
@@ -107,14 +103,12 @@ export function GeneratorSection() {
                 </h2>
               </div>
 
-              {/* Processing Timer */}
               <ProcessingTimer
                 status={processing.status}
                 startTime={processing.startTime}
                 isProcessing={processing.isProcessing}
               />
 
-              {/* Upload Area */}
               <div className="mb-6">
                 {previewUrl ? (
                   <ImagePreview
@@ -130,7 +124,6 @@ export function GeneratorSection() {
                 )}
               </div>
 
-              {/* Optional Fields */}
               <div className="space-y-4 mb-6">
                 <OptionalField
                   label="Instructions"
@@ -147,7 +140,6 @@ export function GeneratorSection() {
                 />
               </div>
 
-              {/* Controls */}
               <div className="pt-6 border-t border-gray-200 space-y-4">
                 <ComplexityToggle
                   value={complexity}
