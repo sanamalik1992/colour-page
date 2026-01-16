@@ -8,7 +8,6 @@ export default function Home() {
   const [showContent, setShowContent] = useState(false)
 
   useEffect(() => {
-    // Trigger animations on mount
     const timer = setTimeout(() => {
       setShowContent(true)
     }, 100)
@@ -16,16 +15,16 @@ export default function Home() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white via-green-50/30 to-white">
+    <div className="min-h-screen bg-white">
       <Header />
       
-      <main className="container mx-auto px-6 py-20">
-        <div className="max-w-[680px] mx-auto">
-          {/* Hero Section - Sequential fade-in */}
-          <div className="text-center mb-16">
+      <main className="container mx-auto px-6 py-12">
+        <div className="max-w-[580px] mx-auto">
+          {/* Hero Section - Refined sizing */}
+          <div className="text-center mb-10">
             <h1 
               className={`
-                text-6xl font-black text-gray-900 mb-6 tracking-tight leading-tight
+                text-5xl font-black text-gray-900 mb-4 tracking-tight leading-tight
                 transition-all duration-700 ease-out
                 ${showContent ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}
               `}
@@ -37,7 +36,7 @@ export default function Home() {
             
             <p 
               className={`
-                text-xl text-gray-600 mb-2
+                text-lg text-gray-600 mb-1
                 transition-all duration-700 ease-out
                 ${showContent ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}
               `}
@@ -48,7 +47,7 @@ export default function Home() {
             
             <p 
               className={`
-                text-xl text-gray-900 font-bold
+                text-lg text-gray-900 font-semibold
                 transition-all duration-700 ease-out
                 ${showContent ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}
               `}
@@ -58,7 +57,7 @@ export default function Home() {
             </p>
           </div>
 
-          {/* Generator Card - fades in last */}
+          {/* Generator Card */}
           <div 
             className={`
               transition-all duration-700 ease-out

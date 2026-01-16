@@ -7,14 +7,14 @@ interface ComplexityToggleProps {
 
 export function ComplexityToggle({ value, onChange }: ComplexityToggleProps) {
   return (
-    <div className="flex bg-gray-100 rounded-xl p-1.5 gap-2">
+    <div className="flex bg-gray-100 rounded-lg p-1 gap-1">
       <button
         type="button"
         onClick={() => onChange('simple')}
         className={`
-          flex-1 px-6 py-3 text-base font-bold rounded-lg transition-all duration-200
+          flex-1 px-4 py-2 text-sm font-semibold rounded-md transition-all duration-200
           ${value === 'simple' 
-            ? 'bg-white text-gray-900 shadow-md' 
+            ? 'bg-white text-gray-900 shadow-sm' 
             : 'text-gray-600 hover:text-gray-900'}
         `}
       >
@@ -25,9 +25,9 @@ export function ComplexityToggle({ value, onChange }: ComplexityToggleProps) {
         type="button"
         onClick={() => onChange('detailed')}
         className={`
-          flex-1 px-6 py-3 text-base font-bold rounded-lg transition-all duration-200
+          flex-1 px-4 py-2 text-sm font-semibold rounded-md transition-all duration-200
           ${value === 'detailed' 
-            ? 'bg-white text-gray-900 shadow-md' 
+            ? 'bg-white text-gray-900 shadow-sm' 
             : 'text-gray-600 hover:text-gray-900'}
         `}
       >
