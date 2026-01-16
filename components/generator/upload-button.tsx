@@ -33,15 +33,26 @@ export function UploadButton({ onFileSelect, disabled }: UploadButtonProps) {
       <label
         htmlFor="file-upload"
         className={`
-          block w-full min-h-[120px] border-2 border-dashed rounded-lg
-          bg-gray-50 cursor-pointer transition-all duration-150
-          flex flex-col items-center justify-center gap-2
-          ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-gray-300 hover:bg-gray-100'}
+          block w-full min-h-[140px] border-2 border-dashed border-gray-300 rounded-xl
+          bg-gray-50 cursor-pointer transition-all duration-200
+          flex flex-col items-center justify-center gap-3
+          ${disabled 
+            ? 'opacity-50 cursor-not-allowed' 
+            : 'hover:border-primary-500 hover:bg-blue-50'
+          }
         `}
       >
-        <Upload className="w-6 h-6 text-gray-400" />
-        <span className="text-sm font-medium text-gray-700">Choose Photo</span>
-        <span className="text-xs text-gray-400">PNG, JPG, WEBP up to 10MB</span>
+        <div className="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center">
+          <Upload className="w-6 h-6 text-primary-500" />
+        </div>
+        <div className="text-center">
+          <span className="text-sm font-semibold text-gray-900 block mb-1">
+            Choose Photo
+          </span>
+          <span className="text-xs text-gray-500">
+            PNG, JPG, WEBP up to 10MB
+          </span>
+        </div>
       </label>
     </div>
   )

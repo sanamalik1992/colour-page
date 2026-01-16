@@ -1,20 +1,31 @@
+import { Header } from '@/components/ui/header'
 import { GeneratorCard } from '@/components/generator/generator-card'
 
-export default function HomePage() {
+export default function Home() {
   return (
-    <main className="min-h-screen bg-gray-50 px-4 py-10">
-      <div className="mx-auto max-w-3xl">
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Turn any photo into a colouring page
-          </h1>
-          <p className="mt-2 text-gray-600">
-            Upload a photo, choose detail level, and generate a printable page.
-          </p>
-        </div>
+    <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
+      <Header />
+      
+      <main className="container mx-auto px-6 py-16">
+        <div className="max-w-[700px] mx-auto">
+          {/* Hero Section */}
+          <div className="text-center mb-12">
+            <h1 className="text-5xl font-black text-gray-900 mb-4 tracking-tight">
+              Upload a Photo,<br />
+              Print & Colour
+            </h1>
+            <p className="text-lg text-gray-600 mb-2">
+              Generate colouring pages in seconds using AI.
+            </p>
+            <p className="text-lg text-gray-900 font-semibold">
+              Try it free.
+            </p>
+          </div>
 
-        <GeneratorCard />
-      </div>
-    </main>
+          {/* Generator Card */}
+          <GeneratorCard />
+        </div>
+      </main>
+    </div>
   )
 }

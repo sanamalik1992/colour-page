@@ -28,7 +28,6 @@ export function GeneratorCard() {
   const handleFileSelect = (file: File) => {
     setSelectedFile(file)
     
-    // Create preview URL
     const reader = new FileReader()
     reader.onloadend = () => {
       setPreviewUrl(reader.result as string)
@@ -46,11 +45,10 @@ export function GeneratorCard() {
 
     setProcessing({ isProcessing: true, message: 'Uploading image...', progress: 0 })
     
-    // Simulate processing states (from PDF spec)
     const stages = [
       { message: 'Uploading image...', progress: 10, delay: 1000 },
       { message: 'Analyzing photo...', progress: 30, delay: 2000 },
-      { message: 'Generating coloring page...', progress: 60, delay: 3000 },
+      { message: 'Generating colouring page...', progress: 60, delay: 3000 },
       { message: 'Almost done...', progress: 90, delay: 1500 },
     ]
 
@@ -64,11 +62,7 @@ export function GeneratorCard() {
         })
       }
 
-      // TODO: Actual API call will go here
-      // For now, just finish the simulation
       setProcessing({ isProcessing: false, message: '', progress: 100 })
-      
-      // TODO: Show email gate modal
       alert('Processing complete! Email gate modal will appear here.')
     } catch (error) {
       console.error('Generation error:', error)
@@ -81,10 +75,10 @@ export function GeneratorCard() {
 
   return (
     <div className={isProcessingState ? 'processing-border' : ''}>
-      <div className="bg-white rounded-xl p-6 sm:p-8 shadow-sm border border-gray-100 max-w-[520px] mx-auto">
+      <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-200 max-w-[520px] mx-auto">
         {/* Card Header */}
-        <div className="flex items-center gap-2.5 mb-6 pb-5 border-b border-gray-100">
-          <div className="w-[26px] h-[26px] bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg" />
+        <div className="flex items-center gap-3 mb-6 pb-5 border-b border-gray-200">
+          <div className="w-7 h-7 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex-shrink-0" />
           <h2 className="text-xl font-bold text-gray-900">
             Colouring Page Generator
           </h2>
@@ -92,21 +86,21 @@ export function GeneratorCard() {
 
         {/* Processing Status */}
         {isProcessingState && (
-          <div className="bg-gray-50 rounded-xl px-5 py-3.5 mb-5 flex items-center justify-between">
+          <div className="bg-blue-50 rounded-xl px-5 py-4 mb-6 flex items-center justify-between border border-blue-100">
             <div className="flex items-center gap-3">
               <Loader2 className="w-4 h-4 animate-spin text-primary-500" />
               <span className="text-sm font-semibold text-gray-900">
                 {processing.message}
               </span>
             </div>
-            <span className="text-sm text-gray-500 font-medium">
+            <span className="text-sm text-gray-600 font-medium">
               {processing.progress}%
             </span>
           </div>
         )}
 
         {/* Upload Area */}
-        <div className="mb-5">
+        <div className="mb-6">
           {previewUrl ? (
             <ImagePreview
               src={previewUrl}
@@ -122,7 +116,7 @@ export function GeneratorCard() {
         </div>
 
         {/* Optional Fields */}
-        <div className="space-y-4 mb-5">
+        <div className="space-y-4 mb-6">
           <OptionalField
             label="Instructions"
             placeholder="e.g., Make it more detailed"
@@ -139,7 +133,7 @@ export function GeneratorCard() {
         </div>
 
         {/* Controls */}
-        <div className="pt-5 border-t border-gray-100 space-y-4">
+        <div className="pt-6 border-t border-gray-200 space-y-4">
           <ComplexityToggle
             value={complexity}
             onChange={setComplexity}
@@ -151,10 +145,10 @@ export function GeneratorCard() {
             className="btn-primary"
           >
             {isProcessingState ? (
-              <span className="flex items-center justify-center gap-2">
+              <>
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Creating...
-              </span>
+              </>
             ) : (
               'Create'
             )}
