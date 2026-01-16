@@ -9,39 +9,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#F0FDF4',
-          100: '#DCFCE7',
-          200: '#BBF7D0',
-          300: '#86EFAC',
-          400: '#4ADE80',
-          500: '#22C55E',
-          600: '#16A34A',
-          700: '#15803D',
-          800: '#166534',
-          900: '#14532D',
-        },
-        accent: {
-          400: '#FBBF24',
-          500: '#F59E0B',
-          600: '#D97706',
-        },
-        cyan: {
-          400: '#22D3EE',
-          500: '#06B6D4',
-          600: '#0891B2',
-        },
-        gray: {
-          50: '#FAFAFA',
-          100: '#F5F5F5',
-          200: '#E5E5E5',
-          300: '#D4D4D4',
-          400: '#A3A3A3',
-          500: '#737373',
-          600: '#525252',
-          700: '#404040',
-          800: '#262626',
-          900: '#171717',
+        // Green Design Tokens
+        brand: {
+          primary: '#10B981',      // Primary green
+          glow: '#34D399',         // Green glow
+          border: '#059669',       // Border green
+          hover: '#047857',        // Hover green
+          light: '#D1FAE5',        // Light green bg
+          dark: '#065F46',         // Dark green
         },
       },
       fontFamily: {
@@ -56,15 +31,17 @@ const config: Config = {
         ],
       },
       fontSize: {
-        'xs': ['11px', { lineHeight: '16px' }],
-        'sm': ['13px', { lineHeight: '18px' }],
-        'base': ['15px', { lineHeight: '22px' }],
-        'lg': ['17px', { lineHeight: '26px' }],
-        'xl': ['19px', { lineHeight: '28px' }],
+        'xs': ['12px', { lineHeight: '16px' }],
+        'sm': ['14px', { lineHeight: '20px' }],
+        'base': ['16px', { lineHeight: '24px' }],
+        'lg': ['18px', { lineHeight: '28px' }],
+        'xl': ['20px', { lineHeight: '28px' }],
         '2xl': ['24px', { lineHeight: '32px' }],
         '3xl': ['30px', { lineHeight: '38px' }],
-        '4xl': ['38px', { lineHeight: '44px' }],
+        '4xl': ['36px', { lineHeight: '44px' }],
         '5xl': ['48px', { lineHeight: '1.1' }],
+        '6xl': ['60px', { lineHeight: '1.1' }],
+        '7xl': ['72px', { lineHeight: '1.1' }],
       },
       spacing: {
         '18': '4.5rem',
@@ -87,39 +64,27 @@ const config: Config = {
         'lg': '0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.06)',
         'xl': '0 20px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.06)',
         '2xl': '0 25px 50px -12px rgb(0 0 0 / 0.20)',
+        'glow': '0 0 20px rgba(16, 185, 129, 0.4)',
+        'glow-lg': '0 0 40px rgba(16, 185, 129, 0.6)',
         'none': '0 0 #0000',
       },
       animation: {
-        'border-spin': 'border-spin 3s linear infinite',
-        'border-rotate': 'rotate 3s linear infinite',
-        'dash': 'dash 1.5s ease-in-out infinite',
-        'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
-        'zoom-in-95': 'zoom-in-95 300ms ease-out',
+        'spin': 'spin 3s linear infinite',
+        'pulse': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'border-flow': 'border-flow 3s linear infinite',
       },
       keyframes: {
-        'border-spin': {
+        'spin': {
           '0%': { transform: 'rotate(0deg)' },
           '100%': { transform: 'rotate(360deg)' },
         },
-        'rotate': {
-          '0%': { transform: 'rotate(0deg)' },
-          '100%': { transform: 'rotate(360deg)' },
+        'pulse': {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.5' },
         },
-        'dash': {
-          '0%': { strokeDashoffset: '0' },
-          '100%': { strokeDashoffset: '-400' },
-        },
-        'glow-pulse': {
-          '0%, 100%': {
-            opacity: '0.5',
-          },
-          '50%': {
-            opacity: '1',
-          },
-        },
-        'zoom-in-95': {
-          '0%': { opacity: '0', transform: 'scale(0.95)' },
-          '100%': { opacity: '1', transform: 'scale(1)' },
+        'border-flow': {
+          '0%': { 'background-position': '0% 50%' },
+          '100%': { 'background-position': '200% 50%' },
         },
       },
     },

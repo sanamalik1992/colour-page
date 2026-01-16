@@ -6,7 +6,7 @@ import { Search } from 'lucide-react'
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-50 bg-gray-900/80 backdrop-blur-lg border-b border-gray-800">
+    <header className="sticky top-0 z-50 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800">
       <div className="container mx-auto px-6">
         <div className="flex items-center justify-between h-20">
           {/* Logo */}
@@ -27,13 +27,13 @@ export function Header() {
           <nav className="hidden md:flex items-center gap-1">
             <Link
               href="/"
-              className="px-4 py-2 text-sm font-semibold text-emerald-400 hover:bg-gray-800 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm font-semibold text-brand-primary hover:bg-zinc-800 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2 focus:ring-offset-zinc-900"
             >
               Create
             </Link>
             <Link
               href="/print"
-              className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2 focus:ring-offset-zinc-900"
             >
               Print
             </Link>
@@ -41,14 +41,14 @@ export function Header() {
 
           {/* Right Side */}
           <div className="flex items-center gap-3">
-            <button className="hidden sm:flex items-center gap-2 w-56 h-10 px-4 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-400 transition-colors border border-gray-700">
+            <button className="hidden sm:flex items-center gap-2 w-56 h-10 px-4 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm text-gray-400 transition-colors border border-zinc-700 focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2 focus:ring-offset-zinc-900">
               <Search className="w-4 h-4" />
               <span>Search...</span>
             </button>
             
             <Link
               href="/pro"
-              className="h-10 px-5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-semibold text-sm rounded-lg transition-all flex items-center"
+              className="h-10 px-5 bg-gradient-to-r from-brand-primary to-brand-border hover:from-brand-border hover:to-brand-hover text-white font-semibold text-sm rounded-lg transition-all flex items-center shadow-md hover:shadow-glow focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2 focus:ring-offset-zinc-900"
             >
               Pro
             </Link>
