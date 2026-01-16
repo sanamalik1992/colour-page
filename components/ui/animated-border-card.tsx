@@ -16,27 +16,24 @@ export function AnimatedBorderCard({
   }
 
   return (
-    <div className="relative p-[2px] rounded-2xl">
-      {/* Spinning gradient border */}
+    <div className="relative rounded-2xl">
+      <div className="absolute -inset-[2px] rounded-2xl overflow-hidden">
+        <div 
+          className="absolute inset-[-200%] animate-border-spin motion-reduce:animate-none"
+          style={{
+            background: 'conic-gradient(from 0deg, transparent 0deg, transparent 240deg, #10B981 260deg, #34D399 280deg, #6EE7B7 300deg, #34D399 320deg, #10B981 340deg, transparent 360deg)',
+            animation: 'spin 3s linear infinite',
+          }}
+        />
+      </div>
+      
       <div 
-        className="absolute inset-0 rounded-2xl"
+        className="absolute -inset-4 rounded-2xl opacity-50 blur-xl animate-pulse motion-reduce:animate-none"
         style={{
-          background: 'conic-gradient(from 0deg, transparent 0deg, transparent 240deg, #10B981 260deg, #34D399 280deg, #6EE7B7 300deg, #34D399 320deg, #10B981 340deg, transparent 360deg)',
-          animation: 'spin 3s linear infinite',
+          background: 'radial-gradient(circle at center, rgba(16, 185, 129, 0.4), transparent 70%)',
         }}
       />
       
-      {/* Glow effect */}
-      <div 
-        className="absolute inset-0 rounded-2xl opacity-60"
-        style={{
-          background: 'radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.4), transparent 70%)',
-          filter: 'blur(15px)',
-          animation: 'pulse 2s ease-in-out infinite',
-        }}
-      />
-      
-      {/* Content container */}
       <div className="relative bg-white rounded-2xl">
         {children}
       </div>
