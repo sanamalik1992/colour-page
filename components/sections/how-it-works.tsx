@@ -24,7 +24,6 @@ export function HowItWorks() {
   return (
     <section className="container mx-auto px-6 py-16">
       <div className="max-w-5xl mx-auto">
-        {/* Section Header */}
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">
             How It Works
@@ -34,7 +33,6 @@ export function HowItWorks() {
           </p>
         </div>
         
-        {/* Steps Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {steps.map((step, index) => (
             <div 
