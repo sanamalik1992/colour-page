@@ -1,116 +1,134 @@
 'use client'
 
 import { useState } from 'react'
-import * as Dialog from '@radix-ui/react-dialog'
-import { X, Loader2 } from 'lucide-react'
-import Image from 'next/image'
+import { X, Mail, Loader2, CheckCircle } from 'lucide-react'
 
 interface EmailGateModalProps {
-  isOpen: boolean
+  jobId: string
+  sessionId: string
   onClose: () => void
-  previewUrl?: string
-  onEmailSubmit: (email: string) => Promise<void>
 }
 
-export function EmailGateModal({
-  isOpen,
-  onClose,
-  previewUrl,
-  onEmailSubmit,
-}: EmailGateModalProps) {
+export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProps) {
   const [email, setEmail] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
-
-    if (!email || !email.includes('@')) {
-      setError('Please enter a valid email address')
-      return
-    }
-
-    setIsSubmitting(true)
+    setLoading(true)
+    setError('')
 
     try {
-      await onEmailSubmit(email)
-      setEmail('')
-      onClose()
-    } catch {
-      setError('Something went wrong. Please try again.')
+      const response = await fetch('/api/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId, email, sessionId })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send email')
+      }
+
+      setSuccess(true)
+      
+      // Auto close after 3 seconds
+      setTimeout(() => {
+        onClose()
+      }, 3000)
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send email')
     } finally {
-      setIsSubmitting(false)
+      setLoading(false)
     }
   }
 
+  if (success) {
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center animate-in fade-in zoom-in-95 duration-300">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-10 h-10 text-brand-primary" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Check Your Inbox! 📧
+          </h2>
+          <p className="text-gray-600">
+            We've sent your colouring page to <strong>{email}</strong>
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <Dialog.Root open={isOpen} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl p-8 max-w-md w-full relative animate-in fade-in zoom-in-95 duration-300">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <X className="w-6 h-6" />
+        </button>
 
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-8 shadow-2xl">
-          <Dialog.Close className="absolute right-4 top-4 text-gray-400 transition hover:text-gray-600">
-            <X className="h-5 w-5" />
-          </Dialog.Close>
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 bg-gradient-to-br from-brand-primary to-brand-border rounded-full flex items-center justify-center mx-auto mb-4">
+            <Mail className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Get Your Colouring Page
+          </h2>
+          <p className="text-gray-600">
+            Enter your email to receive your download link
+          </p>
+        </div>
 
-          {previewUrl && (
-            <div className="mb-4 flex justify-center">
-              <div className="relative h-32 w-32 overflow-hidden rounded-xl blur-sm">
-                <Image
-                  src={previewUrl}
-                  alt="Preview"
-                  fill
-                  className="object-cover"
-                />
-              </div>
-            </div>
-          )}
-
-          <Dialog.Title className="mb-2 text-center text-xl font-semibold text-gray-900">
-            Your colouring page is ready
-          </Dialog.Title>
-
-          <Dialog.Description className="mb-6 text-center text-gray-500">
-            Enter your email to download for free
-          </Dialog.Description>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="your@email.com"
-              className="form-input"
-              disabled={isSubmitting}
               required
+              className="form-input"
+              disabled={loading}
             />
+          </div>
 
-            {error && (
-              <p className="text-sm text-red-500">{error}</p>
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-primary w-full"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Sending...
+              </>
+            ) : (
+              <>
+                <Mail className="w-5 h-5" />
+                Send to Email
+              </>
             )}
+          </button>
 
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="btn-primary"
-            >
-              {isSubmitting ? (
-                <span className="flex items-center justify-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Sending...
-                </span>
-              ) : (
-                'Download Free'
-              )}
-            </button>
-
-            <p className="text-xs text-center text-gray-400">
-              We&apos;ll send you weekly coloring pages
-            </p>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          <p className="text-xs text-gray-500 text-center">
+            We'll never share your email. The download link expires in 7 days.
+          </p>
+        </form>
+      </div>
+    </div>
   )
 }
