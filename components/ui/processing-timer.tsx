@@ -20,17 +20,16 @@ const STATUS_STEPS = [
 export function ProcessingTimer({ isProcessing, onStatusChange }: ProcessingTimerProps) {
   const [elapsed, setElapsed] = useState(0)
   const [status, setStatus] = useState(STATUS_STEPS[0])
-  const [statusIndex, setStatusIndex] = useState(0)
 
   useEffect(() => {
     if (!isProcessing) {
       setElapsed(0)
-      setStatusIndex(0)
       setStatus(STATUS_STEPS[0])
       return
     }
 
     const startTime = Date.now()
+    let currentIndex = 0
 
     const timerInterval = setInterval(() => {
       const elapsedSeconds = (Date.now() - startTime) / 1000
@@ -38,13 +37,10 @@ export function ProcessingTimer({ isProcessing, onStatusChange }: ProcessingTime
     }, 100)
 
     const statusInterval = setInterval(() => {
-      setStatusIndex(prev => {
-        const nextIndex = (prev + 1) % STATUS_STEPS.length
-        const nextStatus = STATUS_STEPS[nextIndex]
-        setStatus(nextStatus)
-        onStatusChange?.(nextStatus)
-        return nextIndex
-      })
+      currentIndex = (currentIndex + 1) % STATUS_STEPS.length
+      const nextStatus = STATUS_STEPS[currentIndex]
+      setStatus(nextStatus)
+      onStatusChange?.(nextStatus)
     }, 900)
 
     const longRunningTimeout = setTimeout(() => {
