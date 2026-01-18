@@ -8,16 +8,6 @@ const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN!,
 })
 
-const STATUS_STEPS = [
-  { status: 'Uploading image...', progress: 10 },
-  { status: 'Analyzing photo...', progress: 25 },
-  { status: 'Removing color...', progress: 40 },
-  { status: 'Detecting edges...', progress: 60 },
-  { status: 'Simplifying lines...', progress: 75 },
-  { status: 'Optimizing for print...', progress: 90 },
-  { status: 'Finalizing...', progress: 95 }
-]
-
 async function updateJobProgress(
   supabase: SupabaseClient, 
   jobId: string, 
@@ -50,7 +40,6 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceClient()
 
-    // Fetch job
     const { data: job, error: jobError } = await supabase
       .from('jobs')
       .select('*')
@@ -64,7 +53,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Update status to processing
     await supabase
       .from('jobs')
       .update({ 
@@ -74,7 +62,6 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', jobId)
 
-    // Get signed URL for uploaded image
     const { data: signedUpload } = await supabase.storage
       .from('images')
       .createSignedUrl(job.upload_path, 3600)
@@ -85,23 +72,8 @@ export async function POST(request: NextRequest) {
 
     await updateJobProgress(supabase, jobId, 15)
 
-    // Build prompt based on options
-    const complexityPrompt = job.complexity === 'detailed' 
-      ? 'highly detailed coloring page with intricate patterns and fine lines'
-      : 'simple coloring page with bold, clear outlines suitable for children'
-
-    const fullPrompt = `Convert this image into a black and white ${complexityPrompt}. 
-The output should have:
-- Clean black outlines on white background
-- No shading or gradients
-- Clear, printable lines perfect for coloring
-- High contrast
-${job.instructions ? `Additional instructions: ${job.instructions}` : ''}
-${job.add_text_overlay && job.custom_text ? `Include this text: "${job.custom_text}"` : ''}`
-
     await updateJobProgress(supabase, jobId, 30)
 
-    // Run AI model
     console.log('Starting AI generation...')
     
     const output = await replicate.run(
@@ -126,7 +98,6 @@ ${job.add_text_overlay && job.custom_text ? `Include this text: "${job.custom_te
 
     await updateJobProgress(supabase, jobId, 80)
 
-    // Download the generated image
     const imageUrl = Array.isArray(output) ? output[0] : output
     
     if (!imageUrl || typeof imageUrl !== 'string') {
@@ -140,7 +111,6 @@ ${job.add_text_overlay && job.custom_text ? `Include this text: "${job.custom_te
 
     await updateJobProgress(supabase, jobId, 90)
 
-    // Upload result to storage
     const resultFileName = `results/${nanoid()}.png`
     
     const { error: uploadError } = await supabase.storage
@@ -157,7 +127,6 @@ ${job.add_text_overlay && job.custom_text ? `Include this text: "${job.custom_te
 
     await updateJobProgress(supabase, jobId, 95)
 
-    // Update job as completed
     await supabase
       .from('jobs')
       .update({
@@ -196,4 +165,4 @@ ${job.add_text_overlay && job.custom_text ? `Include this text: "${job.custom_te
   }
 }
 
-export const maxDuration = 300 // 5 minutes for AI processing
+export const maxDuration = 300

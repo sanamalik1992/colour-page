@@ -35,7 +35,6 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
 
       setSuccess(true)
       
-      // Auto close after 3 seconds
       setTimeout(() => {
         onClose()
       }, 3000)
@@ -58,7 +57,7 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
             Check Your Inbox! 📧
           </h2>
           <p className="text-gray-600">
-            We've sent your colouring page to <strong>{email}</strong>
+            We&apos;ve sent your colouring page to <strong>{email}</strong>
           </p>
         </div>
       </div>
@@ -125,7 +124,7 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
           </button>
 
           <p className="text-xs text-gray-500 text-center">
-            We'll never share your email. The download link expires in 7 days.
+            We&apos;ll never share your email. The download link expires in 7 days.
           </p>
         </form>
       </div>
