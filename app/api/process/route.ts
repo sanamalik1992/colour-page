@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import Replicate from 'replicate'
 import { nanoid } from 'nanoid'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN!,
@@ -17,7 +18,12 @@ const STATUS_STEPS = [
   { status: 'Finalizing...', progress: 95 }
 ]
 
-async function updateJobProgress(supabase: any, jobId: string, progress: number, status?: string) {
+async function updateJobProgress(
+  supabase: SupabaseClient, 
+  jobId: string, 
+  progress: number, 
+  status?: string
+) {
   await supabase
     .from('jobs')
     .update({ 
@@ -95,7 +101,7 @@ ${job.add_text_overlay && job.custom_text ? `Include this text: "${job.custom_te
 
     await updateJobProgress(supabase, jobId, 30)
 
-    // Run AI model - Using Scribble/Edge Detection + ControlNet
+    // Run AI model
     console.log('Starting AI generation...')
     
     const output = await replicate.run(

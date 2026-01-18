@@ -1,26 +1,46 @@
-import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
-const supabaseUrlEnv = process.env.NEXT_PUBLIC_SUPABASE_URL
-const anonKeyEnv = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-const serviceRoleKeyEnv = process.env.SUPABASE_SERVICE_ROLE_KEY
+export async function createClient() {
+  const cookieStore = await cookies()
 
-if (!supabaseUrlEnv) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL')
-if (!anonKeyEnv) throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY')
-if (!serviceRoleKeyEnv) throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY')
-
-// ✅ these are now guaranteed strings (TypeScript knows it)
-const supabaseUrl: string = supabaseUrlEnv
-const anonKey: string = anonKeyEnv
-const serviceRoleKey: string = serviceRoleKeyEnv
-
-export function createSupabaseClient() {
-  return createClient(supabaseUrl, anonKey)
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // The `setAll` method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing
+            // user sessions.
+          }
+        },
+      },
+    }
+  )
 }
 
-export function createSupabaseAdmin() {
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  })
+export function createServiceClient() {
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return []
+        },
+        setAll() {
+          // Service client doesn't need cookies
+        },
+      },
+    }
+  )
 }
-
-export const supabaseAdmin = createSupabaseAdmin()

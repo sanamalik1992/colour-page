@@ -15,7 +15,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(email)) {
       return NextResponse.json(
@@ -26,7 +25,6 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceClient()
 
-    // Fetch job
     const { data: job, error: jobError } = await supabase
       .from('jobs')
       .select('*')
@@ -40,7 +38,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate session ownership
     if (job.session_id && job.session_id !== sessionId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -48,7 +45,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if job is completed
     if (job.status !== 'completed' || !job.result_url) {
       return NextResponse.json(
         { error: 'Job not completed yet' },
@@ -56,10 +52,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate signed download URL (valid for 7 days)
     const { data: signedData, error: signError } = await supabase.storage
       .from('images')
-      .createSignedUrl(job.result_url, 604800) // 7 days
+      .createSignedUrl(job.result_url, 604800)
 
     if (signError || !signedData) {
       return NextResponse.json(
@@ -68,7 +63,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Send email via Resend
     const { data: emailData, error: emailError } = await resend.emails.send({
       from: 'colour.page <noreply@colour.page>',
       to: email,
@@ -98,7 +92,7 @@ export async function POST(request: NextRequest) {
               </div>
               
               <p style="font-size: 14px; color: #666; margin-top: 30px;">
-                <strong>Print & Colour Tips:</strong>
+                <strong>Print &amp; Colour Tips:</strong>
               </p>
               <ul style="font-size: 14px; color: #666;">
                 <li>Print on white or light-colored paper for best results</li>
@@ -130,7 +124,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Record email delivery
     await supabase
       .from('email_deliveries')
       .insert({
