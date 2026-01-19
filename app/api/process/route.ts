@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import Replicate from 'replicate'
 import sharp from 'sharp'
 import { nanoid } from 'nanoid'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN!,
+})
+
 // A4 dimensions at 300 DPI
 const A4_WIDTH = 2480
 const A4_HEIGHT = 3508
-const MARGIN = 100 // ~8.5mm margin at 300 DPI
-const PRINT_WIDTH = A4_WIDTH - (MARGIN * 2)
-const PRINT_HEIGHT = A4_HEIGHT - (MARGIN * 2)
+const MARGIN = 120 // Print-safe margin
 
 async function updateJobProgress(
   supabase: SupabaseClient, 
@@ -27,170 +30,143 @@ async function updateJobProgress(
     .eq('id', jobId)
 }
 
-// Quality gate: Check if output has proper contrast
-async function validateOutput(buffer: Buffer): Promise<boolean> {
-  const { data, info } = await sharp(buffer)
-    .raw()
-    .toBuffer({ resolveWithObject: true })
+// QUALITY GATE: Validate output meets requirements
+async function validateColoringPage(buffer: Buffer): Promise<{ valid: boolean; reason?: string }> {
+  try {
+    const { data, info } = await sharp(buffer)
+      .greyscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
 
-  const pixels = new Uint8Array(data.buffer)
-  let blackPixels = 0
-  let greyPixels = 0
-  const totalPixels = info.width * info.height
+    const pixels = new Uint8Array(data.buffer)
+    let blackPixels = 0
+    let whitePixels = 0
+    let greyPixels = 0
+    const totalPixels = pixels.length
 
-  for (let i = 0; i < pixels.length; i += info.channels) {
-    const value = pixels[i]
-    if (value < 50) blackPixels++ // Pure black
-    else if (value > 200) continue // White
-    else greyPixels++ // Grey (bad!)
+    for (let i = 0; i < pixels.length; i++) {
+      const value = pixels[i]
+      if (value < 40) {
+        blackPixels++
+      } else if (value > 220) {
+        whitePixels++
+      } else {
+        greyPixels++
+      }
+    }
+
+    const greyRatio = greyPixels / totalPixels
+    const blackRatio = blackPixels / totalPixels
+
+    console.log('Quality check:', {
+      blackRatio: (blackRatio * 100).toFixed(2) + '%',
+      whiteRatio: (whitePixels / totalPixels * 100).toFixed(2) + '%',
+      greyRatio: (greyRatio * 100).toFixed(2) + '%'
+    })
+
+    // FAIL if too much grey (dots/stippling)
+    if (greyRatio > 0.15) {
+      return { valid: false, reason: 'Too much grey/stippling detected' }
+    }
+
+    // FAIL if not enough black lines
+    if (blackRatio < 0.01) {
+      return { valid: false, reason: 'Lines too faint or missing' }
+    }
+
+    return { valid: true }
+  } catch (error) {
+    console.error('Quality validation error:', error)
+    return { valid: false, reason: 'Validation failed' }
   }
-
-  const greyRatio = greyPixels / totalPixels
-  const blackRatio = blackPixels / totalPixels
-
-  console.log('Quality check - Black ratio:', blackRatio, 'Grey ratio:', greyRatio)
-
-  // Fail if too much grey or too little black
-  return greyRatio < 0.1 && blackRatio > 0.02
 }
 
-async function createColoringPage(
-  inputBuffer: Buffer,
-  complexity: 'simple' | 'detailed'
-): Promise<Buffer> {
-  
-  console.log('Starting professional coloring page pipeline...')
+// POST-PROCESS: Force pure black/white, thicken lines, remove noise
+async function cleanupColoringPage(inputBuffer: Buffer, complexity: string): Promise<Buffer> {
+  console.log('Post-processing: cleaning up coloring page...')
 
-  // STEP 1: PREPROCESSING - Enhance and prepare
-  console.log('Step 1: Preprocessing - enhance contrast and denoise')
-  
-  let preprocessed = await sharp(inputBuffer)
-    .resize(PRINT_WIDTH, PRINT_HEIGHT, { 
-      fit: 'inside',
-      withoutEnlargement: false,
-      kernel: sharp.kernel.lanczos3
-    })
+  // Step 1: Convert to greyscale and normalize
+  let processed = await sharp(inputBuffer)
     .greyscale()
-    .normalize() // Auto-contrast
-    .modulate({ brightness: 1.1, saturation: 0 })
-    .sharpen({ sigma: 1 })
+    .normalize()
     .toBuffer()
 
-  // STEP 2: EDGE DETECTION - Extract clean outlines
-  console.log('Step 2: Edge detection (Canny-style)')
-  
-  if (complexity === 'detailed') {
-    // Detailed: Fine edge detection
-    preprocessed = await sharp(preprocessed)
-      .convolve({
-        width: 3,
-        height: 3,
-        kernel: [
-          -1, -1, -1,
-          -1,  8, -1,
-          -1, -1, -1
-        ],
-        scale: 1,
-        offset: 0
-      })
-      .linear(1.5, 0) // Increase contrast
-      .toBuffer()
-  } else {
-    // Simple: Stronger edge detection + thicker lines
-    preprocessed = await sharp(preprocessed)
-      .blur(0.5) // Slight blur to reduce noise
-      .convolve({
-        width: 5,
-        height: 5,
-        kernel: [
-          -1, -1, -1, -1, -1,
-          -1, -1, -1, -1, -1,
-          -1, -1, 24, -1, -1,
-          -1, -1, -1, -1, -1,
-          -1, -1, -1, -1, -1
-        ],
-        scale: 1,
-        offset: 0
-      })
-      .linear(2, 0) // Strong contrast boost
-      .toBuffer()
-  }
-
-  // STEP 3: THRESHOLD - Pure black and white only
-  console.log('Step 3: Threshold to pure black/white')
-  
-  const threshold = complexity === 'detailed' ? 120 : 140
-  
-  let blackAndWhite = await sharp(preprocessed)
-    .threshold(threshold, { greyscale: false })
-    .negate() // Invert so lines are black
-    .toBuffer()
-
-  // STEP 4: MORPHOLOGICAL OPERATIONS - Clean up
-  console.log('Step 4: Morphological operations - remove noise, connect lines')
-  
-  // Remove small noise specks (opening operation)
-  blackAndWhite = await sharp(blackAndWhite)
+  // Step 2: Remove noise with median filter
+  processed = await sharp(processed)
     .median(complexity === 'detailed' ? 1 : 2)
     .toBuffer()
 
-  // Thicken lines slightly for printability (dilation)
+  // Step 3: Increase line thickness (dilation)
   const dilationKernel = complexity === 'detailed'
-    ? { width: 3, height: 3, kernel: [0, 1, 0, 1, 1, 1, 0, 1, 0] }
-    : { width: 3, height: 3, kernel: [1, 1, 1, 1, 1, 1, 1, 1, 1] }
+    ? { width: 3, height: 3, kernel: [0, 1, 0, 1, 1, 1, 0, 1, 0], scale: 1, offset: 0 }
+    : { width: 5, height: 5, kernel: [0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0], scale: 1, offset: 0 }
 
-  blackAndWhite = await sharp(blackAndWhite)
+  processed = await sharp(processed)
     .convolve(dilationKernel)
-    .threshold(200) // Re-threshold after dilation
     .toBuffer()
 
-  // STEP 5: FORCE PURE COLORS - Ensure #000000 and #FFFFFF only
-  console.log('Step 5: Force pure black (#000000) and white (#FFFFFF)')
-  
-  const { data, info } = await sharp(blackAndWhite)
+  // Step 4: HARD threshold to pure black/white ONLY
+  processed = await sharp(processed)
+    .threshold(140, { greyscale: false })
+    .toBuffer()
+
+  // Step 5: Force every pixel to #000000 or #FFFFFF
+  const { data, info } = await sharp(processed)
     .raw()
     .toBuffer({ resolveWithObject: true })
 
   const pixels = new Uint8Array(data.buffer)
   
-  // Force every pixel to pure black or pure white
   for (let i = 0; i < pixels.length; i++) {
     pixels[i] = pixels[i] < 128 ? 0 : 255
   }
 
-  const cleanedBuffer = await sharp(Buffer.from(pixels), {
+  const cleanBuffer = await sharp(Buffer.from(pixels), {
     raw: {
       width: info.width,
       height: info.height,
       channels: info.channels
     }
   })
-    .png()
+    .png({ quality: 100, compressionLevel: 9 })
     .toBuffer()
 
-  // STEP 6: VALIDATE OUTPUT - Quality gate
-  console.log('Step 6: Validating output quality')
+  // Step 6: Smooth jagged edges while keeping lines crisp
+  const smoothed = await sharp(cleanBuffer)
+    .blur(0.3)
+    .threshold(128)
+    .toBuffer()
+
+  return smoothed
+}
+
+// LAYOUT: Center on A4 canvas with margins
+async function layoutToA4(contentBuffer: Buffer): Promise<Buffer> {
+  console.log('Laying out on A4 canvas with margins...')
+
+  const metadata = await sharp(contentBuffer).metadata()
   
-  const isValid = await validateOutput(cleanedBuffer)
-  
-  if (!isValid) {
-    console.warn('Quality check failed - regenerating with stronger settings')
-    // Recursively try again with stronger threshold
-    return createColoringPage(inputBuffer, 'simple')
+  // Resize to fit print area if needed
+  const maxWidth = A4_WIDTH - (MARGIN * 2)
+  const maxHeight = A4_HEIGHT - (MARGIN * 2)
+
+  let resized = contentBuffer
+  if (metadata.width && metadata.height) {
+    if (metadata.width > maxWidth || metadata.height > maxHeight) {
+      resized = await sharp(contentBuffer)
+        .resize(maxWidth, maxHeight, { fit: 'inside', withoutEnlargement: false })
+        .toBuffer()
+    }
   }
 
-  // STEP 7: LAYOUT TO A4 - Center on canvas with margins
-  console.log('Step 7: Layout to A4 with margins')
-  
-  const metadata = await sharp(cleanedBuffer).metadata()
-  const contentWidth = metadata.width || PRINT_WIDTH
-  const contentHeight = metadata.height || PRINT_HEIGHT
+  const resizedMeta = await sharp(resized).metadata()
+  const contentWidth = resizedMeta.width || maxWidth
+  const contentHeight = resizedMeta.height || maxHeight
 
-  // Calculate centering
   const xOffset = Math.floor((A4_WIDTH - contentWidth) / 2)
   const yOffset = Math.floor((A4_HEIGHT - contentHeight) / 2)
 
-  const a4Canvas = await sharp({
+  const a4Page = await sharp({
     create: {
       width: A4_WIDTH,
       height: A4_HEIGHT,
@@ -199,19 +175,14 @@ async function createColoringPage(
     }
   })
     .composite([{
-      input: cleanedBuffer,
+      input: resized,
       left: xOffset,
       top: yOffset
     }])
-    .png({ 
-      quality: 100, 
-      compressionLevel: 9,
-      palette: true // Force pure black/white palette
-    })
+    .png({ quality: 100, compressionLevel: 9 })
     .toBuffer()
 
-  console.log('Coloring page generation complete!')
-  return a4Canvas
+  return a4Page
 }
 
 export async function POST(request: NextRequest) {
@@ -222,13 +193,12 @@ export async function POST(request: NextRequest) {
     jobId = body.jobId
 
     if (!jobId) {
-      return NextResponse.json(
-        { error: 'Job ID required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Job ID required' }, { status: 400 })
     }
 
-    console.log('Processing job:', jobId)
+    console.log('=== STARTING PROFESSIONAL COLORING PAGE GENERATION ===')
+    console.log('Job ID:', jobId)
+    
     const supabase = createServiceClient()
 
     const { data: job, error: jobError } = await supabase
@@ -239,67 +209,136 @@ export async function POST(request: NextRequest) {
 
     if (jobError || !job) {
       console.error('Job not found:', jobError)
-      return NextResponse.json(
-        { error: 'Job not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
-    console.log('Starting professional coloring page pipeline')
-    
     await supabase
       .from('jobs')
       .update({ 
         status: 'processing',
-        progress: 10,
+        progress: 5,
         updated_at: new Date().toISOString()
       })
       .eq('id', jobId)
 
-    // Download original image
-    console.log('Downloading original image...')
-    const { data: imageData, error: downloadError } = await supabase.storage
+    // Get signed URL for uploaded image
+    const { data: signedUpload } = await supabase.storage
       .from('images')
-      .download(job.upload_path)
+      .createSignedUrl(job.upload_path, 3600)
 
-    if (downloadError || !imageData) {
-      throw new Error('Failed to download image')
+    if (!signedUpload) {
+      throw new Error('Failed to get upload URL')
     }
 
-    const buffer = await imageData.arrayBuffer()
-    console.log('Image downloaded, size:', buffer.byteLength, 'bytes')
+    await updateJobProgress(supabase, jobId, 10)
 
-    await updateJobProgress(supabase, jobId, 25)
+    console.log('Calling Replicate AI for professional coloring page conversion...')
 
-    // Generate coloring page with professional pipeline
-    const coloringPageBuffer = await createColoringPage(
-      Buffer.from(buffer),
-      job.complexity || 'simple'
+    // CRITICAL: Use Stable Diffusion with ControlNet Lineart
+    const isDetailed = job.complexity === 'detailed'
+
+    const output = await replicate.run(
+      "jagilley/controlnet-scribble:435061a1b5a4c1e26740464bf786efdfa9cb3a3ac488595a2de23e143fdb0117",
+      {
+        input: {
+          image: signedUpload.signedUrl,
+          prompt: isDetailed
+            ? "professional children's coloring book page, thick clean black outlines, detailed line art, cartoon style, high quality printable coloring sheet, white background"
+            : "simple children's coloring book page, very thick bold black outlines, simple cartoon style, easy for kids, high quality printable coloring sheet, white background",
+          a_prompt: "best quality, extremely detailed, thick black lines, white background, clean outlines, professional coloring book, smooth lines, continuous strokes, high contrast, sharp",
+          n_prompt: "shading, grayscale, pencil, sketch, stippling, dots, noise, faded, low contrast, texture, background details, photograph, realistic, grey, gradient, blur, messy, broken lines, thin lines, hatching, crosshatch",
+          num_samples: "1",
+          image_resolution: "768",
+          detect_resolution: "768",
+          ddim_steps: 25,
+          guess_mode: false,
+          strength: 2.0,
+          scale: 12.0,
+          seed: -1,
+          eta: 0.0
+        }
+      }
     )
+
+    console.log('AI generation complete')
+    await updateJobProgress(supabase, jobId, 50)
+
+    // Extract image URL
+    let imageUrl: string | undefined
+
+    if (typeof output === 'string') {
+      imageUrl = output
+    } else if (Array.isArray(output) && output.length > 0) {
+      imageUrl = typeof output[0] === 'string' ? output[0] : undefined
+    } else if (output && typeof output === 'object') {
+      const outputObj = output as Record<string, unknown>
+      if ('output' in outputObj) {
+        const out = outputObj.output
+        imageUrl = Array.isArray(out) ? (out[0] as string) : (out as string)
+      }
+    }
+
+    if (!imageUrl) {
+      console.error('No image URL in output:', output)
+      throw new Error('AI did not return valid image')
+    }
+
+    console.log('Downloading AI output...')
+    const imageResponse = await fetch(imageUrl)
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to download: ${imageResponse.statusText}`)
+    }
+
+    let aiBuffer = Buffer.from(await imageResponse.arrayBuffer())
+    await updateJobProgress(supabase, jobId, 60)
+
+    // POST-PROCESS: Clean up and enforce quality
+    console.log('Post-processing AI output...')
+    let processedBuffer = await cleanupColoringPage(aiBuffer, job.complexity || 'simple')
+    await updateJobProgress(supabase, jobId, 75)
+
+    // QUALITY GATE
+    const validation = await validateColoringPage(processedBuffer)
+    
+    if (!validation.valid) {
+      console.warn('Quality check FAILED:', validation.reason)
+      console.log('Applying stronger cleanup...')
+      
+      // Try harder cleanup
+      processedBuffer = await cleanupColoringPage(aiBuffer, 'simple')
+      
+      const secondValidation = await validateColoringPage(processedBuffer)
+      if (!secondValidation.valid) {
+        console.error('Quality check failed again - using best effort output')
+      }
+    } else {
+      console.log('Quality check PASSED ✓')
+    }
 
     await updateJobProgress(supabase, jobId, 85)
 
+    // LAYOUT to A4
+    const a4Buffer = await layoutToA4(processedBuffer)
+    await updateJobProgress(supabase, jobId, 92)
+
     // Upload result
     const resultFileName = `results/${nanoid()}.png`
-    
-    console.log('Uploading result to storage:', resultFileName)
+    console.log('Uploading final result:', resultFileName)
     
     const { error: uploadError } = await supabase.storage
       .from('images')
-      .upload(resultFileName, coloringPageBuffer, {
+      .upload(resultFileName, a4Buffer, {
         contentType: 'image/png',
         cacheControl: '3600',
         upsert: false
       })
 
     if (uploadError) {
-      console.error('Upload error:', uploadError)
-      throw new Error(`Failed to save result: ${uploadError.message}`)
+      throw new Error(`Upload failed: ${uploadError.message}`)
     }
 
-    await updateJobProgress(supabase, jobId, 95)
+    await updateJobProgress(supabase, jobId, 98)
 
-    // Mark as completed
     await supabase
       .from('jobs')
       .update({
@@ -312,12 +351,13 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', jobId)
 
-    console.log('Job completed successfully:', jobId)
+    console.log('=== JOB COMPLETED SUCCESSFULLY ===')
 
     return NextResponse.json({ success: true })
 
   } catch (error) {
-    console.error('Processing error:', error)
+    console.error('=== JOB FAILED ===')
+    console.error('Error:', error)
     
     if (jobId) {
       const supabase = createServiceClient()
@@ -338,4 +378,4 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export const maxDuration = 60
+export const maxDuration = 300
