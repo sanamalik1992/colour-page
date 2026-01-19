@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { X, Mail, Loader2, CheckCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Mail, Loader2, CheckCircle, Download } from 'lucide-react'
 
 interface EmailGateModalProps {
   jobId: string
@@ -14,6 +14,23 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null)
+
+  // Get download URL when modal opens
+  useEffect(() => {
+    async function getDownloadUrl() {
+      try {
+        const response = await fetch(`/api/status?jobId=${jobId}&sessionId=${sessionId}`)
+        const data = await response.json()
+        if (data.signedResultUrl) {
+          setDownloadUrl(data.signedResultUrl)
+        }
+      } catch (err) {
+        console.error('Failed to get download URL:', err)
+      }
+    }
+    getDownloadUrl()
+  }, [jobId, sessionId])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -35,7 +52,6 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
 
       setSuccess(true)
       
-      // Auto close after 5 seconds
       setTimeout(() => {
         onClose()
       }, 5000)
@@ -93,8 +109,34 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
             Get Your Colouring Page
           </h2>
           <p className="text-gray-600">
-            Enter your email to receive your download link instantly
+            Download directly or receive via email
           </p>
+        </div>
+
+        {/* Direct Download Option */}
+        {downloadUrl && (
+          <div className="mb-6">
+            
+              href={downloadUrl}
+              download="coloring-page.png"
+              className="btn-primary w-full flex items-center justify-center gap-2"
+            >
+              <Download className="w-5 h-5" />
+              Download Now
+            </a>
+            <p className="text-xs text-gray-500 text-center mt-2">
+              High-quality A4 PNG ready to print
+            </p>
+          </div>
+        )}
+
+        <div className="relative mb-4">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-white text-gray-500">Or send via email</span>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -107,7 +149,6 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
               required
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:border-brand-border focus:ring-2 focus:ring-brand-primary/20 outline-none transition-all"
               disabled={loading}
-              autoFocus
             />
           </div>
 
@@ -120,7 +161,7 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
           <button
             type="submit"
             disabled={loading}
-            className="btn-primary w-full flex items-center justify-center gap-2"
+            className="btn-secondary w-full flex items-center justify-center gap-2"
           >
             {loading ? (
               <>
@@ -136,7 +177,7 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
           </button>
 
           <p className="text-xs text-gray-500 text-center">
-            We&apos;ll never share your email. The download link expires in 7 days.
+            We&apos;ll never share your email. Link expires in 7 days.
           </p>
         </form>
       </div>

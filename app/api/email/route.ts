@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
     if (emailError) {
       console.error('Email send error:', emailError)
       return NextResponse.json(
-        { error: 'Failed to send email' },
+        { error: 'Failed to send email: ' + JSON.stringify(emailError) },
         { status: 500 }
       )
     }
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Email API error:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error: ' + (error instanceof Error ? error.message : 'Unknown') },
       { status: 500 }
     )
   }
