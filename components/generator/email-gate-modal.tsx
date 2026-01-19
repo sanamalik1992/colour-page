@@ -65,7 +65,7 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
   if (success) {
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center animate-in fade-in zoom-in-95 duration-300">
+        <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center">
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-10 h-10 text-brand-primary" />
           </div>
@@ -78,11 +78,7 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
           <p className="text-sm text-gray-500">
             The email should arrive within 1-2 minutes. Check your spam folder if you don&apos;t see it.
           </p>
-          
-          <button
-            onClick={onClose}
-            className="mt-6 btn-secondary w-full"
-          >
+          <button onClick={onClose} className="mt-6 btn-secondary w-full">
             Close
           </button>
         </div>
@@ -92,11 +88,8 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-8 max-w-md w-full relative animate-in fade-in zoom-in-95 duration-300">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
-        >
+      <div className="bg-white rounded-2xl p-8 max-w-md w-full relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors">
           <X className="w-6 h-6" />
         </button>
 
@@ -114,13 +107,9 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
 
         {downloadUrl && (
           <div className="mb-6">
-            
-              href={downloadUrl}
-              download="coloring-page.png"
-              className="btn-primary w-full flex items-center justify-center gap-2"
-            >
+            <a href={downloadUrl} download="coloring-page.png" className="btn-primary w-full flex items-center justify-center gap-2">
               <Download className="w-5 h-5" />
-              Download Now
+              <span>Download Now</span>
             </a>
             <p className="text-xs text-gray-500 text-center mt-2">
               High-quality A4 PNG ready to print
@@ -145,8 +134,8 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
               onChange={(e) => setEmail(e.target.value)}
               placeholder="your@email.com"
               required
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:border-brand-border focus:ring-2 focus:ring-brand-primary/20 outline-none transition-all"
               disabled={loading}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:border-brand-border focus:ring-2 focus:ring-brand-primary/20 outline-none transition-all"
             />
           </div>
 
@@ -156,20 +145,16 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn-secondary w-full flex items-center justify-center gap-2"
-          >
+          <button type="submit" disabled={loading} className="btn-secondary w-full flex items-center justify-center gap-2">
             {loading ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Sending...
+                <span>Sending...</span>
               </>
             ) : (
               <>
                 <Mail className="w-5 h-5" />
-                Send to Email
+                <span>Send to Email</span>
               </>
             )}
           </button>
