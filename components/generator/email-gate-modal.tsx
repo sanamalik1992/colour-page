@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { X, Mail, Loader2, CheckCircle, Download } from 'lucide-react'
+import { useState } from 'react'
+import { X, Mail, Loader2, CheckCircle } from 'lucide-react'
 
 interface EmailGateModalProps {
   jobId: string
@@ -14,22 +14,6 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null)
-
-  useEffect(() => {
-    async function getDownloadUrl() {
-      try {
-        const response = await fetch(`/api/status?jobId=${jobId}&sessionId=${sessionId}`)
-        const data = await response.json()
-        if (data.signedResultUrl) {
-          setDownloadUrl(data.signedResultUrl)
-        }
-      } catch (err) {
-        console.error('Failed to get download URL:', err)
-      }
-    }
-    getDownloadUrl()
-  }, [jobId, sessionId])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -75,8 +59,11 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
           <p className="text-gray-600 mb-4">
             We&apos;ve sent your colouring page to <strong>{email}</strong>
           </p>
-          <p className="text-sm text-gray-500">
-            The email should arrive within 1-2 minutes. Check your spam folder if you don&apos;t see it.
+          <p className="text-sm text-gray-500 mb-2">
+            The email should arrive within 1-2 minutes.
+          </p>
+          <p className="text-xs text-gray-400">
+            Check your spam folder if you don&apos;t see it.
           </p>
           <button onClick={onClose} className="mt-6 btn-secondary w-full">
             Close
@@ -101,29 +88,8 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
             Get Your Colouring Page
           </h2>
           <p className="text-gray-600">
-            Download directly or receive via email
+            Enter your email to receive your download link
           </p>
-        </div>
-
-        {downloadUrl && (
-          <div className="mb-6">
-            <a href={downloadUrl} download="coloring-page.png" className="btn-primary w-full flex items-center justify-center gap-2">
-              <Download className="w-5 h-5" />
-              <span>Download Now</span>
-            </a>
-            <p className="text-xs text-gray-500 text-center mt-2">
-              High-quality A4 PNG ready to print
-            </p>
-          </div>
-        )}
-
-        <div className="relative mb-4">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-300"></div>
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-white text-gray-500">Or send via email</span>
-          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -135,6 +101,7 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
               placeholder="your@email.com"
               required
               disabled={loading}
+              autoFocus
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:border-brand-border focus:ring-2 focus:ring-brand-primary/20 outline-none transition-all"
             />
           </div>
@@ -145,7 +112,7 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
             </div>
           )}
 
-          <button type="submit" disabled={loading} className="btn-secondary w-full flex items-center justify-center gap-2">
+          <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
             {loading ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -154,13 +121,13 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
             ) : (
               <>
                 <Mail className="w-5 h-5" />
-                <span>Send to Email</span>
+                <span>Send Download Link</span>
               </>
             )}
           </button>
 
           <p className="text-xs text-gray-500 text-center">
-            We&apos;ll never share your email. Link expires in 7 days.
+            We&apos;ll never share your email. The download link expires in 7 days.
           </p>
         </form>
       </div>

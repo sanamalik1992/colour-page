@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import sharp from 'sharp'
+import Replicate from 'replicate'
 import { nanoid } from 'nanoid'
 import type { SupabaseClient } from '@supabase/supabase-js'
+
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN!,
+})
 
 async function updateJobProgress(
   supabase: SupabaseClient, 
@@ -51,7 +55,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Starting coloring page generation for job:', jobId)
+    console.log('Starting AI coloring page generation for job:', jobId)
     
     await supabase
       .from('jobs')
@@ -62,80 +66,73 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', jobId)
 
-    // Download the original image
-    console.log('Downloading original image...')
-    const { data: imageData, error: downloadError } = await supabase.storage
+    // Get signed URL for uploaded image
+    const { data: signedUpload } = await supabase.storage
       .from('images')
-      .download(job.upload_path)
+      .createSignedUrl(job.upload_path, 3600)
 
-    if (downloadError || !imageData) {
-      throw new Error('Failed to download image')
+    if (!signedUpload) {
+      throw new Error('Failed to get upload URL')
     }
 
-    await updateJobProgress(supabase, jobId, 25)
+    await updateJobProgress(supabase, jobId, 20)
 
-    // Convert to buffer
-    const buffer = await imageData.arrayBuffer()
-    console.log('Image downloaded, size:', buffer.byteLength)
+    console.log('Calling Replicate AI to generate coloring page...')
 
-    await updateJobProgress(supabase, jobId, 40)
+    // Use Replicate's image-to-sketch model
+    const output = await replicate.run(
+      "tencentarc/gfpgan:9283608cc6b7be6b65a8e44983db012355fde4132009bf99d976b2f0896856a3",
+      {
+        input: {
+          img: signedUpload.signedUrl,
+          version: "v1.4",
+          scale: 2
+        }
+      }
+    )
 
-    // A4 dimensions at 300 DPI: 2480 x 3508 pixels
-    const A4_WIDTH = 2480
-    const A4_HEIGHT = 3508
+    console.log('Replicate AI completed, processing output...')
+    await updateJobProgress(supabase, jobId, 70)
 
-    console.log('Converting to coloring page...')
-    
-    // Create coloring page based on complexity
-    let processedBuffer: Buffer
+    // Extract image URL from output
+    let imageUrl: string | undefined
 
-    if (job.complexity === 'detailed') {
-      // Detailed version - more edges, finer lines
-      processedBuffer = await sharp(Buffer.from(buffer))
-        .resize(A4_WIDTH, A4_HEIGHT, { fit: 'inside', background: { r: 255, g: 255, b: 255 } })
-        .greyscale()
-        .normalize()
-        .sharpen()
-        .modulate({ brightness: 1.1, saturation: 0 })
-        .convolve({
-          width: 3,
-          height: 3,
-          kernel: [-1, -1, -1, -1, 8, -1, -1, -1, -1]
-        })
-        .threshold(100)
-        .negate()
-        .png({ quality: 100, compressionLevel: 9 })
-        .toBuffer()
-    } else {
-      // Simple version - bold, clear outlines
-      processedBuffer = await sharp(Buffer.from(buffer))
-        .resize(A4_WIDTH, A4_HEIGHT, { fit: 'inside', background: { r: 255, g: 255, b: 255 } })
-        .greyscale()
-        .normalize()
-        .blur(1)
-        .modulate({ brightness: 1.2 })
-        .convolve({
-          width: 3,
-          height: 3,
-          kernel: [-2, -2, -2, -2, 16, -2, -2, -2, -2]
-        })
-        .threshold(150)
-        .negate()
-        .png({ quality: 100, compressionLevel: 9 })
-        .toBuffer()
+    if (typeof output === 'string') {
+      imageUrl = output
+    } else if (Array.isArray(output) && output.length > 0) {
+      imageUrl = output[0] as string
+    } else if (output && typeof output === 'object' && 'output' in output) {
+      const outputObj = output as { output: string | string[] }
+      imageUrl = Array.isArray(outputObj.output) ? outputObj.output[0] : outputObj.output
     }
 
-    console.log('Coloring page created, size:', processedBuffer.length)
+    if (!imageUrl) {
+      console.error('Replicate output:', JSON.stringify(output))
+      throw new Error('No output from AI model')
+    }
+
+    console.log('Downloading generated image from:', imageUrl)
     await updateJobProgress(supabase, jobId, 80)
 
-    // Upload result
+    // Download the AI-generated image
+    const imageResponse = await fetch(imageUrl)
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to download image: ${imageResponse.statusText}`)
+    }
+
+    const imageBlob = await imageResponse.blob()
+    const imageBuffer = await imageBlob.arrayBuffer()
+
+    await updateJobProgress(supabase, jobId, 90)
+
+    // Upload result to storage
     const resultFileName = `results/${nanoid()}.png`
     
-    console.log('Uploading result to storage:', resultFileName)
+    console.log('Uploading AI result to storage:', resultFileName)
     
     const { error: uploadError } = await supabase.storage
       .from('images')
-      .upload(resultFileName, processedBuffer, {
+      .upload(resultFileName, imageBuffer, {
         contentType: 'image/png',
         cacheControl: '3600',
         upsert: false
@@ -188,4 +185,4 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export const maxDuration = 60 // 1 minute is plenty for Sharp
+export const maxDuration = 300
