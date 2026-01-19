@@ -289,7 +289,7 @@ export async function POST(request: NextRequest) {
       throw new Error(`Failed to download: ${imageResponse.statusText}`)
     }
 
-    let aiBuffer = Buffer.from(await imageResponse.arrayBuffer())
+    const aiBuffer = Buffer.from(await imageResponse.arrayBuffer())
     await updateJobProgress(supabase, jobId, 60)
 
     // POST-PROCESS: Clean up and enforce quality
