@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Starting AI coloring page generation for job:', jobId)
+    console.log('Starting AI coloring page generation')
     
     await supabase
       .from('jobs')
@@ -77,58 +77,84 @@ export async function POST(request: NextRequest) {
 
     await updateJobProgress(supabase, jobId, 20)
 
-    console.log('Calling Replicate AI to generate coloring page...')
+    console.log('Calling Replicate AI - Image to Line Art...')
 
-    // Use Replicate's image-to-sketch model
+    // Use proper sketch/lineart model
+    const prompt = job.complexity === 'detailed'
+      ? "detailed black and white line drawing, coloring book style, intricate outlines, many fine details, suitable for adult coloring"
+      : "simple black and white line drawing, coloring book style for children, bold clear outlines, minimal details"
+
     const output = await replicate.run(
-      "tencentarc/gfpgan:9283608cc6b7be6b65a8e44983db012355fde4132009bf99d976b2f0896856a3",
+      "jagilley/controlnet-scribble:435061a1b5a4c1e26740464bf786efdfa9cb3a3ac488595a2de23e143fdb0117",
       {
         input: {
-          img: signedUpload.signedUrl,
-          version: "v1.4",
-          scale: 2
+          image: signedUpload.signedUrl,
+          prompt: prompt,
+          a_prompt: "best quality, extremely detailed, perfect lines, black lines on white background, high contrast",
+          n_prompt: "color, colored, shading, gradient, blurry, photograph, realistic, filled areas, gray",
+          num_samples: "1",
+          image_resolution: "768",
+          detect_resolution: "768",
+          ddim_steps: 20,
+          guess_mode: false,
+          strength: 1.5,
+          scale: 9.0,
+          seed: -1,
+          eta: 0.0
         }
       }
     )
 
-    console.log('Replicate AI completed, processing output...')
+    console.log('AI processing complete, output received')
+    console.log('Output type:', typeof output)
+    console.log('Output:', output)
+    
     await updateJobProgress(supabase, jobId, 70)
 
-    // Extract image URL from output
+    // Extract image URL from various possible output formats
     let imageUrl: string | undefined
 
     if (typeof output === 'string') {
       imageUrl = output
-    } else if (Array.isArray(output) && output.length > 0) {
-      imageUrl = output[0] as string
-    } else if (output && typeof output === 'object' && 'output' in output) {
-      const outputObj = output as { output: string | string[] }
-      imageUrl = Array.isArray(outputObj.output) ? outputObj.output[0] : outputObj.output
+    } else if (Array.isArray(output)) {
+      if (output.length > 0) {
+        imageUrl = typeof output[0] === 'string' ? output[0] : undefined
+      }
+    } else if (output && typeof output === 'object') {
+      if ('output' in output) {
+        const out = (output as any).output
+        imageUrl = Array.isArray(out) ? out[0] : out
+      } else if ('url' in output) {
+        imageUrl = (output as any).url
+      } else if ('image' in output) {
+        imageUrl = (output as any).image
+      }
     }
 
-    if (!imageUrl) {
-      console.error('Replicate output:', JSON.stringify(output))
-      throw new Error('No output from AI model')
+    if (!imageUrl || typeof imageUrl !== 'string') {
+      console.error('Failed to extract image URL from output:', JSON.stringify(output, null, 2))
+      throw new Error('No valid image URL in AI output')
     }
 
-    console.log('Downloading generated image from:', imageUrl)
+    console.log('Downloading AI-generated image from:', imageUrl)
     await updateJobProgress(supabase, jobId, 80)
 
-    // Download the AI-generated image
+    // Download the AI-generated coloring page
     const imageResponse = await fetch(imageUrl)
     if (!imageResponse.ok) {
-      throw new Error(`Failed to download image: ${imageResponse.statusText}`)
+      throw new Error(`Failed to download AI image: ${imageResponse.status} ${imageResponse.statusText}`)
     }
 
     const imageBlob = await imageResponse.blob()
     const imageBuffer = await imageBlob.arrayBuffer()
 
+    console.log('Downloaded image size:', imageBuffer.byteLength, 'bytes')
     await updateJobProgress(supabase, jobId, 90)
 
     // Upload result to storage
     const resultFileName = `results/${nanoid()}.png`
     
-    console.log('Uploading AI result to storage:', resultFileName)
+    console.log('Uploading result to storage:', resultFileName)
     
     const { error: uploadError } = await supabase.storage
       .from('images')
@@ -186,3 +212,17 @@ export async function POST(request: NextRequest) {
 }
 
 export const maxDuration = 300
+```
+
+---
+
+## Check Vercel Logs
+
+After deploying, check Vercel logs to see what the AI is actually returning:
+
+1. Go to Vercel → Logs
+2. Upload an image
+3. Look for these log lines:
+```
+   Output type: ...
+   Output: ...
