@@ -109,9 +109,9 @@ export async function POST(request: NextRequest) {
               <td align="center">
                 <table cellpadding="0" cellspacing="0">
                   <tr>
-                    <td style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); border-radius: 8px;">
+                    <td style="background: #10B981; border-radius: 8px;">
                       <a href="${signedData.signedUrl}" 
-                         style="display: inline-block; color: white; text-decoration: none; padding: 16px 40px; font-weight: 600; font-size: 16px;">
+                         style="display: inline-block; color: #ffffff; text-decoration: none; padding: 16px 40px; font-weight: 600; font-size: 16px;">
                         Download Your Colouring Page
                       </a>
                     </td>
@@ -120,6 +120,11 @@ export async function POST(request: NextRequest) {
               </td>
             </tr>
           </table>
+
+          <p style="font-size: 14px; color: #666; text-align: center; margin: 20px 0;">
+            If the button above doesn&apos;t work, copy this link:<br>
+            <a href="${signedData.signedUrl}" style="color: #10B981; word-break: break-all;">${signedData.signedUrl}</a>
+          </p>
 
           <table width="100%" cellpadding="0" cellspacing="0" style="margin: 30px 0 0 0;">
             <tr>
