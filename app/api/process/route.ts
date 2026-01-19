@@ -111,22 +111,28 @@ export async function POST(request: NextRequest) {
 
     let imageUrl: string | undefined
 
-    if (typeof output === 'string') {
-      imageUrl = output
-    } else if (Array.isArray(output)) {
-      if (output.length > 0) {
-        imageUrl = typeof output[0] === 'string' ? output[0] : undefined
-      }
-    } else if (output && typeof output === 'object') {
-      if ('output' in output) {
-        const out = (output as any).output
-        imageUrl = Array.isArray(out) ? out[0] : out
-      } else if ('url' in output) {
-        imageUrl = (output as any).url
-      } else if ('image' in output) {
-        imageUrl = (output as any).image
-      }
+if (typeof output === 'string') {
+  imageUrl = output
+} else if (Array.isArray(output)) {
+  if (output.length > 0) {
+    imageUrl = typeof output[0] === 'string' ? output[0] : undefined
+  }
+} else if (output && typeof output === 'object') {
+  const outputObj = output as Record<string, unknown>
+  
+  if ('output' in outputObj) {
+    const out = outputObj.output
+    if (typeof out === 'string') {
+      imageUrl = out
+    } else if (Array.isArray(out) && out.length > 0 && typeof out[0] === 'string') {
+      imageUrl = out[0]
     }
+  } else if ('url' in outputObj && typeof outputObj.url === 'string') {
+    imageUrl = outputObj.url
+  } else if ('image' in outputObj && typeof outputObj.image === 'string') {
+    imageUrl = outputObj.image
+  }
+}
 
     if (!imageUrl || typeof imageUrl !== 'string') {
       console.error('Failed to extract image URL from output:', JSON.stringify(output, null, 2))
