@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import Replicate from 'replicate'
+import sharp from 'sharp'
 import { nanoid } from 'nanoid'
 import type { SupabaseClient } from '@supabase/supabase-js'
-
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN!,
-})
 
 async function updateJobProgress(
   supabase: SupabaseClient, 
@@ -55,95 +51,91 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Starting processing for job:', jobId)
+    console.log('Starting coloring page generation for job:', jobId)
     
     await supabase
       .from('jobs')
       .update({ 
         status: 'processing',
-        progress: 5,
+        progress: 10,
         updated_at: new Date().toISOString()
       })
       .eq('id', jobId)
 
-    // Get signed URL for uploaded image
-    const { data: signedUpload } = await supabase.storage
+    // Download the original image
+    console.log('Downloading original image...')
+    const { data: imageData, error: downloadError } = await supabase.storage
       .from('images')
-      .createSignedUrl(job.upload_path, 3600)
+      .download(job.upload_path)
 
-    if (!signedUpload) {
-      throw new Error('Failed to get upload URL')
+    if (downloadError || !imageData) {
+      throw new Error('Failed to download image')
     }
 
-    await updateJobProgress(supabase, jobId, 15)
+    await updateJobProgress(supabase, jobId, 25)
 
-    console.log('Calling Replicate API for image-to-sketch conversion...')
+    // Convert to buffer
+    const buffer = await imageData.arrayBuffer()
+    console.log('Image downloaded, size:', buffer.byteLength)
 
-    // Use sketch model for coloring pages
-    const output = await replicate.run(
-      "jagilley/controlnet-scribble:435061a1b5a4c1e26740464bf786efdfa9cb3a3ac488595a2de23e143fdb0117",
-      {
-        input: {
-          image: signedUpload.signedUrl,
-          prompt: job.complexity === 'detailed' 
-            ? "detailed black and white line art coloring page, intricate patterns, many fine lines, suitable for adult coloring books"
-            : "simple black and white line art coloring page, bold clear outlines, suitable for children",
-          a_prompt: "best quality, extremely detailed, clean black lines, white background, high contrast, coloring book style",
-          n_prompt: "color, shading, gradient, blurry, lowres, bad quality, watermark, photograph, realistic",
-          num_samples: "1",
-          image_resolution: "768",
-          detect_resolution: "768",
-          ddim_steps: 20,
-          guess_mode: false,
-          strength: 1.5,
-          scale: 9.0,
-          eta: 0.0
-        }
-      }
-    )
+    await updateJobProgress(supabase, jobId, 40)
 
-    console.log('Replicate response received')
-    await updateJobProgress(supabase, jobId, 70)
+    // A4 dimensions at 300 DPI: 2480 x 3508 pixels
+    const A4_WIDTH = 2480
+    const A4_HEIGHT = 3508
 
-    // Get the output image URL
-    let imageUrl: string | undefined
+    console.log('Converting to coloring page...')
+    
+    // Create coloring page based on complexity
+    let processedBuffer: Buffer
 
-    if (Array.isArray(output) && output.length > 0) {
-      imageUrl = output[0] as string
-    } else if (typeof output === 'string') {
-      imageUrl = output
-    } else if (output && typeof output === 'object' && 'output' in output) {
-      const outputObj = output as { output: string | string[] }
-      imageUrl = Array.isArray(outputObj.output) ? outputObj.output[0] : outputObj.output
+    if (job.complexity === 'detailed') {
+      // Detailed version - more edges, finer lines
+      processedBuffer = await sharp(Buffer.from(buffer))
+        .resize(A4_WIDTH, A4_HEIGHT, { fit: 'inside', background: { r: 255, g: 255, b: 255 } })
+        .greyscale()
+        .normalize()
+        .sharpen()
+        .modulate({ brightness: 1.1, saturation: 0 })
+        .convolve({
+          width: 3,
+          height: 3,
+          kernel: [-1, -1, -1, -1, 8, -1, -1, -1, -1]
+        })
+        .threshold(100)
+        .negate()
+        .png({ quality: 100, compressionLevel: 9 })
+        .toBuffer()
+    } else {
+      // Simple version - bold, clear outlines
+      processedBuffer = await sharp(Buffer.from(buffer))
+        .resize(A4_WIDTH, A4_HEIGHT, { fit: 'inside', background: { r: 255, g: 255, b: 255 } })
+        .greyscale()
+        .normalize()
+        .blur(1)
+        .modulate({ brightness: 1.2 })
+        .convolve({
+          width: 3,
+          height: 3,
+          kernel: [-2, -2, -2, -2, 16, -2, -2, -2, -2]
+        })
+        .threshold(150)
+        .negate()
+        .png({ quality: 100, compressionLevel: 9 })
+        .toBuffer()
     }
 
-    if (!imageUrl) {
-      console.error('Replicate output:', JSON.stringify(output))
-      throw new Error('No output URL from AI model')
-    }
-
-    console.log('Downloading generated image from:', imageUrl)
+    console.log('Coloring page created, size:', processedBuffer.length)
     await updateJobProgress(supabase, jobId, 80)
 
-    // Download the generated image
-    const imageResponse = await fetch(imageUrl)
-    if (!imageResponse.ok) {
-      throw new Error(`Failed to download image: ${imageResponse.statusText}`)
-    }
-
-    const imageBlob = await imageResponse.blob()
-    const imageBuffer = await imageBlob.arrayBuffer()
-
-    await updateJobProgress(supabase, jobId, 90)
-
-    // Upload result to storage
+    // Upload result
     const resultFileName = `results/${nanoid()}.png`
     
     console.log('Uploading result to storage:', resultFileName)
     
     const { error: uploadError } = await supabase.storage
       .from('images')
-      .upload(resultFileName, imageBuffer, {
+      .upload(resultFileName, processedBuffer, {
         contentType: 'image/png',
         cacheControl: '3600',
         upsert: false
@@ -196,4 +188,4 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export const maxDuration = 300
+export const maxDuration = 60 // 1 minute is plenty for Sharp
