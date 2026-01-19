@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
 
     // Send email via Resend
     const { data: emailData, error: emailError } = await resend.emails.send({
-      from: 'onboarding@resend.dev',
+      from: 'Colour.page <noreply@colour.page>',
       to: email,
       subject: '🎨 Your Colouring Page is Ready!',
       html: `
