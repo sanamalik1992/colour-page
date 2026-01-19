@@ -35,9 +35,10 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
 
       setSuccess(true)
       
+      // Auto close after 5 seconds
       setTimeout(() => {
         onClose()
-      }, 3000)
+      }, 5000)
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send email')
@@ -56,9 +57,19 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
             Check Your Inbox! 📧
           </h2>
-          <p className="text-gray-600">
+          <p className="text-gray-600 mb-4">
             We&apos;ve sent your colouring page to <strong>{email}</strong>
           </p>
+          <p className="text-sm text-gray-500">
+            The email should arrive within 1-2 minutes. Check your spam folder if you don&apos;t see it.
+          </p>
+          
+          <button
+            onClick={onClose}
+            className="mt-6 btn-secondary w-full"
+          >
+            Close
+          </button>
         </div>
       </div>
     )
@@ -82,7 +93,7 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
             Get Your Colouring Page
           </h2>
           <p className="text-gray-600">
-            Enter your email to receive your download link
+            Enter your email to receive your download link instantly
           </p>
         </div>
 
@@ -94,8 +105,9 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
               onChange={(e) => setEmail(e.target.value)}
               placeholder="your@email.com"
               required
-              className="form-input"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:border-brand-border focus:ring-2 focus:ring-brand-primary/20 outline-none transition-all"
               disabled={loading}
+              autoFocus
             />
           </div>
 
@@ -108,7 +120,7 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
           <button
             type="submit"
             disabled={loading}
-            className="btn-primary w-full"
+            className="btn-primary w-full flex items-center justify-center gap-2"
           >
             {loading ? (
               <>
