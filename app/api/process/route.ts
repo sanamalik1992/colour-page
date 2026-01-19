@@ -66,7 +66,6 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', jobId)
 
-    // Get signed URL for uploaded image
     const { data: signedUpload } = await supabase.storage
       .from('images')
       .createSignedUrl(job.upload_path, 3600)
@@ -79,7 +78,6 @@ export async function POST(request: NextRequest) {
 
     console.log('Calling Replicate AI - Image to Line Art...')
 
-    // Use proper sketch/lineart model
     const prompt = job.complexity === 'detailed'
       ? "detailed black and white line drawing, coloring book style, intricate outlines, many fine details, suitable for adult coloring"
       : "simple black and white line drawing, coloring book style for children, bold clear outlines, minimal details"
@@ -105,13 +103,12 @@ export async function POST(request: NextRequest) {
       }
     )
 
-    console.log('AI processing complete, output received')
+    console.log('AI processing complete')
     console.log('Output type:', typeof output)
     console.log('Output:', output)
     
     await updateJobProgress(supabase, jobId, 70)
 
-    // Extract image URL from various possible output formats
     let imageUrl: string | undefined
 
     if (typeof output === 'string') {
@@ -139,7 +136,6 @@ export async function POST(request: NextRequest) {
     console.log('Downloading AI-generated image from:', imageUrl)
     await updateJobProgress(supabase, jobId, 80)
 
-    // Download the AI-generated coloring page
     const imageResponse = await fetch(imageUrl)
     if (!imageResponse.ok) {
       throw new Error(`Failed to download AI image: ${imageResponse.status} ${imageResponse.statusText}`)
@@ -151,7 +147,6 @@ export async function POST(request: NextRequest) {
     console.log('Downloaded image size:', imageBuffer.byteLength, 'bytes')
     await updateJobProgress(supabase, jobId, 90)
 
-    // Upload result to storage
     const resultFileName = `results/${nanoid()}.png`
     
     console.log('Uploading result to storage:', resultFileName)
@@ -172,7 +167,6 @@ export async function POST(request: NextRequest) {
     console.log('Result saved successfully')
     await updateJobProgress(supabase, jobId, 95)
 
-    // Update job as completed
     await supabase
       .from('jobs')
       .update({
@@ -212,17 +206,3 @@ export async function POST(request: NextRequest) {
 }
 
 export const maxDuration = 300
-```
-
----
-
-## Check Vercel Logs
-
-After deploying, check Vercel logs to see what the AI is actually returning:
-
-1. Go to Vercel → Logs
-2. Upload an image
-3. Look for these log lines:
-```
-   Output type: ...
-   Output: ...
