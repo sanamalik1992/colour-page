@@ -224,21 +224,24 @@ export async function POST(request: NextRequest) {
     const isDetailed = job.complexity === 'detailed'
 
     const output = await replicate.run(
-      "rossjillian/controlnet:795433b19458d0f4fa172a7ccf93178d2adb1cb8ab2ad6c8faecc48e2b3fa67c",
+      "jagilley/controlnet-scribble:435061a1b5a4c1e26740464bf786efdfa9cb3a3ac488595a2de23e143fdb0117",
       {
         input: {
           image: signedUpload.signedUrl,
           prompt: isDetailed
-            ? "professional children's coloring book page, thick clean black outlines, detailed line art, cartoon style, white background"
-            : "simple children's coloring book page, very thick bold black outlines, simple cartoon, white background",
-          negative_prompt: "shading, grayscale, pencil, sketch, stippling, dots, noise, texture, photograph, realistic, grey, gradient, blur",
-          structure: "lineart",
-          num_samples: 1,
-          image_resolution: 768,
-          ddim_steps: 20,
-          scale: 9,
-          a_prompt: "best quality, thick black lines, white background",
-          n_prompt: "shading, grey, dots, noise, texture"
+            ? "professional children's coloring book page, thick clean black outlines, detailed line art, cartoon style, high quality printable coloring sheet, white background, bold lines"
+            : "simple children's coloring book page, very thick bold black outlines, simple cartoon style, easy for kids, high quality printable coloring sheet, white background, bold lines",
+          a_prompt: "best quality, extremely detailed, thick black lines, white background, clean outlines, professional coloring book, smooth lines, continuous strokes, high contrast, sharp, bold outlines",
+          n_prompt: "shading, grayscale, pencil, sketch, stippling, dots, noise, faded, low contrast, texture, background details, photograph, realistic, grey, gradient, blur, messy, broken lines, thin lines, hatching, crosshatch, watermark, signature",
+          num_samples: "1",
+          image_resolution: "768",
+          detect_resolution: "768",
+          ddim_steps: 30,
+          guess_mode: false,
+          strength: 2.0,
+          scale: 12.0,
+          seed: -1,
+          eta: 0.0
         }
       }
     )
