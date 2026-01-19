@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import Replicate from 'replicate'
 import { nanoid } from 'nanoid'
 import type { SupabaseClient } from '@supabase/supabase-js'
-
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN!,
-})
 
 async function updateJobProgress(
   supabase: SupabaseClient, 
@@ -38,6 +33,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    console.log('Processing job:', jobId)
     const supabase = createServiceClient()
 
     const { data: job, error: jobError } = await supabase
@@ -47,12 +43,15 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (jobError || !job) {
+      console.error('Job not found:', jobError)
       return NextResponse.json(
         { error: 'Job not found' },
         { status: 404 }
       )
     }
 
+    console.log('Starting processing for job:', jobId)
+    
     await supabase
       .from('jobs')
       .update({ 
@@ -62,71 +61,40 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', jobId)
 
-    const { data: signedUpload } = await supabase.storage
-      .from('images')
-      .createSignedUrl(job.upload_path, 3600)
-
-    if (!signedUpload) {
-      throw new Error('Failed to get upload URL')
-    }
-
-    await updateJobProgress(supabase, jobId, 15)
-
-    await updateJobProgress(supabase, jobId, 30)
-
-    console.log('Starting AI generation...')
+    // Simulate progress
+    await updateJobProgress(supabase, jobId, 20)
+    await new Promise(resolve => setTimeout(resolve, 1000))
     
-    const output = await replicate.run(
-      "jagilley/controlnet-scribble:435061a1b5a4c1e26740464bf786efdfa9cb3a3ac488595a2de23e143fdb0117",
-      {
-        input: {
-          image: signedUpload.signedUrl,
-          prompt: "coloring book page, black and white line art, simple outlines, no shading, high contrast",
-          a_prompt: "best quality, extremely detailed, clean lines, black outlines, white background",
-          n_prompt: "color, shading, gradient, blurry, lowres, bad quality, watermark",
-          num_samples: "1",
-          image_resolution: "512",
-          detect_resolution: "512",
-          ddim_steps: 20,
-          guess_mode: false,
-          strength: 1.0,
-          scale: 9.0,
-          eta: 0.0
-        }
-      }
-    )
-
+    await updateJobProgress(supabase, jobId, 40)
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
+    await updateJobProgress(supabase, jobId, 60)
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
     await updateJobProgress(supabase, jobId, 80)
+    await new Promise(resolve => setTimeout(resolve, 1000))
 
-    const imageUrl = Array.isArray(output) ? output[0] : output
-    
-    if (!imageUrl || typeof imageUrl !== 'string') {
-      throw new Error('No output from AI model')
-    }
-
-    console.log('Downloading generated image...')
-    const imageResponse = await fetch(imageUrl)
-    const imageBlob = await imageResponse.blob()
-    const imageBuffer = await imageBlob.arrayBuffer()
-
-    await updateJobProgress(supabase, jobId, 90)
-
+    // Generate result filename
     const resultFileName = `results/${nanoid()}.png`
     
-    const { error: uploadError } = await supabase.storage
+    console.log('Copying image to results...')
+    
+    // For now, just copy the uploaded image to results
+    // Later we'll replace this with real AI processing
+    const { error: copyError } = await supabase.storage
       .from('images')
-      .upload(resultFileName, imageBuffer, {
-        contentType: 'image/png',
-        cacheControl: '3600',
-        upsert: false
-      })
+      .copy(job.upload_path, resultFileName)
 
-    if (uploadError) {
-      throw new Error(`Failed to save result: ${uploadError.message}`)
+    if (copyError) {
+      console.error('Copy error:', copyError)
+      throw new Error(`Failed to save result: ${copyError.message}`)
     }
 
+    console.log('Result saved:', resultFileName)
+    
     await updateJobProgress(supabase, jobId, 95)
 
+    // Update job as completed
     await supabase
       .from('jobs')
       .update({
