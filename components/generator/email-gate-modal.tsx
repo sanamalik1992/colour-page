@@ -16,7 +16,6 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
   const [error, setError] = useState('')
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null)
 
-  // Get download URL when modal opens
   useEffect(() => {
     async function getDownloadUrl() {
       try {
@@ -113,7 +112,6 @@ export function EmailGateModal({ jobId, sessionId, onClose }: EmailGateModalProp
           </p>
         </div>
 
-        {/* Direct Download Option */}
         {downloadUrl && (
           <div className="mb-6">
             
