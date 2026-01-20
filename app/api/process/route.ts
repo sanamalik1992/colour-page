@@ -9,7 +9,6 @@ const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN!,
 })
 
-// A4 dimensions at 300 DPI
 const A4_WIDTH = 2480
 const A4_HEIGHT = 3508
 const MARGIN = 120
@@ -30,78 +29,39 @@ async function updateJobProgress(
     .eq('id', jobId)
 }
 
-async function validateColoringPage(buffer: Buffer): Promise<{ valid: boolean; reason?: string }> {
-  try {
-    const { data, info } = await sharp(buffer)
-      .greyscale()
-      .raw()
-      .toBuffer({ resolveWithObject: true })
-
-    const pixels = new Uint8Array(data.buffer)
-    let blackPixels = 0
-    let whitePixels = 0
-    let greyPixels = 0
-    const totalPixels = pixels.length
-
-    for (let i = 0; i < pixels.length; i++) {
-      const value = pixels[i]
-      if (value < 40) {
-        blackPixels++
-      } else if (value > 220) {
-        whitePixels++
-      } else {
-        greyPixels++
-      }
-    }
-
-    const greyRatio = greyPixels / totalPixels
-    const blackRatio = blackPixels / totalPixels
-
-    console.log('Quality check:', {
-      blackRatio: (blackRatio * 100).toFixed(2) + '%',
-      whiteRatio: (whitePixels / totalPixels * 100).toFixed(2) + '%',
-      greyRatio: (greyRatio * 100).toFixed(2) + '%'
-    })
-
-    if (greyRatio > 0.15) {
-      return { valid: false, reason: 'Too much grey/stippling detected' }
-    }
-
-    if (blackRatio < 0.01) {
-      return { valid: false, reason: 'Lines too faint or missing' }
-    }
-
-    return { valid: true }
-  } catch (error) {
-    console.error('Quality validation error:', error)
-    return { valid: false, reason: 'Validation failed' }
-  }
-}
-
-async function cleanupColoringPage(inputBuffer: Buffer, complexity: string): Promise<Buffer> {
+async function cleanupAndFormatColoringPage(inputBuffer: Buffer): Promise<Buffer> {
   console.log('Post-processing: cleaning up coloring page...')
 
+  // Convert to greyscale
   let processed = await sharp(inputBuffer)
     .greyscale()
     .normalize()
     .toBuffer()
 
+  // Remove noise
   processed = await sharp(processed)
-    .median(complexity === 'detailed' ? 1 : 2)
+    .median(2)
     .toBuffer()
 
-  const dilationKernel = complexity === 'detailed'
-    ? { width: 3, height: 3, kernel: [0, 1, 0, 1, 1, 1, 0, 1, 0], scale: 1, offset: 0 }
-    : { width: 5, height: 5, kernel: [0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0], scale: 1, offset: 0 }
+  // Increase line thickness
+  const dilationKernel = {
+    width: 3,
+    height: 3,
+    kernel: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    scale: 1,
+    offset: 0
+  }
 
   processed = await sharp(processed)
     .convolve(dilationKernel)
     .toBuffer()
 
+  // Hard threshold to pure black/white
   processed = await sharp(processed)
-    .threshold(140, { greyscale: false })
+    .threshold(130, { greyscale: false })
     .toBuffer()
 
+  // Force pure #000000 and #FFFFFF
   const { data, info } = await sharp(processed)
     .raw()
     .toBuffer({ resolveWithObject: true })
@@ -122,16 +82,11 @@ async function cleanupColoringPage(inputBuffer: Buffer, complexity: string): Pro
     .png({ quality: 100, compressionLevel: 9 })
     .toBuffer()
 
-  const smoothed = await sharp(cleanBuffer)
-    .blur(0.3)
-    .threshold(128)
-    .toBuffer()
-
-  return smoothed
+  return cleanBuffer
 }
 
 async function layoutToA4(contentBuffer: Buffer): Promise<Buffer> {
-  console.log('Laying out on A4 canvas with margins...')
+  console.log('Laying out on A4 canvas...')
 
   const metadata = await sharp(contentBuffer).metadata()
   
@@ -184,7 +139,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Job ID required' }, { status: 400 })
     }
 
-    console.log('=== STARTING PROFESSIONAL COLORING PAGE GENERATION ===')
+    console.log('=== STARTING SD LINEART CONTROLNET COLORING PAGE ===')
     console.log('Job ID:', jobId)
     
     const supabase = createServiceClient()
@@ -209,6 +164,7 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', jobId)
 
+    // Get signed URL for uploaded image
     const { data: signedUpload } = await supabase.storage
       .from('images')
       .createSignedUrl(job.upload_path, 3600)
@@ -219,75 +175,88 @@ export async function POST(request: NextRequest) {
 
     await updateJobProgress(supabase, jobId, 10)
 
-    console.log('Calling Replicate AI for professional coloring page conversion...')
+    console.log('Calling SD 1.5 Lineart ControlNet...')
 
     const isDetailed = job.complexity === 'detailed'
 
+    // Use SD 1.5 Lineart ControlNet
     const output = await replicate.run(
-      "jagilley/controlnet-scribble:435061a1b5a4c1e26740464bf786efdfa9cb3a3ac488595a2de23e143fdb0117",
+      "pnyompen/sd-lineart-controlnet:4a0778f3b7272cfa9e68e67c909a1f10daadeb24bc51fcc91bf3f4c611704958",
       {
         input: {
           image: signedUpload.signedUrl,
           prompt: isDetailed
-            ? "professional children's coloring book page, thick clean black outlines, detailed line art, cartoon style, high quality printable coloring sheet, white background, bold lines"
-            : "simple children's coloring book page, very thick bold black outlines, simple cartoon style, easy for kids, high quality printable coloring sheet, white background, bold lines",
-          a_prompt: "best quality, extremely detailed, thick black lines, white background, clean outlines, professional coloring book, smooth lines, continuous strokes, high contrast, sharp, bold outlines",
-          n_prompt: "shading, grayscale, pencil, sketch, stippling, dots, noise, faded, low contrast, texture, background details, photograph, realistic, grey, gradient, blur, messy, broken lines, thin lines, hatching, crosshatch, watermark, signature",
-          num_samples: "1",
-          image_resolution: "768",
-          detect_resolution: "768",
-          ddim_steps: 30,
-          guess_mode: false,
-          strength: 2.0,
-          scale: 12.0,
-          seed: -1,
-          eta: 0.0
+            ? "professional children's coloring book page, thick clean black outlines, detailed line art, cartoon illustration style, high quality printable coloring sheet, crisp inked outlines, white background"
+            : "simple children's coloring book page, very thick bold black outlines, simple cartoon illustration, easy for kids, high quality printable coloring sheet, crisp inked outlines, white background",
+          negative_prompt: "shading, grayscale, pencil texture, sketch, stippling, dots, noise, faded lines, low contrast, texture, background clutter, photograph, realistic, grey tones, gradient, blur, messy lines, broken lines, thin lines, hatching, crosshatch, watermark, signature, text",
+          num_inference_steps: 30,
+          guidance_scale: 9.0,
+          controlnet_conditioning_scale: 1.5,
+          seed: -1
         }
       }
     )
 
-    console.log('AI generation complete')
+    console.log('SD Lineart generation complete')
     console.log('Output type:', typeof output)
-    console.log('Output value:', JSON.stringify(output, null, 2))
 
     await updateJobProgress(supabase, jobId, 50)
 
+    // Extract image URL
     let imageUrl: string | undefined
 
-    try {
-      if (typeof output === 'string') {
-        imageUrl = output
-      } else if (Array.isArray(output)) {
-        imageUrl = output.find((item): item is string => typeof item === 'string')
-      } else if (output && typeof output === 'object') {
-        const obj = output as Record<string, unknown>
-        
-        for (const key of ['output', 'image', 'url', '0']) {
-          if (key in obj) {
-            const value = obj[key]
-            if (typeof value === 'string') {
-              imageUrl = value
+    if (typeof output === 'string') {
+      imageUrl = output
+      console.log('Output is string URL:', imageUrl)
+    } else if (Array.isArray(output)) {
+      console.log('Output is array, length:', output.length)
+      
+      // Find first valid URL
+      for (const item of output) {
+        if (typeof item === 'string' && item.startsWith('http')) {
+          imageUrl = item
+          console.log('Found URL in array:', imageUrl)
+          break
+        }
+      }
+    } else if (output && typeof output === 'object') {
+      console.log('Output is object, keys:', Object.keys(output))
+      
+      const obj = output as Record<string, unknown>
+      
+      // Try common output keys
+      const keys = ['output', 'image', 'url', 'result', '0']
+      
+      for (const key of keys) {
+        if (key in obj) {
+          const value = obj[key]
+          
+          if (typeof value === 'string' && value.startsWith('http')) {
+            imageUrl = value
+            console.log('Found URL at key:', key)
+            break
+          } else if (Array.isArray(value) && value.length > 0) {
+            const first = value[0]
+            if (typeof first === 'string' && first.startsWith('http')) {
+              imageUrl = first
+              console.log('Found URL in array at key:', key)
               break
-            } else if (Array.isArray(value) && value.length > 0) {
-              imageUrl = value.find((item): item is string => typeof item === 'string')
-              if (imageUrl) break
             }
           }
         }
       }
-    } catch (parseError) {
-      console.error('Error parsing output:', parseError)
     }
 
-    if (!imageUrl) {
+    if (!imageUrl || !imageUrl.startsWith('http')) {
       console.error('FAILED TO EXTRACT IMAGE URL')
-      console.error('Full output:', JSON.stringify(output, null, 2))
-      throw new Error('AI model did not return a valid image URL. Check Vercel logs for details.')
+      console.error('Output:', JSON.stringify(output, null, 2))
+      throw new Error('SD Lineart model did not return a valid image URL')
     }
 
-    console.log('Successfully extracted image URL:', imageUrl)
+    console.log('✓ Successfully extracted image URL:', imageUrl)
 
-    console.log('Downloading AI output...')
+    // Download AI-generated image
+    console.log('Downloading generated coloring page...')
     const imageResponse = await fetch(imageUrl)
     if (!imageResponse.ok) {
       throw new Error(`Failed to download: ${imageResponse.statusText}`)
@@ -296,31 +265,17 @@ export async function POST(request: NextRequest) {
     const aiBuffer = Buffer.from(await imageResponse.arrayBuffer())
     await updateJobProgress(supabase, jobId, 60)
 
-    console.log('Post-processing AI output...')
-    let processedBuffer = await cleanupColoringPage(aiBuffer, job.complexity || 'simple')
+    // Post-process: clean up and enforce quality
+    console.log('Post-processing coloring page...')
+    const processedBuffer = await cleanupAndFormatColoringPage(aiBuffer)
     await updateJobProgress(supabase, jobId, 75)
 
-    const validation = await validateColoringPage(processedBuffer)
-    
-    if (!validation.valid) {
-      console.warn('Quality check FAILED:', validation.reason)
-      console.log('Applying stronger cleanup...')
-      
-      processedBuffer = await cleanupColoringPage(aiBuffer, 'simple')
-      
-      const secondValidation = await validateColoringPage(processedBuffer)
-      if (!secondValidation.valid) {
-        console.error('Quality check failed again - using best effort output')
-      }
-    } else {
-      console.log('Quality check PASSED ✓')
-    }
-
-    await updateJobProgress(supabase, jobId, 85)
-
+    // Layout to A4
+    console.log('Creating A4 layout...')
     const a4Buffer = await layoutToA4(processedBuffer)
-    await updateJobProgress(supabase, jobId, 92)
+    await updateJobProgress(supabase, jobId, 90)
 
+    // Upload result
     const resultFileName = `results/${nanoid()}.png`
     console.log('Uploading final result:', resultFileName)
     
