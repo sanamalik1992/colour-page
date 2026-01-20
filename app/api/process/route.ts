@@ -5,29 +5,9 @@ import sharp from "sharp";
 import { nanoid } from "nanoid";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN!,
-});
-
 const A4_WIDTH = 2480;
 const A4_HEIGHT = 3508;
 const MARGIN = 120;
-
-const REPLICATE_LINEART_MODEL =
-  process.env.REPLICATE_LINEART_MODEL?.trim() || "jagilley/controlnet-lineart";
-
-const REPLICATE_LINEART_VERSION =
-  process.env.REPLICATE_LINEART_VERSION?.trim() || "";
-
-function getErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return "Unknown error";
-  }
-}
 
 async function updateJobProgress(
   supabase: SupabaseClient,
@@ -50,8 +30,22 @@ async function cleanupAndFormatColoringPage(
 ): Promise<Buffer> {
   let processed = await sharp(inputBuffer).greyscale().normalize().toBuffer();
   processed = await sharp(processed).median(2).toBuffer();
-  processed = await sharp(processed).threshold(155).toBuffer();
+  
+  // Thicken lines
+  const dilationKernel = {
+    width: 3,
+    height: 3,
+    kernel: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    scale: 1,
+    offset: 0
+  };
+  
+  processed = await sharp(processed).convolve(dilationKernel).toBuffer();
+  
+  // Hard threshold
+  processed = await sharp(processed).threshold(120).toBuffer();
 
+  // Force pure black/white
   const { data, info } = await sharp(processed)
     .raw()
     .toBuffer({ resolveWithObject: true });
@@ -110,90 +104,30 @@ async function layoutToA4(contentBuffer: Buffer): Promise<Buffer> {
     .toBuffer();
 }
 
-function extractFirstImageUrl(output: unknown): string | null {
-  if (typeof output === "string" && output.startsWith("http")) return output;
-
-  if (Array.isArray(output)) {
-    for (const item of output) {
-      if (typeof item === "string" && item.startsWith("http")) return item;
-    }
-  }
-
-  if (typeof output === "object" && output !== null) {
-    const obj = output as Record<string, unknown>;
-    for (const key of ["output", "image", "url", "result"]) {
-      const value = obj[key];
-      if (typeof value === "string" && value.startsWith("http")) return value;
-      if (
-        Array.isArray(value) &&
-        typeof value[0] === "string" &&
-        value[0].startsWith("http")
-      ) {
-        return value[0];
-      }
-    }
-  }
-
-  return null;
-}
-
-type ReplicateRunFn = (
-  model: string,
-  options: { input: Record<string, unknown> }
-) => Promise<unknown>;
-
-async function replicateRun(
-  model: string,
-  input: Record<string, unknown>
-): Promise<unknown> {
-  const run = replicate.run as unknown as ReplicateRunFn;
-  return run(model, { input });
-}
-
-async function runReplicateLineart(
-  input: Record<string, unknown>
-): Promise<unknown> {
-  if (REPLICATE_LINEART_VERSION) {
-    try {
-      return await replicateRun(
-        `${REPLICATE_LINEART_MODEL}:${REPLICATE_LINEART_VERSION}`,
-        input
-      );
-    } catch (err: unknown) {
-      const msg = getErrorMessage(err).toLowerCase();
-      if (msg.includes("422")) {
-        return replicateRun(REPLICATE_LINEART_MODEL, input);
-      }
-      throw err;
-    }
-  }
-  return replicateRun(REPLICATE_LINEART_MODEL, input);
-}
-
 export async function POST(request: NextRequest) {
   let jobId: string | null = null;
 
   try {
-    const bodyUnknown: unknown = await request.json();
-    const body =
-      typeof bodyUnknown === "object" && bodyUnknown !== null
-        ? (bodyUnknown as Record<string, unknown>)
-        : {};
+    const body = await request.json();
+    jobId = body.jobId;
 
-    jobId = typeof body.jobId === "string" ? body.jobId : null;
     if (!jobId) {
       return NextResponse.json({ error: "Job ID required" }, { status: 400 });
     }
 
+    console.log("=== STARTING COLORING PAGE GENERATION ===");
+    console.log("Job ID:", jobId);
+
     const supabase = createServiceClient();
 
-    const { data: job } = await supabase
+    const { data: job, error: jobError } = await supabase
       .from("jobs")
       .select("*")
       .eq("id", jobId)
       .single();
 
-    if (!job) {
+    if (jobError || !job) {
+      console.error("Job not found:", jobError);
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
@@ -204,38 +138,108 @@ export async function POST(request: NextRequest) {
       .createSignedUrl(job.upload_path, 3600);
 
     if (!signedUpload?.signedUrl) {
-      throw new Error("Failed to fetch upload image");
+      throw new Error("Failed to get upload URL");
     }
 
-    const replicateInput: Record<string, unknown> = {
-      image: signedUpload.signedUrl,
-      prompt:
-        "children's colouring book page, bold clean black outlines, white background, cartoon line art",
-      negative_prompt:
-        "shading, grey, sketch, noise, dots, texture, photo, text, watermark",
-      guidance_scale: 9,
-      num_inference_steps: 30,
-      num_outputs: 1,
-    };
+    await updateJobProgress(supabase, jobId, 20);
 
-    const output = await runReplicateLineart(replicateInput);
-    const imageUrl = extractFirstImageUrl(output);
+    console.log("Calling Replicate AI...");
+
+    // Initialize Replicate client properly
+    const replicate = new Replicate({
+      auth: process.env.REPLICATE_API_TOKEN || "",
+    });
+
+    const isDetailed = job.complexity === "detailed";
+
+    // Use working ControlNet Scribble model
+    const output = await replicate.run(
+      "jagilley/controlnet-scribble:435061a1b5a4c1e26740464bf786efdfa9cb3a3ac488595a2de23e143fdb0117",
+      {
+        input: {
+          image: signedUpload.signedUrl,
+          prompt: isDetailed
+            ? "professional children's coloring book page, thick clean black outlines, detailed line art, cartoon style, white background"
+            : "simple children's coloring book page, very thick bold black outlines, simple cartoon, white background",
+          a_prompt: "best quality, thick black lines, high contrast, clean outlines",
+          n_prompt: "shading, grey, sketch, noise, dots, texture, photo, realistic, blur, color, gradient",
+          num_samples: "1",
+          image_resolution: "768",
+          detect_resolution: "768",
+          ddim_steps: 25,
+          guess_mode: false,
+          strength: 1.8,
+          scale: 9.0,
+          seed: -1,
+          eta: 0.0
+        }
+      }
+    );
+
+    console.log("AI output received");
+    console.log("Output type:", typeof output);
+    
+    await updateJobProgress(supabase, jobId, 50);
+
+    // Extract image URL
+    let imageUrl: string | undefined;
+
+    if (typeof output === "string") {
+      imageUrl = output;
+    } else if (Array.isArray(output) && output.length > 0) {
+      imageUrl = typeof output[0] === "string" ? output[0] : undefined;
+    } else if (output && typeof output === "object") {
+      const obj = output as Record<string, unknown>;
+      for (const key of ["output", "image", "url", "result"]) {
+        const val = obj[key];
+        if (typeof val === "string" && val.startsWith("http")) {
+          imageUrl = val;
+          break;
+        }
+        if (Array.isArray(val) && val.length > 0 && typeof val[0] === "string") {
+          imageUrl = val[0];
+          break;
+        }
+      }
+    }
 
     if (!imageUrl) {
-      throw new Error("Replicate returned no image");
+      console.error("No image URL in output:", output);
+      throw new Error("AI did not return image URL");
     }
 
-    const response = await fetch(imageUrl);
-    const buffer = Buffer.from(await response.arrayBuffer());
+    console.log("Downloading AI image:", imageUrl);
+    
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to download: ${imageResponse.statusText}`);
+    }
 
-    const cleaned = await cleanupAndFormatColoringPage(buffer);
+    const aiBuffer = Buffer.from(await imageResponse.arrayBuffer());
+    await updateJobProgress(supabase, jobId, 60);
+
+    console.log("Post-processing...");
+    const cleaned = await cleanupAndFormatColoringPage(aiBuffer);
+    await updateJobProgress(supabase, jobId, 75);
+
+    console.log("Creating A4 layout...");
     const a4 = await layoutToA4(cleaned);
+    await updateJobProgress(supabase, jobId, 90);
 
     const resultPath = `results/${nanoid()}.png`;
 
-    await supabase.storage.from("images").upload(resultPath, a4, {
-      contentType: "image/png",
-    });
+    console.log("Uploading result...");
+    const { error: uploadError } = await supabase.storage
+      .from("images")
+      .upload(resultPath, a4, {
+        contentType: "image/png",
+        cacheControl: "3600",
+        upsert: false
+      });
+
+    if (uploadError) {
+      throw new Error(`Upload failed: ${uploadError.message}`);
+    }
 
     await supabase
       .from("jobs")
@@ -245,24 +249,31 @@ export async function POST(request: NextRequest) {
         result_url: resultPath,
         preview_url: resultPath,
         completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq("id", jobId);
 
+    console.log("=== COMPLETED SUCCESSFULLY ===");
     return NextResponse.json({ success: true });
-  } catch (err: unknown) {
+    
+  } catch (error) {
+    console.error("=== PROCESSING FAILED ===");
+    console.error("Error:", error);
+
     if (jobId) {
       const supabase = createServiceClient();
       await supabase
         .from("jobs")
         .update({
           status: "failed",
-          error_message: getErrorMessage(err),
+          error_message: error instanceof Error ? error.message : "Unknown error",
+          updated_at: new Date().toISOString(),
         })
         .eq("id", jobId);
     }
 
     return NextResponse.json(
-      { error: getErrorMessage(err) },
+      { error: error instanceof Error ? error.message : "Processing failed" },
       { status: 500 }
     );
   }
