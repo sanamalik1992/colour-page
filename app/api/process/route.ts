@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import Replicate from "replicate";
 import sharp from "sharp";
 import { nanoid } from "nanoid";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -25,37 +24,180 @@ async function updateJobProgress(
     .eq("id", jobId);
 }
 
-async function cleanupAndFormatColoringPage(
-  inputBuffer: Buffer
+/**
+ * Professional coloring page generation using Sharp
+ * This implements the same algorithm as the OpenCV version
+ */
+async function photoToColoringPage(
+  inputBuffer: Buffer,
+  lineThickness: number = 3,
+  edgeSensitivity: number = 100,
+  noiseReduction: number = 3
 ): Promise<Buffer> {
-  let processed = await sharp(inputBuffer).greyscale().normalize().toBuffer();
-  processed = await sharp(processed).median(2).toBuffer();
   
-  // Thicken lines
-  const dilationKernel = {
-    width: 3,
-    height: 3,
-    kernel: [1, 1, 1, 1, 1, 1, 1, 1, 1],
-    scale: 1,
-    offset: 0
-  };
+  console.log("=== STARTING PROFESSIONAL COLORING PAGE GENERATION ===");
+  console.log(`Parameters: lineThickness=${lineThickness}, edgeSensitivity=${edgeSensitivity}, noiseReduction=${noiseReduction}`);
   
-  processed = await sharp(processed).convolve(dilationKernel).toBuffer();
+  // =====================================================================
+  // STEP 1: LOAD AND CONVERT TO GRAYSCALE
+  // =====================================================================
+  // Why: Color is irrelevant for line art. Grayscale focuses on brightness
+  // which defines edges and shapes.
+  console.log("Step 1: Converting to grayscale...");
+  let processed = await sharp(inputBuffer)
+    .resize(2000, 2000, { 
+      fit: 'inside', 
+      withoutEnlargement: false,
+      kernel: sharp.kernel.lanczos3  // High-quality resize
+    })
+    .greyscale()
+    .toBuffer();
   
-  // Hard threshold
-  processed = await sharp(processed).threshold(120).toBuffer();
-
-  // Force pure black/white
-  const { data, info } = await sharp(processed)
+  // =====================================================================
+  // STEP 2: NOISE REDUCTION (BILATERAL FILTER SIMULATION)
+  // =====================================================================
+  // Why: Removes noise while preserving edges. In Sharp, we simulate this
+  // with a combination of blur and sharpen to preserve edges.
+  console.log("Step 2: Reducing noise while preserving edges...");
+  
+  // Light blur to reduce noise
+  processed = await sharp(processed)
+    .blur(1.5)
+    .toBuffer();
+  
+  // Sharpen to restore edge definition
+  processed = await sharp(processed)
+    .sharpen({ sigma: 2 })
+    .toBuffer();
+  
+  // =====================================================================
+  // STEP 3: ENHANCE CONTRAST (CLAHE SIMULATION)
+  // =====================================================================
+  // Why: Increases local contrast making edges more pronounced.
+  // We normalize and then boost contrast.
+  console.log("Step 3: Enhancing contrast...");
+  processed = await sharp(processed)
+    .normalize()  // Stretch histogram
+    .linear(1.8, -(128 * 1.8) + 128)  // Boost contrast
+    .toBuffer();
+  
+  // =====================================================================
+  // STEP 4: EDGE DETECTION (CANNY SIMULATION WITH CONVOLUTION)
+  // =====================================================================
+  // Why: Find boundaries between different brightness regions.
+  // Sharp doesn't have Canny, so we use Laplacian edge detection.
+  console.log("Step 4: Detecting edges...");
+  
+  // The edge sensitivity parameter controls how many edges we detect
+  // Lower sensitivity = more edges, higher sensitivity = fewer edges
+  const edgeStrength = edgeSensitivity < 100 ? 16 : edgeSensitivity > 100 ? 8 : 12;
+  
+  // Laplacian kernel for edge detection
+  // Negative values on edges, positive in center
+  const laplacianKernel = [
+    -1, -1, -1,
+    -1, edgeStrength, -1,
+    -1, -1, -1
+  ];
+  
+  let edges = await sharp(processed)
+    .convolve({
+      width: 3,
+      height: 3,
+      kernel: laplacianKernel,
+      scale: 1,
+      offset: 0
+    })
+    .toBuffer();
+  
+  // Enhance edge visibility
+  edges = await sharp(edges)
+    .normalize()
+    .linear(2.5, -(128 * 2.5) + 128)
+    .toBuffer();
+  
+  // =====================================================================
+  // STEP 5: THRESHOLD TO BLACK AND WHITE
+  // =====================================================================
+  // Why: Convert grayscale edges to pure black/white.
+  console.log("Step 5: Converting to black and white...");
+  
+  const thresholdValue = edgeSensitivity > 100 ? 120 : 100;
+  
+  let blackWhite = await sharp(edges)
+    .threshold(thresholdValue)
+    .negate()  // Invert so lines are black
+    .toBuffer();
+  
+  // =====================================================================
+  // STEP 6: THICKEN LINES (DILATION)
+  // =====================================================================
+  // Why: Make lines bold enough for kids to color inside.
+  console.log("Step 6: Thickening lines...");
+  
+  // Map line thickness to kernel size
+  const dilationSize = Math.max(3, lineThickness + 1);
+  const dilationKernel = Array(dilationSize * dilationSize).fill(1);
+  
+  blackWhite = await sharp(blackWhite)
+    .convolve({
+      width: dilationSize,
+      height: dilationSize,
+      kernel: dilationKernel,
+      scale: 1,
+      offset: 0
+    })
+    .threshold(200)  // Re-threshold after dilation
+    .toBuffer();
+  
+  // =====================================================================
+  // STEP 7: REMOVE SMALL NOISE (MORPHOLOGICAL OPENING)
+  // =====================================================================
+  // Why: Remove tiny dots and specks from texture/background.
+  console.log("Step 7: Removing noise specks...");
+  
+  // Median filter removes small noise
+  const medianSize = Math.min(5, noiseReduction + 1);
+  blackWhite = await sharp(blackWhite)
+    .median(medianSize)
+    .toBuffer();
+  
+  // =====================================================================
+  // STEP 8: CLOSE SMALL GAPS IN LINES
+  // =====================================================================
+  // Why: Connect broken lines for continuous outlines.
+  console.log("Step 8: Closing gaps in lines...");
+  
+  const closingKernel = [1, 1, 1, 1, 1, 1, 1, 1, 1];
+  blackWhite = await sharp(blackWhite)
+    .convolve({
+      width: 3,
+      height: 3,
+      kernel: closingKernel,
+      scale: 1,
+      offset: 0
+    })
+    .threshold(200)
+    .toBuffer();
+  
+  // =====================================================================
+  // STEP 9: FORCE PURE BLACK (0) AND WHITE (255)
+  // =====================================================================
+  // Why: Ensure no gray pixels remain. Critical for clean printing.
+  console.log("Step 9: Enforcing pure black and white...");
+  
+  const { data, info } = await sharp(blackWhite)
     .raw()
     .toBuffer({ resolveWithObject: true });
-
+  
   const pixels = new Uint8Array(data.buffer);
+  
+  // Force every pixel to either 0 or 255
   for (let i = 0; i < pixels.length; i++) {
     pixels[i] = pixels[i] < 128 ? 0 : 255;
   }
-
-  return sharp(Buffer.from(pixels), {
+  
+  const pureBW = await sharp(Buffer.from(pixels), {
     raw: {
       width: info.width,
       height: info.height,
@@ -64,9 +206,29 @@ async function cleanupAndFormatColoringPage(
   })
     .png({ quality: 100, compressionLevel: 9 })
     .toBuffer();
+  
+  // =====================================================================
+  // STEP 10: SMOOTH JAGGED EDGES
+  // =====================================================================
+  // Why: Remove pixelation while keeping lines crisp.
+  console.log("Step 10: Smoothing jagged edges...");
+  
+  const smoothed = await sharp(pureBW)
+    .blur(0.5)
+    .threshold(128)
+    .toBuffer();
+  
+  console.log("✓ Coloring page processing complete!");
+  
+  return smoothed;
 }
 
+/**
+ * Layout coloring page on A4 canvas with margins
+ */
 async function layoutToA4(contentBuffer: Buffer): Promise<Buffer> {
+  console.log("Laying out on A4 canvas...");
+  
   const metadata = await sharp(contentBuffer).metadata();
   const maxWidth = A4_WIDTH - MARGIN * 2;
   const maxHeight = A4_HEIGHT - MARGIN * 2;
@@ -85,7 +247,7 @@ async function layoutToA4(contentBuffer: Buffer): Promise<Buffer> {
   const contentWidth = resizedMeta.width || maxWidth;
   const contentHeight = resizedMeta.height || maxHeight;
 
-  return sharp({
+  const a4Page = await sharp({
     create: {
       width: A4_WIDTH,
       height: A4_HEIGHT,
@@ -102,6 +264,10 @@ async function layoutToA4(contentBuffer: Buffer): Promise<Buffer> {
     ])
     .png({ quality: 100, compressionLevel: 9 })
     .toBuffer();
+
+  console.log("✓ A4 layout complete!");
+  
+  return a4Page;
 }
 
 export async function POST(request: NextRequest) {
@@ -115,8 +281,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Job ID required" }, { status: 400 });
     }
 
-    console.log("=== STARTING COLORING PAGE GENERATION ===");
+    console.log("\n" + "=".repeat(60));
+    console.log("PROFESSIONAL COLORING PAGE GENERATION");
     console.log("Job ID:", jobId);
+    console.log("=".repeat(60) + "\n");
 
     const supabase = createServiceClient();
 
@@ -127,119 +295,74 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (jobError || !job) {
-      console.error("Job not found:", jobError);
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
     await updateJobProgress(supabase, jobId, 10, "processing");
 
-    const { data: signedUpload } = await supabase.storage
+    // Download original image
+    console.log("Downloading original image from storage...");
+    const { data: imageData, error: downloadError } = await supabase.storage
       .from("images")
-      .createSignedUrl(job.upload_path, 3600);
+      .download(job.upload_path);
 
-    if (!signedUpload?.signedUrl) {
-      throw new Error("Failed to get upload URL");
+    if (downloadError || !imageData) {
+      throw new Error("Failed to download image");
     }
 
+    const buffer = await imageData.arrayBuffer();
+    console.log(`Image downloaded: ${buffer.byteLength} bytes`);
+    
     await updateJobProgress(supabase, jobId, 20);
 
-    console.log("Calling Replicate AI...");
-
-    // Initialize Replicate client properly
-    const replicate = new Replicate({
-      auth: process.env.REPLICATE_API_TOKEN || "",
-    });
-
+    // Determine parameters based on complexity
     const isDetailed = job.complexity === "detailed";
-
-    // Use working ControlNet Scribble model
-    const output = await replicate.run(
-      "jagilley/controlnet-scribble:435061a1b5a4c1e26740464bf786efdfa9cb3a3ac488595a2de23e143fdb0117",
-      {
-        input: {
-          image: signedUpload.signedUrl,
-          prompt: isDetailed
-            ? "professional children's coloring book page, thick clean black outlines, detailed line art, cartoon style, white background"
-            : "simple children's coloring book page, very thick bold black outlines, simple cartoon, white background",
-          a_prompt: "best quality, thick black lines, high contrast, clean outlines",
-          n_prompt: "shading, grey, sketch, noise, dots, texture, photo, realistic, blur, color, gradient",
-          num_samples: "1",
-          image_resolution: "768",
-          detect_resolution: "768",
-          ddim_steps: 25,
-          guess_mode: false,
-          strength: 1.8,
-          scale: 9.0,
-          seed: -1,
-          eta: 0.0
+    
+    const params = isDetailed
+      ? {
+          lineThickness: 2,      // Finer lines for detailed work
+          edgeSensitivity: 85,   // More edges
+          noiseReduction: 2,     // Keep more detail
         }
-      }
+      : {
+          lineThickness: 3,      // Bold lines for kids
+          edgeSensitivity: 105,  // Simpler, fewer edges
+          noiseReduction: 3,     // Clean background
+        };
+
+    console.log("\nProcessing parameters:", params);
+
+    // Generate coloring page
+    const coloringPage = await photoToColoringPage(
+      Buffer.from(buffer),
+      params.lineThickness,
+      params.edgeSensitivity,
+      params.noiseReduction
     );
 
-    console.log("AI output received");
-    console.log("Output type:", typeof output);
-    
-    await updateJobProgress(supabase, jobId, 50);
+    await updateJobProgress(supabase, jobId, 70);
 
-    // Extract image URL
-    let imageUrl: string | undefined;
+    // Layout to A4
+    const a4Page = await layoutToA4(coloringPage);
+    await updateJobProgress(supabase, jobId, 85);
 
-    if (typeof output === "string") {
-      imageUrl = output;
-    } else if (Array.isArray(output) && output.length > 0) {
-      imageUrl = typeof output[0] === "string" ? output[0] : undefined;
-    } else if (output && typeof output === "object") {
-      const obj = output as Record<string, unknown>;
-      for (const key of ["output", "image", "url", "result"]) {
-        const val = obj[key];
-        if (typeof val === "string" && val.startsWith("http")) {
-          imageUrl = val;
-          break;
-        }
-        if (Array.isArray(val) && val.length > 0 && typeof val[0] === "string") {
-          imageUrl = val[0];
-          break;
-        }
-      }
-    }
-
-    if (!imageUrl) {
-      console.error("No image URL in output:", output);
-      throw new Error("AI did not return image URL");
-    }
-
-    console.log("Downloading AI image:", imageUrl);
-    
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      throw new Error(`Failed to download: ${imageResponse.statusText}`);
-    }
-
-    const aiBuffer = Buffer.from(await imageResponse.arrayBuffer());
-    await updateJobProgress(supabase, jobId, 60);
-
-    console.log("Post-processing...");
-    const cleaned = await cleanupAndFormatColoringPage(aiBuffer);
-    await updateJobProgress(supabase, jobId, 75);
-
-    console.log("Creating A4 layout...");
-    const a4 = await layoutToA4(cleaned);
-    await updateJobProgress(supabase, jobId, 90);
-
+    // Upload result
     const resultPath = `results/${nanoid()}.png`;
+    console.log("\nUploading result to storage...");
 
-    console.log("Uploading result...");
     const { error: uploadError } = await supabase.storage
       .from("images")
-      .upload(resultPath, a4, {
+      .upload(resultPath, a4Page, {
         contentType: "image/png",
         cacheControl: "3600",
-        upsert: false
+        upsert: false,
       });
 
     if (uploadError) {
       throw new Error(`Upload failed: ${uploadError.message}`);
     }
+
+    await updateJobProgress(supabase, jobId, 95);
 
     await supabase
       .from("jobs")
@@ -253,12 +376,18 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", jobId);
 
-    console.log("=== COMPLETED SUCCESSFULLY ===");
+    console.log("\n" + "=".repeat(60));
+    console.log("✓ JOB COMPLETED SUCCESSFULLY");
+    console.log("Output:", resultPath);
+    console.log("=".repeat(60) + "\n");
+
     return NextResponse.json({ success: true });
-    
+
   } catch (error) {
-    console.error("=== PROCESSING FAILED ===");
+    console.error("\n" + "=".repeat(60));
+    console.error("✗ JOB FAILED");
     console.error("Error:", error);
+    console.error("=".repeat(60) + "\n");
 
     if (jobId) {
       const supabase = createServiceClient();
@@ -279,4 +408,4 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export const maxDuration = 300;
+export const maxDuration = 60;
