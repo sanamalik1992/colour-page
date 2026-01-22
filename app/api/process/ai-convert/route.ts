@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '@0/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import OpenAI from 'openai'
 import { nanoid } from 'nanoid'
 
