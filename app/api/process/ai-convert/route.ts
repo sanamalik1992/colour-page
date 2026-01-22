@@ -9,12 +9,11 @@ const openaiApiKey = process.env.OPENAI_API_KEY;
 const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
 
 export async function POST(request: NextRequest) {
-  // CRITICAL: use service-role client so RLS doesn't block updates
   const supabase = supabaseAdmin;
 
   try {
     const body = await request.json().catch(() => ({}));
-    const jobId = body?.jobId;
+    const jobId: string | undefined = body?.jobId;
 
     if (!jobId) {
       return NextResponse.json({ error: "Job ID required" }, { status: 400 });
@@ -37,31 +36,32 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Mark as processing
     const { error: startErr } = await supabase
       .from("jobs")
-      .update({ status: "processing", progress: 10 })
+      .update({ status: "processing", progress: 10, error_message: null })
       .eq("id", jobId);
 
     if (startErr) {
       console.error("Failed to set job to processing:", startErr);
-      // continue anyway, but this usually indicates env/RLS/service role issues
     }
 
-    // Upload path (your jobs currently store upload_path; preview_url may be null)
-    const uploadPath: string | undefined = job.preview_url || job.upload_path;
+    // upload_path is the canonical field in your DB
+    const uploadPath: string | undefined = job.upload_path || job.preview_url;
 
     if (!uploadPath) {
       await supabase
         .from("jobs")
         .update({
           status: "failed",
-          error_message: "No upload path on job (missing upload_path/preview_url)",
+          error_message: "No upload path on job (missing upload_path)",
         })
         .eq("id", jobId);
 
       return NextResponse.json({ error: "No upload path on job" }, { status: 500 });
     }
 
+    // Download original image
     const { data: fileData, error: downloadError } = await supabase.storage
       .from("images")
       .download(uploadPath);
@@ -84,18 +84,19 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await fileData.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Derive mime type without using `any`
-    let mimeType = "image/jpeg";
-    if (fileData instanceof Blob && typeof fileData.type === "string" && fileData.type) {
-      mimeType = fileData.type;
-    }
+    // Blob.type is safest (no any)
+    const mimeType =
+      fileData instanceof Blob && fileData.type ? fileData.type : "image/jpeg";
 
     const base64Image = buffer.toString("base64");
 
     if (!openai) {
       await supabase
         .from("jobs")
-        .update({ status: "failed", error_message: "OPENAI_API_KEY not configured" })
+        .update({
+          status: "failed",
+          error_message: "OPENAI_API_KEY not configured",
+        })
         .eq("id", jobId);
 
       return NextResponse.json(
@@ -104,10 +105,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1) Prompt from GPT-4o vision
-    const { error: p25Err } = await supabase.from("jobs").update({ progress: 25 }).eq("id", jobId);
+    // Progress: generating prompt
+    const { error: p25Err } = await supabase
+      .from("jobs")
+      .update({ progress: 25 })
+      .eq("id", jobId);
+
     if (p25Err) console.error("Failed to update progress to 25:", p25Err);
 
+    // 1) Vision prompt generation
     const visionResponse = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
@@ -116,7 +122,10 @@ export async function POST(request: NextRequest) {
           content: [
             {
               type: "image_url",
-              image_url: { url: `data:${mimeType};base64,${base64Image}`, detail: "low" },
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`,
+                detail: "low",
+              },
             },
             {
               type: "text",
@@ -139,7 +148,10 @@ export async function POST(request: NextRequest) {
     if (!prompt) {
       await supabase
         .from("jobs")
-        .update({ status: "failed", error_message: "No prompt returned from GPT-4o" })
+        .update({
+          status: "failed",
+          error_message: "No prompt returned from GPT-4o",
+        })
         .eq("id", jobId);
 
       return NextResponse.json(
@@ -148,10 +160,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { error: p55Err } = await supabase.from("jobs").update({ progress: 55 }).eq("id", jobId);
+    // Progress: generating image
+    const { error: p55Err } = await supabase
+      .from("jobs")
+      .update({ progress: 55 })
+      .eq("id", jobId);
+
     if (p55Err) console.error("Failed to update progress to 55:", p55Err);
 
     // 2) Generate colouring page image
+    // IMPORTANT: Do NOT pass response_format (your error)
     const imageResponse = await openai.images.generate({
       model: "gpt-image-1-mini",
       prompt:
@@ -162,32 +180,38 @@ export async function POST(request: NextRequest) {
         `- A4 printable colouring book style`,
       n: 1,
       size: "1024x1024",
+      // If your SDK ever complains about this field, remove it.
       quality: "standard",
-      response_format: "url",
     });
 
-    const generatedImageUrl = imageResponse.data?.[0]?.url;
-    if (!generatedImageUrl) {
+    const b64 = imageResponse.data?.[0]?.b64_json;
+    if (!b64) {
       await supabase
         .from("jobs")
-        .update({ status: "failed", error_message: "OpenAI returned no image URL" })
+        .update({
+          status: "failed",
+          error_message: "OpenAI returned no image data (b64_json missing)",
+        })
         .eq("id", jobId);
 
       return NextResponse.json(
-        { error: "OpenAI returned no image URL" },
+        { error: "OpenAI returned no image data" },
         { status: 500 }
       );
     }
 
-    const res = await fetch(generatedImageUrl);
-    const arrBuf = await res.arrayBuffer();
-    const generatedBuffer = Buffer.from(arrBuf);
+    const generatedBuffer = Buffer.from(b64, "base64");
 
-    const { error: p85Err } = await supabase.from("jobs").update({ progress: 85 }).eq("id", jobId);
+    const { error: p85Err } = await supabase
+      .from("jobs")
+      .update({ progress: 85 })
+      .eq("id", jobId);
+
     if (p85Err) console.error("Failed to update progress to 85:", p85Err);
 
-    // Store result
+    // Store result in Supabase Storage
     const resultPath = `results/${nanoid()}.png`;
+
     const { error: uploadError } = await supabase.storage
       .from("images")
       .upload(resultPath, generatedBuffer, {
@@ -205,9 +229,13 @@ export async function POST(request: NextRequest) {
         })
         .eq("id", jobId);
 
-      return NextResponse.json({ error: "Failed to upload result image" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Failed to upload result image" },
+        { status: 500 }
+      );
     }
 
+    // Mark job complete
     const { error: doneErr } = await supabase
       .from("jobs")
       .update({
@@ -223,7 +251,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, jobId, resultPath });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown server error";
-    console.error("Process job error:", error);
+    console.error("AI convert error:", error);
     return NextResponse.json(
       { error: "Internal server error", details: message },
       { status: 500 }
