@@ -88,7 +88,11 @@ CRITICAL REQUIREMENTS:
       response_format: "url",
     });
 
-    const generatedImageUrl = imageResponse.data[0].url;
+    const generatedImageUrl = imageResponse.data[0]?.url;
+
+if (!generatedImageUrl) {
+  throw new Error('No image URL returned from API');
+}
 
     return NextResponse.json({
       success: true,
