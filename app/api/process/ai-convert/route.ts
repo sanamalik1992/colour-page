@@ -88,11 +88,11 @@ CRITICAL REQUIREMENTS:
       response_format: "url",
     });
 
-    const generatedImageUrl = imageResponse.data[0]?.url;
-
-if (!generatedImageUrl) {
+    if (!imageResponse.data || !imageResponse.data[0] || !imageResponse.data[0].url) {
   throw new Error('No image URL returned from API');
 }
+
+const generatedImageUrl = imageResponse.data[0].url;
 
     return NextResponse.json({
       success: true,
