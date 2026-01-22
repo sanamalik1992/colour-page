@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     // Always trigger process using absolute origin (Vercel-safe)
     const origin = request.nextUrl.origin;
 
-    fetch(`${origin}/api/process`, {
+    fetch(`${origin}/api/process/ai-convert`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: job.id }),
