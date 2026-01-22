@@ -59,7 +59,10 @@ export async function POST(request: NextRequest) {
 
     const arrayBuffer = await fileData.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
-    const mimeType = (fileData as any).type || 'image/jpeg'
+    let mimeType = 'image/jpeg'
+if (typeof (fileData as unknown as { type?: unknown })?.type === 'string') {
+  mimeType = (fileData as unknown as { type: string }).type
+}
     const base64Image = buffer.toString('base64')
 
     if (!openai) {
