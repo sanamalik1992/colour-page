@@ -25,14 +25,14 @@ export async function GET(
 
     if (job.preview_url) {
       const { data } = await supabaseAdmin.storage
-        .from('uploads')
+        .from('images')
         .createSignedUrl(job.preview_url, 3600)
       previewSignedUrl = data?.signedUrl || null
     }
 
     if (job.result_url) {
       const { data } = await supabaseAdmin.storage
-        .from('results')
+        .from('images')
         .createSignedUrl(job.result_url, 3600)
       resultSignedUrl = data?.signedUrl || null
     }
