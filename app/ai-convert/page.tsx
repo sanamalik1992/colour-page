@@ -1,4 +1,4 @@
-import PhotoToColouringConverter from '../components/PhotoToColouringConverter';
+import PhotoToColouringConverter from '@/components/PhotoToColouringConverter';
 
 export const metadata = {
   title: 'AI Photo to Colouring Page | colour.page',
