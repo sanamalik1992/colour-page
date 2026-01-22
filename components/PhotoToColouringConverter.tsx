@@ -54,8 +54,9 @@ export default function PhotoToColouringConverter() {
       }
 
       setResult(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to convert image');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to convert image';
+      setError(errorMessage);
       console.error('Conversion error:', err);
     } finally {
       setLoading(false);
