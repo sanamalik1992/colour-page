@@ -14,7 +14,7 @@ function getString(formData: FormData, key: string): string {
 
 export async function POST(request: NextRequest) {
   try {
-    // Create Supabase client INSIDE the handler (avoid build-time env eval)
+    // IMPORTANT: anon client is fine here (just inserting job + upload)
     const supabase = await createClient();
 
     const formData = await request.formData();
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const addTextOverlay = getString(formData, "addTextOverlay") === "true";
     const sessionId = getString(formData, "sessionId") || nanoid(12);
 
-    // Validate file
+    // ---- Validation ----
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Determine extension safely
+    // ---- File naming ----
     const originalName = file.name || "upload";
     const extFromName = originalName.includes(".")
       ? originalName.split(".").pop()?.toLowerCase()
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     const fileName = `${nanoid()}.${fileExt}`;
     const filePath = `uploads/${fileName}`;
 
-    // Upload to Supabase Storage
+    // ---- Upload to storage ----
     const { error: uploadError } = await supabase.storage
       .from("images")
       .upload(filePath, file, {
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create job record
+    // ---- Create job ----
     const { data: job, error: jobError } = await supabase
       .from("jobs")
       .insert({
@@ -84,11 +84,11 @@ export async function POST(request: NextRequest) {
         upload_path: filePath,
         original_filename: originalName,
         status: "pending",
+        progress: 0,
         complexity,
         instructions: instructions || null,
         custom_text: customText || null,
         add_text_overlay: addTextOverlay,
-        progress: 0,
       })
       .select()
       .single();
@@ -101,16 +101,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Trigger processing (use relative URL — no NEXT_PUBLIC_APP_URL needed)
-    fetch(new URL("/api/process", request.url), {
+    // ---- CRITICAL FIX ----
+    // Always trigger process using absolute origin (Vercel-safe)
+    const origin = request.nextUrl.origin;
+
+    fetch(`${origin}/api/process`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: job.id }),
-    }).catch((err: unknown) => console.error("Failed to trigger processing:", err));
+    }).catch((err) =>
+      console.error("Failed to trigger processing:", err)
+    );
 
-    return NextResponse.json({ jobId: job.id, status: "success" });
+    return NextResponse.json({
+      jobId: job.id,
+      status: "success",
+    });
   } catch (error: unknown) {
     console.error("Create job error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
