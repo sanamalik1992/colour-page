@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
       n: 1,
       size: "1024x1024",
       // If your SDK ever complains about this field, remove it.
-      quality: "standard",
+      quality: "high",
     });
 
     const b64 = imageResponse.data?.[0]?.b64_json;
