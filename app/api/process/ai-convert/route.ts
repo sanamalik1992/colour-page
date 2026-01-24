@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import OpenAI from "openai";
+import sharp from "sharp";
 import { nanoid } from "nanoid";
 
 export const runtime = "nodejs";
@@ -65,110 +65,118 @@ export async function POST(request: NextRequest) {
     }
 
     const arrayBuffer = await fileData.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const mimeType = fileData.type || "image/jpeg";
-    const base64Image = buffer.toString("base64");
+    const inputBuffer = Buffer.from(arrayBuffer);
 
-    await supabase.from("jobs").update({ progress: 20 }).eq("id", jobId);
+    await supabase.from("jobs").update({ progress: 25 }).eq("id", jobId);
 
-    if (!process.env.OPENAI_API_KEY) {
-      await supabase
-        .from("jobs")
-        .update({ status: "failed", error_message: "OPENAI_API_KEY not configured" })
-        .eq("id", jobId);
-      return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 });
-    }
+    console.log(`Job ${jobId}: Processing image with Sharp edge detection...`);
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    // Step 1: Use GPT-4o to analyze the image and create a detailed description
-    await supabase.from("jobs").update({ progress: 30 }).eq("id", jobId);
-
-    console.log(`Job ${jobId}: Analyzing image with GPT-4o...`);
-
-    const visionResponse = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${base64Image}`,
-                detail: "low",
-              },
-            },
-            {
-              type: "text",
-              text: `Briefly describe the main subject in this image for a coloring page. Max 50 words. Focus on shape and outline only.`,
-            },
-          ],
-        },
-      ],
-      max_tokens: 100,
-    });
-
-    const imageDescription = visionResponse.choices?.[0]?.message?.content?.trim();
+    // Determine settings based on complexity
+    const isDetailed = job.complexity === "detailed";
     
-    if (!imageDescription) {
-      await supabase
-        .from("jobs")
-        .update({ status: "failed", error_message: "Failed to analyze image" })
-        .eq("id", jobId);
-      return NextResponse.json({ error: "Failed to analyze image" }, { status: 500 });
-    }
+    // Edge detection parameters
+    const blurSigma = isDetailed ? 0.5 : 1.0; // Less blur = more detail
+    const threshold = isDetailed ? 20 : 35; // Lower threshold = more lines
+    const lineThickness = isDetailed ? 1 : 2;
 
-    console.log(`Job ${jobId}: Image description: ${imageDescription.substring(0, 100)}...`);
+    // Step 1: Load and resize image to a good working size
+    const resizedImage = await sharp(inputBuffer)
+      .resize(1024, 1024, { 
+        fit: 'inside', 
+        withoutEnlargement: false 
+      })
+      .toBuffer();
 
-    await supabase.from("jobs").update({ progress: 50 }).eq("id", jobId);
+    await supabase.from("jobs").update({ progress: 35 }).eq("id", jobId);
 
-    // Step 2: Generate coloring page with DALL-E 3
-    console.log(`Job ${jobId}: Generating coloring page with DALL-E 3...`);
+    // Step 2: Convert to grayscale
+    const grayscale = await sharp(resizedImage)
+      .grayscale()
+      .toBuffer();
 
-    const dallePrompt = `Simple black and white coloring book page of: ${imageDescription}. Bold black outlines on white background. No shading, no gray, no gradients. Clean line art for children to color.`;
+    await supabase.from("jobs").update({ progress: 45 }).eq("id", jobId);
 
-    const imageResponse = await openai.images.generate({
-      model: "dall-e-2",
-      prompt: dallePrompt,
-      n: 1,
-      size: "1024x1024",
-    });
+    // Step 3: Apply slight blur to reduce noise
+    const blurred = await sharp(grayscale)
+      .blur(blurSigma)
+      .toBuffer();
 
-    const generatedImageUrl = imageResponse.data?.[0]?.url;
+    await supabase.from("jobs").update({ progress: 55 }).eq("id", jobId);
 
-    if (!generatedImageUrl) {
-      await supabase
-        .from("jobs")
-        .update({ status: "failed", error_message: "DALL-E returned no image" })
-        .eq("id", jobId);
-      return NextResponse.json({ error: "DALL-E returned no image" }, { status: 500 });
-    }
+    // Step 4: Edge detection using Laplacian-like convolution
+    // This creates a edge-detected version
+    const edges = await sharp(blurred)
+      .convolve({
+        width: 3,
+        height: 3,
+        kernel: [
+          -1, -1, -1,
+          -1,  8, -1,
+          -1, -1, -1
+        ],
+        scale: 1,
+        offset: 128,
+      })
+      .toBuffer();
 
-    console.log(`Job ${jobId}: DALL-E image generated, downloading...`);
+    await supabase.from("jobs").update({ progress: 65 }).eq("id", jobId);
+
+    // Step 5: Normalize and threshold to get clean black lines on white
+    const normalized = await sharp(edges)
+      .normalize()
+      .toBuffer();
 
     await supabase.from("jobs").update({ progress: 75 }).eq("id", jobId);
 
-    // Download the generated image
-    const imageDownloadResponse = await fetch(generatedImageUrl);
-    if (!imageDownloadResponse.ok) {
-      await supabase
-        .from("jobs")
-        .update({ status: "failed", error_message: "Failed to download generated image" })
-        .eq("id", jobId);
-      return NextResponse.json({ error: "Failed to download generated image" }, { status: 500 });
+    // Step 6: Threshold to pure black and white, then negate for black lines on white
+    const { data: rawData, info } = await sharp(normalized)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    // Apply threshold manually for cleaner results
+    const thresholdedData = Buffer.alloc(rawData.length);
+    for (let i = 0; i < rawData.length; i++) {
+      // Pixels darker than threshold become black (lines), others become white
+      thresholdedData[i] = rawData[i] < threshold ? 0 : 255;
     }
 
-    const generatedBuffer = Buffer.from(await imageDownloadResponse.arrayBuffer());
+    // Convert back to image and negate (so lines are black on white background)
+    let finalImage = await sharp(thresholdedData, {
+      raw: {
+        width: info.width,
+        height: info.height,
+        channels: info.channels as 1 | 2 | 3 | 4,
+      },
+    })
+      .negate() // Invert: black lines on white background
+      .png()
+      .toBuffer();
+
+    // Step 7: Dilate lines if needed (make them thicker for coloring)
+    if (lineThickness > 1) {
+      // Apply a slight median filter to thicken lines
+      finalImage = await sharp(finalImage)
+        .median(lineThickness)
+        .negate() // Median + negate combo thickens dark lines
+        .negate()
+        .png()
+        .toBuffer();
+    }
 
     await supabase.from("jobs").update({ progress: 85 }).eq("id", jobId);
+
+    // Step 8: Final cleanup - ensure pure white background
+    const outputBuffer = await sharp(finalImage)
+      .flatten({ background: { r: 255, g: 255, b: 255 } })
+      .png()
+      .toBuffer();
 
     // Store result in Supabase Storage
     const resultPath = `results/${nanoid()}.png`;
 
     const { error: uploadError } = await supabase.storage
       .from("images")
-      .upload(resultPath, generatedBuffer, {
+      .upload(resultPath, outputBuffer, {
         contentType: "image/png",
         cacheControl: "3600",
         upsert: false,
