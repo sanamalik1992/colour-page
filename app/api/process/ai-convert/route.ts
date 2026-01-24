@@ -6,16 +6,13 @@ import { nanoid } from "nanoid";
 export const runtime = "nodejs";
 export const maxDuration = 60; // Allow up to 60 seconds for processing
 
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN,
-});
-
 export async function POST(request: NextRequest) {
   const supabase = supabaseAdmin;
+  let jobId: string | undefined;
 
   try {
     const body = await request.json().catch(() => ({}));
-    const jobId: string | undefined = body?.jobId;
+    jobId = body?.jobId;
 
     if (!jobId) {
       return NextResponse.json({ error: "Job ID required" }, { status: 400 });
@@ -101,6 +98,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const replicate = new Replicate({
+      auth: process.env.REPLICATE_API_TOKEN,
+    });
+
     // Update progress - starting AI processing
     await supabase
       .from("jobs")
@@ -114,18 +115,23 @@ export async function POST(request: NextRequest) {
       ? "lineart_realistic" 
       : "lineart_coarse";
 
+    console.log(`Processing job ${jobId} with preprocessor: ${preprocessor}`);
+    console.log(`Image URL: ${imageUrl.substring(0, 100)}...`);
+
     // Use fofr/controlnet-preprocessors with lineart mode
-    // This extracts clean line art from photos - perfect for coloring pages
+    // Using the model name without version hash - Replicate will use latest
     const output = await replicate.run(
-      "fofr/controlnet-preprocessors:8294a4c1e9d59c8fe69a60bff83ea1370350c7fe5e791acce4096b7484ab8b12",
+      "fofr/controlnet-preprocessors" as `${string}/${string}`,
       {
         input: {
           image: imageUrl,
           preprocessor: preprocessor,
-          resolution: 1024, // High resolution for A4 printing
+          resolution: 1024,
         },
       }
-    ) as string | string[];
+    );
+
+    console.log("Replicate output:", typeof output, output);
 
     // Update progress
     await supabase
@@ -134,14 +140,24 @@ export async function POST(request: NextRequest) {
       .eq("id", jobId);
 
     // Get the output URL (Replicate returns a URL or array of URLs)
-    const outputUrl = Array.isArray(output) ? output[0] : output;
+    let outputUrl: string | undefined;
+    
+    if (typeof output === "string") {
+      outputUrl = output;
+    } else if (Array.isArray(output) && output.length > 0) {
+      outputUrl = output[0];
+    } else if (output && typeof output === "object" && "output" in output) {
+      const innerOutput = (output as { output: unknown }).output;
+      outputUrl = Array.isArray(innerOutput) ? innerOutput[0] : String(innerOutput);
+    }
 
     if (!outputUrl || typeof outputUrl !== "string") {
+      console.error("Invalid output from Replicate:", output);
       await supabase
         .from("jobs")
         .update({
           status: "failed",
-          error_message: "Replicate returned no image output",
+          error_message: `Replicate returned invalid output: ${JSON.stringify(output)}`,
         })
         .eq("id", jobId);
 
@@ -151,6 +167,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log("Downloading from:", outputUrl.substring(0, 100));
+
     // Download the processed image from Replicate
     const imageResponse = await fetch(outputUrl);
     if (!imageResponse.ok) {
@@ -158,7 +176,7 @@ export async function POST(request: NextRequest) {
         .from("jobs")
         .update({
           status: "failed",
-          error_message: "Failed to download processed image from Replicate",
+          error_message: `Failed to download processed image: ${imageResponse.status}`,
         })
         .eq("id", jobId);
 
@@ -213,25 +231,26 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", jobId);
 
+    console.log(`Job ${jobId} completed successfully`);
+
     return NextResponse.json({ success: true, jobId, resultPath });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown server error";
     console.error("AI convert error:", error);
     
     // Try to update job status to failed
-    try {
-      const body = await request.clone().json().catch(() => ({}));
-      if (body?.jobId) {
+    if (jobId) {
+      try {
         await supabase
           .from("jobs")
           .update({
             status: "failed",
             error_message: message,
           })
-          .eq("id", body.jobId);
+          .eq("id", jobId);
+      } catch (updateError) {
+        console.error("Failed to update job status:", updateError);
       }
-    } catch {
-      // Ignore errors when updating job status
     }
 
     return NextResponse.json(
