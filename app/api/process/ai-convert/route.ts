@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     console.log(`Job ${jobId}: Analyzing image with GPT-4o...`);
 
     const visionResponse = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "user",
@@ -101,17 +101,12 @@ export async function POST(request: NextRequest) {
             },
             {
               type: "text",
-              text: `Describe this image in detail for creating a children's coloring page. Focus on:
-- The main subject(s) and their key shapes/outlines
-- Important details that should be preserved
-- The overall composition
-
-Keep description under 200 words. Be specific about shapes and forms.`,
+              text: `Briefly describe the main subject in this image for a coloring page. Max 50 words. Focus on shape and outline only.`,
             },
           ],
         },
       ],
-      max_tokens: 300,
+      max_tokens: 100,
     });
 
     const imageDescription = visionResponse.choices?.[0]?.message?.content?.trim();
@@ -131,30 +126,13 @@ Keep description under 200 words. Be specific about shapes and forms.`,
     // Step 2: Generate coloring page with DALL-E 3
     console.log(`Job ${jobId}: Generating coloring page with DALL-E 3...`);
 
-    const detailLevel = job.complexity === "detailed" 
-      ? "Include fine details and intricate patterns suitable for older children."
-      : "Keep it simple with bold, clear outlines suitable for young children (ages 3-6).";
-
-    const dallePrompt = `Create a black and white coloring page illustration based on this description:
-
-${imageDescription}
-
-CRITICAL REQUIREMENTS:
-- Pure black outlines on pure white background ONLY
-- NO shading, NO gray tones, NO gradients, NO fill colors
-- Bold, clean line art style like a professional coloring book
-- ${detailLevel}
-- Lines should be thick enough for children to color inside
-- Simple, clear shapes that are easy to color
-- A4 printable format`;
+    const dallePrompt = `Simple black and white coloring book page of: ${imageDescription}. Bold black outlines on white background. No shading, no gray, no gradients. Clean line art for children to color.`;
 
     const imageResponse = await openai.images.generate({
-      model: "dall-e-3",
+      model: "dall-e-2",
       prompt: dallePrompt,
       n: 1,
       size: "1024x1024",
-      quality: "standard",
-      style: "natural",
     });
 
     const generatedImageUrl = imageResponse.data?.[0]?.url;
