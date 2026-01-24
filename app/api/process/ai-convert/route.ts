@@ -223,11 +223,14 @@ CRITICAL REQUIREMENTS:
     console.error("AI convert error:", error);
 
     if (jobId) {
-      await supabase
-        .from("jobs")
-        .update({ status: "failed", error_message: message })
-        .eq("id", jobId)
-        .catch(() => {});
+      try {
+        await supabase
+          .from("jobs")
+          .update({ status: "failed", error_message: message })
+          .eq("id", jobId);
+      } catch {
+        // Ignore errors when updating job status
+      }
     }
 
     return NextResponse.json(
