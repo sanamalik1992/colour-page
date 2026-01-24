@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import OpenAI from "openai";
+import Replicate from "replicate";
 import { nanoid } from "nanoid";
 
 export const runtime = "nodejs";
+export const maxDuration = 60; // Allow up to 60 seconds for processing
 
-const openaiApiKey = process.env.OPENAI_API_KEY;
-const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
+});
 
 export async function POST(request: NextRequest) {
   const supabase = supabaseAdmin;
@@ -37,16 +39,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Mark as processing
-    const { error: startErr } = await supabase
+    await supabase
       .from("jobs")
       .update({ status: "processing", progress: 10, error_message: null })
       .eq("id", jobId);
 
-    if (startErr) {
-      console.error("Failed to set job to processing:", startErr);
-    }
-
-    // upload_path is the canonical field in your DB
     const uploadPath: string | undefined = job.upload_path || job.preview_url;
 
     if (!uploadPath) {
@@ -54,167 +51,137 @@ export async function POST(request: NextRequest) {
         .from("jobs")
         .update({
           status: "failed",
-          error_message: "No upload path on job (missing upload_path)",
+          error_message: "No upload path on job",
         })
         .eq("id", jobId);
 
       return NextResponse.json({ error: "No upload path on job" }, { status: 500 });
     }
 
-    // Download original image
-    const { data: fileData, error: downloadError } = await supabase.storage
+    // Get a signed URL for the uploaded image (valid for 1 hour)
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
       .from("images")
-      .download(uploadPath);
+      .createSignedUrl(uploadPath, 3600);
 
-    if (downloadError || !fileData) {
+    if (signedUrlError || !signedUrlData?.signedUrl) {
       await supabase
         .from("jobs")
         .update({
           status: "failed",
-          error_message: "Failed to download uploaded image",
+          error_message: "Failed to create signed URL for image",
         })
         .eq("id", jobId);
 
       return NextResponse.json(
-        { error: "Failed to download uploaded image" },
+        { error: "Failed to create signed URL" },
         { status: 500 }
       );
     }
 
-    const arrayBuffer = await fileData.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const imageUrl = signedUrlData.signedUrl;
 
-    // Blob.type is safest (no any)
-    const mimeType =
-      fileData instanceof Blob && fileData.type ? fileData.type : "image/jpeg";
-
-    const base64Image = buffer.toString("base64");
-
-    if (!openai) {
-      await supabase
-        .from("jobs")
-        .update({
-          status: "failed",
-          error_message: "OPENAI_API_KEY not configured",
-        })
-        .eq("id", jobId);
-
-      return NextResponse.json(
-        { error: "OpenAI API key not configured" },
-        { status: 500 }
-      );
-    }
-
-    // Progress: generating prompt
-    const { error: p25Err } = await supabase
+    // Update progress
+    await supabase
       .from("jobs")
       .update({ progress: 25 })
       .eq("id", jobId);
 
-    if (p25Err) console.error("Failed to update progress to 25:", p25Err);
-
-    // 1) Vision prompt generation
-    const visionResponse = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${base64Image}`,
-                detail: "low",
-              },
-            },
-            {
-              type: "text",
-              text:
-                `Analyze this photo and write a prompt to generate a black-and-white colouring page version.\n` +
-                `Requirements:\n` +
-                `- Bold black outlines on white background\n` +
-                `- No shading/grey/gradients\n` +
-                `- Keep key features, simplify details\n` +
-                `- Suitable for kids to colour\n` +
-                `Return ONLY the prompt text.`,
-            },
-          ],
-        },
-      ],
-      max_tokens: 300,
-    });
-
-    const prompt = visionResponse.choices?.[0]?.message?.content?.trim();
-    if (!prompt) {
+    if (!process.env.REPLICATE_API_TOKEN) {
       await supabase
         .from("jobs")
         .update({
           status: "failed",
-          error_message: "No prompt returned from GPT-4o",
+          error_message: "REPLICATE_API_TOKEN not configured",
         })
         .eq("id", jobId);
 
       return NextResponse.json(
-        { error: "No prompt returned from GPT-4o" },
+        { error: "Replicate API token not configured" },
         { status: 500 }
       );
     }
 
-    // Progress: generating image
-    const { error: p55Err } = await supabase
+    // Update progress - starting AI processing
+    await supabase
       .from("jobs")
-      .update({ progress: 55 })
+      .update({ progress: 40 })
       .eq("id", jobId);
 
-    if (p55Err) console.error("Failed to update progress to 55:", p55Err);
+    // Determine preprocessor based on complexity setting
+    // "simple" = lineart_coarse (bolder, fewer details - easier for kids)
+    // "detailed" = lineart_realistic (more detail)
+    const preprocessor = job.complexity === "detailed" 
+      ? "lineart_realistic" 
+      : "lineart_coarse";
 
-    // 2) Generate colouring page image
-    // IMPORTANT: Do NOT pass response_format (your error)
-    const imageResponse = await openai.images.generate({
-      model: "gpt-image-1-mini",
-      prompt:
-        `${prompt}\n\nCRITICAL:\n` +
-        `- Pure black lines on pure white background\n` +
-        `- No grey tones, no shading, no gradients\n` +
-        `- Bold outlines, clean line art only\n` +
-        `- A4 printable colouring book style`,
-      n: 1,
-      size: "1024x1024",
-      // If your SDK ever complains about this field, remove it.
-      quality: "high",
-    });
+    // Use fofr/controlnet-preprocessors with lineart mode
+    // This extracts clean line art from photos - perfect for coloring pages
+    const output = await replicate.run(
+      "fofr/controlnet-preprocessors:8294a4c1e9d59c8fe69a60bff83ea1370350c7fe5e791acce4096b7484ab8b12",
+      {
+        input: {
+          image: imageUrl,
+          preprocessor: preprocessor,
+          resolution: 1024, // High resolution for A4 printing
+        },
+      }
+    ) as string | string[];
 
-    const b64 = imageResponse.data?.[0]?.b64_json;
-    if (!b64) {
+    // Update progress
+    await supabase
+      .from("jobs")
+      .update({ progress: 70 })
+      .eq("id", jobId);
+
+    // Get the output URL (Replicate returns a URL or array of URLs)
+    const outputUrl = Array.isArray(output) ? output[0] : output;
+
+    if (!outputUrl || typeof outputUrl !== "string") {
       await supabase
         .from("jobs")
         .update({
           status: "failed",
-          error_message: "OpenAI returned no image data (b64_json missing)",
+          error_message: "Replicate returned no image output",
         })
         .eq("id", jobId);
 
       return NextResponse.json(
-        { error: "OpenAI returned no image data" },
+        { error: "Replicate returned no image" },
         { status: 500 }
       );
     }
 
-    const generatedBuffer = Buffer.from(b64, "base64");
+    // Download the processed image from Replicate
+    const imageResponse = await fetch(outputUrl);
+    if (!imageResponse.ok) {
+      await supabase
+        .from("jobs")
+        .update({
+          status: "failed",
+          error_message: "Failed to download processed image from Replicate",
+        })
+        .eq("id", jobId);
 
-    const { error: p85Err } = await supabase
+      return NextResponse.json(
+        { error: "Failed to download processed image" },
+        { status: 500 }
+      );
+    }
+
+    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+
+    // Update progress
+    await supabase
       .from("jobs")
       .update({ progress: 85 })
       .eq("id", jobId);
-
-    if (p85Err) console.error("Failed to update progress to 85:", p85Err);
 
     // Store result in Supabase Storage
     const resultPath = `results/${nanoid()}.png`;
 
     const { error: uploadError } = await supabase.storage
       .from("images")
-      .upload(resultPath, generatedBuffer, {
+      .upload(resultPath, imageBuffer, {
         contentType: "image/png",
         cacheControl: "3600",
         upsert: false,
@@ -236,7 +203,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Mark job complete
-    const { error: doneErr } = await supabase
+    await supabase
       .from("jobs")
       .update({
         status: "completed",
@@ -246,12 +213,27 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", jobId);
 
-    if (doneErr) console.error("Failed to set job completed:", doneErr);
-
     return NextResponse.json({ success: true, jobId, resultPath });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown server error";
     console.error("AI convert error:", error);
+    
+    // Try to update job status to failed
+    try {
+      const body = await request.clone().json().catch(() => ({}));
+      if (body?.jobId) {
+        await supabase
+          .from("jobs")
+          .update({
+            status: "failed",
+            error_message: message,
+          })
+          .eq("id", body.jobId);
+      }
+    } catch {
+      // Ignore errors when updating job status
+    }
+
     return NextResponse.json(
       { error: "Internal server error", details: message },
       { status: 500 }
