@@ -1,7 +1,11 @@
+// app/api/process/ai-convert/route.ts
+// This route STARTS the prediction and returns immediately
+// The webhook route will handle completion
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -42,8 +46,7 @@ export async function POST(request: NextRequest) {
       throw new Error('No upload path found on job');
     }
 
-    // Get signed URL for the image
-    // Try 'images' bucket first
+    // Get signed URL for the image - try both buckets
     let signedUrl: string | null = null;
     
     const { data: signedData1 } = await supabase.storage
@@ -53,7 +56,6 @@ export async function POST(request: NextRequest) {
     if (signedData1?.signedUrl) {
       signedUrl = signedData1.signedUrl;
     } else {
-      // Try 'uploads' bucket
       const { data: signedData2 } = await supabase.storage
         .from('uploads')
         .createSignedUrl(uploadPath, 3600);
@@ -64,20 +66,24 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to get signed URL for image');
     }
 
-    await supabase
-      .from('jobs')
-      .update({ progress: 20 })
-      .eq('id', jobId);
-
     const replicateToken = process.env.REPLICATE_API_TOKEN;
     if (!replicateToken) {
       throw new Error('REPLICATE_API_TOKEN not configured');
     }
 
-    console.log(`Job ${jobId}: Starting Replicate prediction...`);
+    // Get the webhook URL - your deployed domain
+    const webhookUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
+    if (!webhookUrl) {
+      throw new Error('App URL not configured for webhooks');
+    }
 
-    // Create prediction using Replicate API directly (faster than SDK)
-    // Using fofr/controlnet-preprocessors which runs in ~8 seconds
+    const fullWebhookUrl = webhookUrl.startsWith('http') 
+      ? `${webhookUrl}/api/webhooks/replicate`
+      : `https://${webhookUrl}/api/webhooks/replicate`;
+
+    console.log(`Job ${jobId}: Starting prediction with webhook: ${fullWebhookUrl}`);
+
+    // Create prediction with WEBHOOK - returns immediately
     const createResponse = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
       headers: {
@@ -85,10 +91,10 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        // Using fofr/controlnet-preprocessors for lineart extraction
         version: 'f6584ef76cf07a2014ffe1e9bdb1a5cfa714f031883ab43f8d4b05506625988e',
         input: {
           image: signedUrl,
-          // Only enable lineart - disable everything else for speed
           canny: false,
           content: false,
           face_detector: false,
@@ -102,7 +108,10 @@ export async function POST(request: NextRequest) {
           lineart_anime: false,
           sam: false,
           leres: false
-        }
+        },
+        // Webhook will be called when prediction completes
+        webhook: fullWebhookUrl,
+        webhook_events_filter: ['completed']
       })
     });
 
@@ -112,141 +121,23 @@ export async function POST(request: NextRequest) {
     }
 
     const prediction = await createResponse.json();
-    console.log(`Job ${jobId}: Prediction created: ${prediction.id}`);
+    console.log(`Job ${jobId}: Prediction started: ${prediction.id}`);
 
+    // Store the prediction ID in the job for tracking
     await supabase
       .from('jobs')
-      .update({ progress: 30 })
-      .eq('id', jobId);
-
-    // Poll for completion (max 50 seconds to stay under 60s limit)
-    const startTime = Date.now();
-    const maxWaitTime = 50000; // 50 seconds
-    let result = prediction;
-
-    while (result.status !== 'succeeded' && result.status !== 'failed') {
-      if (Date.now() - startTime > maxWaitTime) {
-        throw new Error('Prediction timed out');
-      }
-
-      // Wait 1 second between polls
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
-        headers: {
-          'Authorization': `Bearer ${replicateToken}`,
-        }
-      });
-
-      if (!pollResponse.ok) {
-        throw new Error('Failed to poll prediction status');
-      }
-
-      result = await pollResponse.json();
-      
-      // Update progress based on elapsed time
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(30 + Math.floor((elapsed / maxWaitTime) * 40), 70);
-      await supabase
-        .from('jobs')
-        .update({ progress })
-        .eq('id', jobId);
-    }
-
-    if (result.status === 'failed') {
-      throw new Error(result.error || 'Prediction failed');
-    }
-
-    console.log(`Job ${jobId}: Prediction completed`);
-
-    // Get the output URL (array of URLs, take the first one which is lineart)
-    const output = result.output;
-    let outputUrl: string;
-
-    if (Array.isArray(output) && output.length > 0) {
-      outputUrl = output[0];
-    } else if (typeof output === 'string') {
-      outputUrl = output;
-    } else {
-      throw new Error('Unexpected output format from model');
-    }
-
-    await supabase
-      .from('jobs')
-      .update({ progress: 75 })
-      .eq('id', jobId);
-
-    // Download the result
-    const imageResponse = await fetch(outputUrl);
-    if (!imageResponse.ok) {
-      throw new Error('Failed to download result image');
-    }
-
-    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-
-    await supabase
-      .from('jobs')
-      .update({ progress: 85 })
-      .eq('id', jobId);
-
-    // Upload to Supabase Storage
-    const resultPath = `results/${jobId}.png`;
-    
-    // Try 'images' bucket first
-    let uploadError;
-    const { error: err1 } = await supabase.storage
-      .from('images')
-      .upload(resultPath, imageBuffer, {
-        contentType: 'image/png',
-        upsert: true
-      });
-    
-    if (err1) {
-      // Try 'uploads' bucket
-      const { error: err2 } = await supabase.storage
-        .from('uploads')
-        .upload(resultPath, imageBuffer, {
-          contentType: 'image/png',
-          upsert: true
-        });
-      uploadError = err2;
-    }
-
-    if (uploadError) {
-      throw new Error(`Failed to upload result: ${uploadError.message}`);
-    }
-
-    // Get public URL - try both buckets
-    let publicUrl: string;
-    const { data: publicData1 } = supabase.storage
-      .from('images')
-      .getPublicUrl(resultPath);
-    
-    if (publicData1?.publicUrl) {
-      publicUrl = publicData1.publicUrl;
-    } else {
-      const { data: publicData2 } = supabase.storage
-        .from('uploads')
-        .getPublicUrl(resultPath);
-      publicUrl = publicData2?.publicUrl || resultPath;
-    }
-
-    // Update job as completed
-    await supabase
-      .from('jobs')
-      .update({
-        status: 'completed',
-        result_url: resultPath,
-        progress: 100,
-        completed_at: new Date().toISOString()
+      .update({ 
+        progress: 30,
+        prediction_id: prediction.id  // Store this to match webhook later
       })
       .eq('id', jobId);
 
-    console.log(`Job ${jobId}: Completed successfully!`);
-
+    // Return immediately - webhook will handle completion
     return NextResponse.json({
       success: true,
-      resultUrl: publicUrl
+      status: 'processing',
+      predictionId: prediction.id,
+      message: 'Processing started. Poll job status for updates.'
     });
 
   } catch (error) {
