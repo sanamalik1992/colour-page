@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import sharp from "sharp";
+import Replicate from "replicate";
 import { nanoid } from "nanoid";
 
 export const runtime = "nodejs";
@@ -51,132 +51,104 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No upload path on job" }, { status: 500 });
     }
 
-    // Download original image
-    const { data: fileData, error: downloadError } = await supabase.storage
+    // Get a signed URL for the uploaded image
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
       .from("images")
-      .download(uploadPath);
+      .createSignedUrl(uploadPath, 3600);
 
-    if (downloadError || !fileData) {
+    if (signedUrlError || !signedUrlData?.signedUrl) {
       await supabase
         .from("jobs")
-        .update({ status: "failed", error_message: "Failed to download uploaded image" })
+        .update({ status: "failed", error_message: "Failed to create signed URL" })
         .eq("id", jobId);
-      return NextResponse.json({ error: "Failed to download uploaded image" }, { status: 500 });
+      return NextResponse.json({ error: "Failed to create signed URL" }, { status: 500 });
     }
 
-    const arrayBuffer = await fileData.arrayBuffer();
-    const inputBuffer = Buffer.from(arrayBuffer);
+    const imageUrl = signedUrlData.signedUrl;
 
-    await supabase.from("jobs").update({ progress: 25 }).eq("id", jobId);
+    await supabase.from("jobs").update({ progress: 20 }).eq("id", jobId);
 
-    console.log(`Job ${jobId}: Processing image with Sharp edge detection...`);
-
-    // Determine settings based on complexity
-    const isDetailed = job.complexity === "detailed";
-    
-    // Edge detection parameters
-    const blurSigma = isDetailed ? 0.5 : 1.0; // Less blur = more detail
-    const threshold = isDetailed ? 20 : 35; // Lower threshold = more lines
-    const lineThickness = isDetailed ? 1 : 2;
-
-    // Step 1: Load and resize image to a good working size
-    const resizedImage = await sharp(inputBuffer)
-      .resize(1024, 1024, { 
-        fit: 'inside', 
-        withoutEnlargement: false 
-      })
-      .toBuffer();
-
-    await supabase.from("jobs").update({ progress: 35 }).eq("id", jobId);
-
-    // Step 2: Convert to grayscale
-    const grayscale = await sharp(resizedImage)
-      .grayscale()
-      .toBuffer();
-
-    await supabase.from("jobs").update({ progress: 45 }).eq("id", jobId);
-
-    // Step 3: Apply slight blur to reduce noise
-    const blurred = await sharp(grayscale)
-      .blur(blurSigma)
-      .toBuffer();
-
-    await supabase.from("jobs").update({ progress: 55 }).eq("id", jobId);
-
-    // Step 4: Edge detection using Laplacian-like convolution
-    // This creates a edge-detected version
-    const edges = await sharp(blurred)
-      .convolve({
-        width: 3,
-        height: 3,
-        kernel: [
-          -1, -1, -1,
-          -1,  8, -1,
-          -1, -1, -1
-        ],
-        scale: 1,
-        offset: 128,
-      })
-      .toBuffer();
-
-    await supabase.from("jobs").update({ progress: 65 }).eq("id", jobId);
-
-    // Step 5: Normalize and threshold to get clean black lines on white
-    const normalized = await sharp(edges)
-      .normalize()
-      .toBuffer();
-
-    await supabase.from("jobs").update({ progress: 75 }).eq("id", jobId);
-
-    // Step 6: Threshold to pure black and white, then negate for black lines on white
-    const { data: rawData, info } = await sharp(normalized)
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-
-    // Apply threshold manually for cleaner results
-    const thresholdedData = Buffer.alloc(rawData.length);
-    for (let i = 0; i < rawData.length; i++) {
-      // Pixels darker than threshold become black (lines), others become white
-      thresholdedData[i] = rawData[i] < threshold ? 0 : 255;
+    if (!process.env.REPLICATE_API_TOKEN) {
+      await supabase
+        .from("jobs")
+        .update({ status: "failed", error_message: "REPLICATE_API_TOKEN not configured" })
+        .eq("id", jobId);
+      return NextResponse.json({ error: "Replicate API token not configured" }, { status: 500 });
     }
 
-    // Convert back to image and negate (so lines are black on white background)
-    let finalImage = await sharp(thresholdedData, {
-      raw: {
-        width: info.width,
-        height: info.height,
-        channels: info.channels as 1 | 2 | 3 | 4,
-      },
-    })
-      .negate() // Invert: black lines on white background
-      .png()
-      .toBuffer();
+    const replicate = new Replicate({
+      auth: process.env.REPLICATE_API_TOKEN,
+    });
 
-    // Step 7: Dilate lines if needed (make them thicker for coloring)
-    if (lineThickness > 1) {
-      // Apply a slight median filter to thicken lines
-      finalImage = await sharp(finalImage)
-        .median(lineThickness)
-        .negate() // Median + negate combo thickens dark lines
-        .negate()
-        .png()
-        .toBuffer();
+    await supabase.from("jobs").update({ progress: 30 }).eq("id", jobId);
+
+    console.log(`Job ${jobId}: Converting photo to line art with Nano Banana...`);
+
+    // Determine detail level based on complexity
+    const detailPrompt = job.complexity === "detailed"
+      ? "Convert this photo into a detailed black and white line art drawing suitable for a coloring book. Use clean, precise outlines with fine details. Pure black lines on pure white background. No shading, no gradients, no gray tones. Professional coloring page style."
+      : "Convert this photo into a simple black and white line art drawing suitable for a children's coloring book. Use bold, thick outlines with minimal details. Pure black lines on pure white background. No shading, no gradients, no gray tones. Easy for kids to color.";
+
+    // Use Google Nano Banana for high-quality image editing/style transfer
+    const output = await replicate.run(
+      "google/nano-banana" as `${string}/${string}`,
+      {
+        input: {
+          image: imageUrl,
+          prompt: detailPrompt,
+        },
+      }
+    );
+
+    await supabase.from("jobs").update({ progress: 70 }).eq("id", jobId);
+
+    // Handle output - could be string URL or array
+    let outputUrl: string | undefined;
+    if (typeof output === "string") {
+      outputUrl = output;
+    } else if (Array.isArray(output) && output.length > 0) {
+      outputUrl = output[0] as string;
+    } else if (output && typeof output === "object") {
+      // Some models return {output: "url"} or similar
+      const outputObj = output as Record<string, unknown>;
+      if (typeof outputObj.output === "string") {
+        outputUrl = outputObj.output;
+      } else if (Array.isArray(outputObj.output)) {
+        outputUrl = outputObj.output[0] as string;
+      }
     }
+
+    if (!outputUrl) {
+      console.error("Unexpected output format:", output);
+      await supabase
+        .from("jobs")
+        .update({ status: "failed", error_message: "Model returned unexpected output format" })
+        .eq("id", jobId);
+      return NextResponse.json({ error: "Model returned unexpected output" }, { status: 500 });
+    }
+
+    console.log(`Job ${jobId}: Downloading result from ${outputUrl.substring(0, 50)}...`);
+
+    // Download the generated image
+    const imageResponse = await fetch(outputUrl);
+    if (!imageResponse.ok) {
+      await supabase
+        .from("jobs")
+        .update({ status: "failed", error_message: "Failed to download generated image" })
+        .eq("id", jobId);
+      return NextResponse.json({ error: "Failed to download generated image" }, { status: 500 });
+    }
+
+    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
 
     await supabase.from("jobs").update({ progress: 85 }).eq("id", jobId);
-
-    // Step 8: Final cleanup - ensure pure white background
-    const outputBuffer = await sharp(finalImage)
-      .flatten({ background: { r: 255, g: 255, b: 255 } })
-      .png()
-      .toBuffer();
 
     // Store result in Supabase Storage
     const resultPath = `results/${nanoid()}.png`;
 
     const { error: uploadError } = await supabase.storage
       .from("images")
-      .upload(resultPath, outputBuffer, {
+      .upload(resultPath, imageBuffer, {
         contentType: "image/png",
         cacheControl: "3600",
         upsert: false,
