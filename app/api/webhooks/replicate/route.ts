@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import sharp from 'sharp';
 
 export const maxDuration = 30;
 
@@ -72,7 +73,13 @@ export async function POST(request: NextRequest) {
         throw new Error('Failed to download result image');
       }
 
-      const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+      const rawBuffer = Buffer.from(await imageResponse.arrayBuffer());
+
+      // INVERT the image: lineart comes as white-on-black, we need black-on-white
+      const imageBuffer = await sharp(rawBuffer)
+        .negate()  // Invert colors
+        .png()
+        .toBuffer();
 
       await supabase
         .from('jobs')
