@@ -72,19 +72,18 @@ export async function POST(request: NextRequest) {
       const rawBuffer = Buffer.from(await imageResponse.arrayBuffer());
 
       // POST-PROCESS for clean coloring page:
-      // 1. Negate (invert) - white background, black lines
-      // 2. Increase contrast to make lines bolder
-      // 3. Apply threshold to get pure black/white
+      // The lineart model outputs white lines on black background
+      // We need to invert and enhance for a proper coloring page
       const imageBuffer = await sharp(rawBuffer)
-        // First, negate to get black lines on white background
+        // Invert: black lines on white background
         .negate()
-        // Convert to grayscale to ensure consistency
+        // Convert to grayscale
         .grayscale()
-        // Increase contrast significantly
-        .linear(1.5, -30)  // contrast multiplier and brightness offset
-        // Apply threshold for pure black and white (no gray)
-        .threshold(200)  // Higher value = thinner lines, lower = thicker
-        // Ensure pure white background
+        // Normalize to use full range (enhances contrast)
+        .normalize()
+        // Apply a lower threshold to keep more detail (lower = more black pixels kept)
+        .threshold(128)
+        // Ensure white background
         .flatten({ background: { r: 255, g: 255, b: 255 } })
         // Output as PNG
         .png()
