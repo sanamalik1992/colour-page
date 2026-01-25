@@ -1,198 +1,168 @@
-import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/server";
-import Replicate from "replicate";
-import { nanoid } from "nanoid";
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import Replicate from 'replicate';
 
-export const runtime = "nodejs";
 export const maxDuration = 60;
 
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
 export async function POST(request: NextRequest) {
-  const supabase = supabaseAdmin;
-  let jobId: string | undefined;
-
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  
   try {
-    const body = await request.json().catch(() => ({}));
-    jobId = body?.jobId;
-
+    const { jobId } = await request.json();
+    
     if (!jobId) {
-      return NextResponse.json({ error: "Job ID required" }, { status: 400 });
+      return NextResponse.json({ error: 'Job ID required' }, { status: 400 });
     }
 
-    const { data: job, error: fetchError } = await supabase
-      .from("jobs")
-      .select("*")
-      .eq("id", jobId)
+    // Fetch job details
+    const { data: job, error: jobError } = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('id', jobId)
       .single();
 
-    if (fetchError || !job) {
-      return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    if (jobError || !job) {
+      return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
 
-    if (job.status === "completed" || job.status === "failed") {
-      return NextResponse.json({
-        status: job.status,
-        message: "Job already processed",
-      });
-    }
-
-    // Mark as processing
+    // Update status to processing
     await supabase
-      .from("jobs")
-      .update({ status: "processing", progress: 10, error_message: null })
-      .eq("id", jobId);
+      .from('jobs')
+      .update({ status: 'processing' })
+      .eq('id', jobId);
 
-    const uploadPath: string | undefined = job.upload_path || job.preview_url;
+    // Get the original image URL from Supabase Storage
+    const { data: signedUrlData } = await supabase.storage
+      .from('uploads')
+      .createSignedUrl(job.original_path, 3600); // 1 hour expiry
 
-    if (!uploadPath) {
-      await supabase
-        .from("jobs")
-        .update({ status: "failed", error_message: "No upload path on job" })
-        .eq("id", jobId);
-      return NextResponse.json({ error: "No upload path on job" }, { status: 500 });
+    if (!signedUrlData?.signedUrl) {
+      throw new Error('Failed to get signed URL for original image');
     }
 
-    // Get a signed URL for the uploaded image
-    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-      .from("images")
-      .createSignedUrl(uploadPath, 3600);
-
-    if (signedUrlError || !signedUrlData?.signedUrl) {
-      await supabase
-        .from("jobs")
-        .update({ status: "failed", error_message: "Failed to create signed URL" })
-        .eq("id", jobId);
-      return NextResponse.json({ error: "Failed to create signed URL" }, { status: 500 });
-    }
-
-    const imageUrl = signedUrlData.signedUrl;
-
-    await supabase.from("jobs").update({ progress: 20 }).eq("id", jobId);
-
-    if (!process.env.REPLICATE_API_TOKEN) {
-      await supabase
-        .from("jobs")
-        .update({ status: "failed", error_message: "REPLICATE_API_TOKEN not configured" })
-        .eq("id", jobId);
-      return NextResponse.json({ error: "Replicate API token not configured" }, { status: 500 });
-    }
-
+    // Initialize Replicate
     const replicate = new Replicate({
       auth: process.env.REPLICATE_API_TOKEN,
     });
 
-    await supabase.from("jobs").update({ progress: 30 }).eq("id", jobId);
+    // Build prompt based on complexity
+    const complexity = job.complexity || 'medium';
+    let prompt: string;
+    
+    if (complexity === 'simple') {
+      prompt = "Convert this photo into a simple black and white line art coloring page for young children. Use thick, bold outlines only. Remove all details, shading, and textures. Pure black lines on pure white background. Very simple shapes suitable for toddlers to color.";
+    } else if (complexity === 'detailed') {
+      prompt = "Convert this photo into a detailed black and white line art coloring page. Include fine details and intricate patterns. Pure black lines on pure white background. No shading or gradients, just clean line work suitable for adults or older children who enjoy detailed coloring.";
+    } else {
+      prompt = "Convert this photo into a black and white line art coloring page. Medium level of detail with clear outlines. Pure black lines on pure white background. No shading or gradients. Suitable for children to color in.";
+    }
 
-    console.log(`Job ${jobId}: Converting photo to line art with Nano Banana...`);
+    console.log('Calling Nano Banana with prompt:', prompt);
+    console.log('Image URL:', signedUrlData.signedUrl);
 
-    // Determine detail level based on complexity
-    const detailPrompt = job.complexity === "detailed"
-      ? "Convert this photo into a detailed black and white line art drawing suitable for a coloring book. Use clean, precise outlines with fine details. Pure black lines on pure white background. No shading, no gradients, no gray tones. Professional coloring page style."
-      : "Convert this photo into a simple black and white line art drawing suitable for a children's coloring book. Use bold, thick outlines with minimal details. Pure black lines on pure white background. No shading, no gradients, no gray tones. Easy for kids to color.";
-
-    // Use Google Nano Banana for high-quality image editing/style transfer
-    const output = await replicate.run(
-      "google/nano-banana" as `${string}/${string}`,
-      {
-        input: {
-          image: imageUrl,
-          prompt: detailPrompt,
-        },
+    // Call Nano Banana model - image_input is an ARRAY
+    const output = await replicate.run("google/nano-banana", {
+      input: {
+        prompt: prompt,
+        image_input: [signedUrlData.signedUrl],  // Must be an array!
+        output_format: "png"
       }
-    );
+    });
 
-    await supabase.from("jobs").update({ progress: 70 }).eq("id", jobId);
+    console.log('Replicate output:', output);
+    console.log('Output type:', typeof output);
 
-    // Handle output - could be string URL or array
-    let outputUrl: string | undefined;
-    if (typeof output === "string") {
-      outputUrl = output;
+    // Output is a string URL directly (not an array)
+    let resultUrl: string;
+    
+    if (typeof output === 'string') {
+      resultUrl = output;
     } else if (Array.isArray(output) && output.length > 0) {
-      outputUrl = output[0] as string;
-    } else if (output && typeof output === "object") {
-      // Some models return {output: "url"} or similar
+      // Fallback in case it returns an array
+      resultUrl = output[0];
+    } else if (output && typeof output === 'object') {
+      // Check if it's an object with a url property
       const outputObj = output as Record<string, unknown>;
-      if (typeof outputObj.output === "string") {
-        outputUrl = outputObj.output;
-      } else if (Array.isArray(outputObj.output)) {
-        outputUrl = outputObj.output[0] as string;
+      if (typeof outputObj.url === 'string') {
+        resultUrl = outputObj.url;
+      } else if (typeof outputObj.output === 'string') {
+        resultUrl = outputObj.output;
+      } else {
+        console.error('Unexpected output structure:', JSON.stringify(output));
+        throw new Error('Model returned unexpected output format');
       }
+    } else {
+      console.error('Unexpected output type:', typeof output, output);
+      throw new Error('Model returned unexpected output format');
     }
 
-    if (!outputUrl) {
-      console.error("Unexpected output format:", output);
-      await supabase
-        .from("jobs")
-        .update({ status: "failed", error_message: "Model returned unexpected output format" })
-        .eq("id", jobId);
-      return NextResponse.json({ error: "Model returned unexpected output" }, { status: 500 });
-    }
+    console.log('Result URL:', resultUrl);
 
-    console.log(`Job ${jobId}: Downloading result from ${outputUrl.substring(0, 50)}...`);
-
-    // Download the generated image
-    const imageResponse = await fetch(outputUrl);
+    // Download the result image
+    const imageResponse = await fetch(resultUrl);
     if (!imageResponse.ok) {
-      await supabase
-        .from("jobs")
-        .update({ status: "failed", error_message: "Failed to download generated image" })
-        .eq("id", jobId);
-      return NextResponse.json({ error: "Failed to download generated image" }, { status: 500 });
+      throw new Error(`Failed to download result image: ${imageResponse.status}`);
     }
+    
+    const imageBuffer = await imageResponse.arrayBuffer();
 
-    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-
-    await supabase.from("jobs").update({ progress: 85 }).eq("id", jobId);
-
-    // Store result in Supabase Storage
-    const resultPath = `results/${nanoid()}.png`;
-
+    // Upload to Supabase Storage
+    const resultPath = `results/${jobId}.png`;
     const { error: uploadError } = await supabase.storage
-      .from("images")
+      .from('uploads')
       .upload(resultPath, imageBuffer, {
-        contentType: "image/png",
-        cacheControl: "3600",
-        upsert: false,
+        contentType: 'image/png',
+        upsert: true
       });
 
     if (uploadError) {
-      await supabase
-        .from("jobs")
-        .update({ status: "failed", error_message: `Failed to upload result: ${uploadError.message}` })
-        .eq("id", jobId);
-      return NextResponse.json({ error: "Failed to upload result image" }, { status: 500 });
+      throw new Error(`Failed to upload result: ${uploadError.message}`);
     }
 
-    // Mark job complete
+    // Get public URL for the result
+    const { data: publicUrlData } = supabase.storage
+      .from('uploads')
+      .getPublicUrl(resultPath);
+
+    // Update job with result
     await supabase
-      .from("jobs")
+      .from('jobs')
       .update({
-        status: "completed",
-        result_url: resultPath,
-        progress: 100,
-        completed_at: new Date().toISOString(),
+        status: 'completed',
+        result_path: resultPath,
+        result_url: publicUrlData.publicUrl
       })
-      .eq("id", jobId);
+      .eq('id', jobId);
 
-    console.log(`Job ${jobId}: Completed successfully!`);
+    return NextResponse.json({
+      success: true,
+      resultUrl: publicUrlData.publicUrl
+    });
 
-    return NextResponse.json({ success: true, jobId, resultPath });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown server error";
-    console.error("AI convert error:", error);
-
-    if (jobId) {
-      try {
+  } catch (error) {
+    console.error('Processing error:', error);
+    
+    // Try to update job status to failed
+    try {
+      const { jobId } = await request.clone().json();
+      if (jobId) {
         await supabase
-          .from("jobs")
-          .update({ status: "failed", error_message: message })
-          .eq("id", jobId);
-      } catch {
-        // Ignore errors when updating job status
+          .from('jobs')
+          .update({ 
+            status: 'failed',
+            error_message: error instanceof Error ? error.message : 'Unknown error'
+          })
+          .eq('id', jobId);
       }
+    } catch (e) {
+      console.error('Failed to update job status:', e);
     }
 
     return NextResponse.json(
-      { error: "Internal server error", details: message },
+      { error: error instanceof Error ? error.message : 'Processing failed' },
       { status: 500 }
     );
   }
