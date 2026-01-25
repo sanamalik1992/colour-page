@@ -48,54 +48,54 @@ export async function POST(request: NextRequest) {
       auth: process.env.REPLICATE_API_TOKEN,
     });
 
-    // Build prompt based on complexity
+    // Determine which lineart style to use based on complexity
     const complexity = job.complexity || 'medium';
-    let prompt: string;
     
-    if (complexity === 'simple') {
-      prompt = "Convert this photo into a simple black and white line art coloring page for young children. Use thick, bold outlines only. Remove all details, shading, and textures. Pure black lines on pure white background. Very simple shapes suitable for toddlers to color.";
-    } else if (complexity === 'detailed') {
-      prompt = "Convert this photo into a detailed black and white line art coloring page. Include fine details and intricate patterns. Pure black lines on pure white background. No shading or gradients, just clean line work suitable for adults or older children who enjoy detailed coloring.";
-    } else {
-      prompt = "Convert this photo into a black and white line art coloring page. Medium level of detail with clear outlines. Pure black lines on pure white background. No shading or gradients. Suitable for children to color in.";
-    }
+    // Use lineart for realistic photos, lineart_anime for illustrations
+    // For simple: just lineart (cleaner lines)
+    // For detailed: both lineart options for more detail
+    const useLineart = true;
+    const useLineartAnime = complexity === 'detailed';
 
-    console.log('Calling Nano Banana with prompt:', prompt);
+    console.log('Calling controlnet-preprocessors with lineart extraction');
     console.log('Image URL:', signedUrlData.signedUrl);
+    console.log('Complexity:', complexity, '| lineart:', useLineart, '| lineart_anime:', useLineartAnime);
 
-    // Call Nano Banana model - image_input is an ARRAY
-    const output = await replicate.run("google/nano-banana", {
+    // Call the preprocessor - disable everything except lineart
+    // This makes it much faster (~8 seconds)
+    const output = await replicate.run("fofr/controlnet-preprocessors", {
       input: {
-        prompt: prompt,
-        image_input: [signedUrlData.signedUrl],  // Must be an array!
-        output_format: "png"
+        image: signedUrlData.signedUrl,
+        // Disable all preprocessors except lineart
+        canny: false,
+        content: false,
+        face_detector: false,
+        hed: false,
+        midas: false,
+        mlsd: false,
+        open_pose: false,
+        pidi: false,
+        normal_bae: false,
+        lineart: useLineart,
+        lineart_anime: useLineartAnime,
+        sam: false,
+        leres: false
       }
     });
 
     console.log('Replicate output:', output);
     console.log('Output type:', typeof output);
 
-    // Output is a string URL directly (not an array)
+    // Output is an array of URLs for each enabled preprocessor
     let resultUrl: string;
     
-    if (typeof output === 'string') {
-      resultUrl = output;
-    } else if (Array.isArray(output) && output.length > 0) {
-      // Fallback in case it returns an array
+    if (Array.isArray(output) && output.length > 0) {
+      // Take the first result (lineart)
       resultUrl = output[0];
-    } else if (output && typeof output === 'object') {
-      // Check if it's an object with a url property
-      const outputObj = output as Record<string, unknown>;
-      if (typeof outputObj.url === 'string') {
-        resultUrl = outputObj.url;
-      } else if (typeof outputObj.output === 'string') {
-        resultUrl = outputObj.output;
-      } else {
-        console.error('Unexpected output structure:', JSON.stringify(output));
-        throw new Error('Model returned unexpected output format');
-      }
+    } else if (typeof output === 'string') {
+      resultUrl = output;
     } else {
-      console.error('Unexpected output type:', typeof output, output);
+      console.error('Unexpected output format:', output);
       throw new Error('Model returned unexpected output format');
     }
 
