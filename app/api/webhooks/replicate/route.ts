@@ -27,13 +27,11 @@ export async function POST(request: NextRequest) {
 
     if (jobError || !job) {
       console.error('Job not found for prediction:', prediction.id);
-      // Still return 200 so Replicate doesn't retry
       return NextResponse.json({ received: true, error: 'Job not found' });
     }
 
     const jobId = job.id;
 
-    // Check if prediction failed
     if (prediction.status === 'failed') {
       await supabase
         .from('jobs')
@@ -46,11 +44,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, status: 'failed' });
     }
 
-    // Check if prediction succeeded
     if (prediction.status === 'succeeded') {
       const output = prediction.output;
       
-      // Get the output URL (array of URLs, take the first one which is lineart)
       let outputUrl: string;
       if (Array.isArray(output) && output.length > 0) {
         outputUrl = output[0];
@@ -60,7 +56,7 @@ export async function POST(request: NextRequest) {
         throw new Error('Unexpected output format from model');
       }
 
-      console.log(`Job ${jobId}: Downloading result from ${outputUrl.substring(0, 50)}...`);
+      console.log(`Job ${jobId}: Downloading result...`);
 
       await supabase
         .from('jobs')
@@ -75,9 +71,22 @@ export async function POST(request: NextRequest) {
 
       const rawBuffer = Buffer.from(await imageResponse.arrayBuffer());
 
-      // INVERT the image: lineart comes as white-on-black, we need black-on-white
+      // POST-PROCESS for clean coloring page:
+      // 1. Negate (invert) - white background, black lines
+      // 2. Increase contrast to make lines bolder
+      // 3. Apply threshold to get pure black/white
       const imageBuffer = await sharp(rawBuffer)
-        .negate()  // Invert colors
+        // First, negate to get black lines on white background
+        .negate()
+        // Convert to grayscale to ensure consistency
+        .grayscale()
+        // Increase contrast significantly
+        .linear(1.5, -30)  // contrast multiplier and brightness offset
+        // Apply threshold for pure black and white (no gray)
+        .threshold(200)  // Higher value = thinner lines, lower = thicker
+        // Ensure pure white background
+        .flatten({ background: { r: 255, g: 255, b: 255 } })
+        // Output as PNG
         .png()
         .toBuffer();
 
@@ -90,7 +99,6 @@ export async function POST(request: NextRequest) {
       const resultPath = `results/${jobId}.png`;
       
       // Try 'images' bucket first
-      let uploadSuccess = false;
       const { error: err1 } = await supabase.storage
         .from('images')
         .upload(resultPath, imageBuffer, {
@@ -98,9 +106,7 @@ export async function POST(request: NextRequest) {
           upsert: true
         });
       
-      if (!err1) {
-        uploadSuccess = true;
-      } else {
+      if (err1) {
         // Try 'uploads' bucket
         const { error: err2 } = await supabase.storage
           .from('uploads')
@@ -109,9 +115,7 @@ export async function POST(request: NextRequest) {
             upsert: true
           });
         
-        if (!err2) {
-          uploadSuccess = true;
-        } else {
+        if (err2) {
           throw new Error(`Failed to upload result: ${err2.message}`);
         }
       }
@@ -153,13 +157,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // For other statuses, just acknowledge
     return NextResponse.json({ received: true, status: prediction.status });
 
   } catch (error) {
     console.error('Webhook error:', error);
-    
-    // Still return 200 so Replicate doesn't retry
     return NextResponse.json({ 
       received: true, 
       error: error instanceof Error ? error.message : 'Unknown error' 
@@ -167,7 +168,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Also handle GET for verification if needed
 export async function GET() {
   return NextResponse.json({ status: 'Webhook endpoint active' });
 }
