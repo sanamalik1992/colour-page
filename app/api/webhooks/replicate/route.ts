@@ -32,7 +32,6 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ received: true });
   } catch (error) {
-    console.error(error);
     return NextResponse.json({ received: true, error: String(error) });
   }
 }
