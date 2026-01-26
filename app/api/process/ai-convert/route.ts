@@ -30,24 +30,20 @@ export async function POST(request: NextRequest) {
     const webhookUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
     if (!webhookUrl) throw new Error("App URL not configured");
     const fullWebhookUrl = webhookUrl.startsWith("http") ? webhookUrl + "/api/webhooks/replicate" : "https://" + webhookUrl + "/api/webhooks/replicate";
-    console.log("Job " + jobId + ": Starting prediction with webhook: " + fullWebhookUrl);
-    const res = await fetch("https://api.replicate.com/v1/predictions", {
+    const complexity = job.complexity || "medium";
+    let prompt = "Transform this into a black and white coloring book page. Clean bold black outlines on pure white background. No shading, no gradients, no gray - only pure black lines on white. Professional coloring book style.";
+    if (complexity === "simple") prompt = "Transform this into a simple black and white coloring book page for young children. Bold thick black outlines only on pure white background. Large simple shapes.";
+    if (complexity === "detailed") prompt = "Transform this into a detailed black and white coloring book page. Clean precise black line art on pure white background. Include fine details. No shading or gradients.";
+    const res = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions", {
       method: "POST",
       headers: { "Authorization": "Bearer " + replicateToken, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        version: "f6584ef76cf07a2014ffe1e9bdb1a5cfa714f031883ab43f8d4b05506625988e",
-        input: { image: signedUrl, lineart: true, canny: false, hed: false, scribble: false, mlsd: false, normal_bae: false, open_pose: false, midas: false, pidi: false, sam: false, leres: false, content: false, face_detector: false, lineart_anime: false, lineart_coarse: false },
-        webhook: fullWebhookUrl,
-        webhook_events_filter: ["completed"]
-      })
+      body: JSON.stringify({ input: { prompt: prompt, input_image: signedUrl, aspect_ratio: "match_input_image" }, webhook: fullWebhookUrl, webhook_events_filter: ["completed"] })
     });
     if (!res.ok) throw new Error("Failed to create prediction: " + await res.text());
     const prediction = await res.json();
-    console.log("Job " + jobId + ": Prediction started: " + prediction.id);
     await supabase.from("jobs").update({ progress: 30, prediction_id: prediction.id }).eq("id", jobId);
     return NextResponse.json({ success: true, status: "processing", predictionId: prediction.id });
   } catch (error) {
-    console.error("Processing error:", error);
     if (jobId) await supabase.from("jobs").update({ status: "failed", error_message: error instanceof Error ? error.message : "Unknown error" }).eq("id", jobId);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Processing failed" }, { status: 500 });
   }
