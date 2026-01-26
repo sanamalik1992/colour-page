@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import sharp from "sharp";
 
 export const maxDuration = 30;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -18,20 +19,38 @@ export async function POST(request: NextRequest) {
     }
     if (prediction.status === "succeeded") {
       const output = prediction.output;
-      const outputUrl = typeof output === "string" ? output : Array.isArray(output) ? output[0] : output?.url;
-      if (!outputUrl) throw new Error("No output URL");
+      let outputUrl: string | null = null;
+      if (output && typeof output === "object" && output.lineart) {
+        outputUrl = output.lineart;
+      } else if (typeof output === "string") {
+        outputUrl = output;
+      } else if (Array.isArray(output) && output.length > 0) {
+        outputUrl = output[0];
+      }
+      if (!outputUrl) throw new Error("No output URL found");
       await supabase.from("jobs").update({ progress: 70 }).eq("id", jobId);
       const imgRes = await fetch(outputUrl);
-      const imageBuffer = Buffer.from(await imgRes.arrayBuffer());
+      const rawBuffer = Buffer.from(await imgRes.arrayBuffer());
+      
+      const processedBuffer = await sharp(rawBuffer)
+        .negate()
+        .grayscale()
+        .normalize()
+        .linear(1.2, 0)
+        .flatten({ background: { r: 255, g: 255, b: 255 } })
+        .png()
+        .toBuffer();
+
       await supabase.from("jobs").update({ progress: 85 }).eq("id", jobId);
       const resultPath = "results/" + jobId + ".png";
-      const { error: e1 } = await supabase.storage.from("images").upload(resultPath, imageBuffer, { contentType: "image/png", upsert: true });
-      if (e1) await supabase.storage.from("uploads").upload(resultPath, imageBuffer, { contentType: "image/png", upsert: true });
+      const { error: e1 } = await supabase.storage.from("images").upload(resultPath, processedBuffer, { contentType: "image/png", upsert: true });
+      if (e1) await supabase.storage.from("uploads").upload(resultPath, processedBuffer, { contentType: "image/png", upsert: true });
       await supabase.from("jobs").update({ status: "completed", result_url: resultPath, progress: 100, completed_at: new Date().toISOString() }).eq("id", jobId);
       return NextResponse.json({ received: true, status: "completed" });
     }
     return NextResponse.json({ received: true });
   } catch (error) {
+    console.error("Webhook error:", error);
     return NextResponse.json({ received: true, error: String(error) });
   }
 }
