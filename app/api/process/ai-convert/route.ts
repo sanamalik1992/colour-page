@@ -135,4 +135,15 @@ export async function POST(request: NextRequest) {
         .from('jobs')
         .update({ 
           status: 'failed',
-          error_
+          error_message: error instanceof Error ? error.message : 'Unknown error'
+        })
+        .eq('id', jobId);
+    }
+
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Processing failed' },
+      { status: 500 }
+    );
+  }
+}
+EOF
