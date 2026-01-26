@@ -16,6 +16,7 @@
     "@stripe/stripe-js": "^4.10.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.10",
+    "@vercel/analytics": "^1.6.1",
     "lucide-react": "^0.469.0",
     "nanoid": "^5.1.6",
     "next": "^15.1.3",
