@@ -1,7 +1,5 @@
+cat > app/api/process/ai-convert/route.ts << 'EOF'
 // app/api/process/ai-convert/route.ts
-// This route STARTS the prediction and returns immediately
-// The webhook route will handle completion
-
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
@@ -22,7 +20,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Job ID required' }, { status: 400 });
     }
 
-    // Fetch job details
     const { data: job, error: jobError } = await supabase
       .from('jobs')
       .select('*')
@@ -33,20 +30,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
 
-    // Update status to processing
     await supabase
       .from('jobs')
       .update({ status: 'processing', progress: 10 })
       .eq('id', jobId);
 
-    // Get the upload path
     const uploadPath = job.upload_path || job.original_path || job.preview_url;
     
     if (!uploadPath) {
       throw new Error('No upload path found on job');
     }
 
-    // Get signed URL for the image - try both buckets
     let signedUrl: string | null = null;
     
     const { data: signedData1 } = await supabase.storage
@@ -71,7 +65,6 @@ export async function POST(request: NextRequest) {
       throw new Error('REPLICATE_API_TOKEN not configured');
     }
 
-    // Get the webhook URL - your deployed domain
     const webhookUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
     if (!webhookUrl) {
       throw new Error('App URL not configured for webhooks');
@@ -83,33 +76,29 @@ export async function POST(request: NextRequest) {
 
     console.log(`Job ${jobId}: Starting prediction with webhook: ${fullWebhookUrl}`);
 
-    // Create prediction with WEBHOOK - returns immediately
-    const createResponse = await fetch('https://api.replicate.com/v1/predictions', {
+    const complexity = job.complexity || 'medium';
+    let prompt: string;
+    
+    if (complexity === 'simple') {
+      prompt = "Transform this into a simple black and white coloring book page for young children. Bold thick black outlines only on pure white background. Remove all shading and details. Large simple shapes easy to color. Professional children's coloring book style.";
+    } else if (complexity === 'detailed') {
+      prompt = "Transform this into a detailed black and white coloring book page. Clean precise black line art on pure white background. Include fine details and patterns. No shading or gradients - only crisp black outlines. Professional adult coloring book quality.";
+    } else {
+      prompt = "Transform this into a black and white coloring book page. Clean bold black outlines on pure white background. Medium detail level suitable for children. No shading, no gradients, no gray - only pure black lines on white. Professional coloring book style.";
+    }
+
+    const createResponse = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${replicateToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        // Using fofr/controlnet-preprocessors for lineart extraction
-        version: 'f6584ef76cf07a2014ffe1e9bdb1a5cfa714f031883ab43f8d4b05506625988e',
         input: {
-          image: signedUrl,
-          canny: false,
-          content: false,
-          face_detector: false,
-          hed: false,
-          midas: false,
-          mlsd: false,
-          open_pose: false,
-          pidi: false,
-          normal_bae: false,
-          lineart: true,
-          lineart_anime: false,
-          sam: false,
-          leres: false
+          prompt: prompt,
+          input_image: signedUrl,
+          aspect_ratio: 'match_input_image'
         },
-        // Webhook will be called when prediction completes
         webhook: fullWebhookUrl,
         webhook_events_filter: ['completed']
       })
@@ -123,16 +112,14 @@ export async function POST(request: NextRequest) {
     const prediction = await createResponse.json();
     console.log(`Job ${jobId}: Prediction started: ${prediction.id}`);
 
-    // Store the prediction ID in the job for tracking
     await supabase
       .from('jobs')
       .update({ 
         progress: 30,
-        prediction_id: prediction.id  // Store this to match webhook later
+        prediction_id: prediction.id
       })
       .eq('id', jobId);
 
-    // Return immediately - webhook will handle completion
     return NextResponse.json({
       success: true,
       status: 'processing',
@@ -148,14 +135,4 @@ export async function POST(request: NextRequest) {
         .from('jobs')
         .update({ 
           status: 'failed',
-          error_message: error instanceof Error ? error.message : 'Unknown error'
-        })
-        .eq('id', jobId);
-    }
-
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Processing failed' },
-      { status: 500 }
-    );
-  }
-}
+          error_
