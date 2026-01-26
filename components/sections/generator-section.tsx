@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { AnimatedBorderCard } from '@/components/ui/animated-border-card'
-import { ProcessingTimer } from '@/components/ui/processing-timer'
+import { ProcessingAnimation } from '@/components/ui/processing-animation'
 import { UploadButton } from '@/components/generator/upload-button'
 import { ImagePreview } from '@/components/generator/image-preview'
 import { OptionalField } from '@/components/generator/optional-field'
@@ -148,7 +148,7 @@ export function GeneratorSection() {
             {job?.status === 'completed' && <ReadyTicker />}
 
             {/* Processing Timer */}
-            {isProcessing && <ProcessingTimer isProcessing={isProcessing} />}
+            {isProcessing && <ProcessingAnimation isProcessing={isProcessing} />}
 
             {/* Error Message */}
             {error && (
