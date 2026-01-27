@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Crown, Lock, Sparkles, Loader2, Download, RotateCcw } from 'lucide-react'
+import { Crown, Lock, Sparkles, Loader2, Download, RotateCcw, Printer } from 'lucide-react'
 
 export default function DotToDotPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -14,6 +14,7 @@ export default function DotToDotPage() {
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [freeUsesLeft, setFreeUsesLeft] = useState(1)
+  const [progress, setProgress] = useState(0)
 
   useEffect(() => {
     const used = localStorage.getItem('dotToDotFreeUsed')
@@ -40,6 +41,7 @@ export default function DotToDotPage() {
     }
     setIsProcessing(true)
     setError('')
+    setProgress(0)
     try {
       const formData = new FormData()
       formData.append('file', selectedFile)
@@ -64,13 +66,22 @@ export default function DotToDotPage() {
       try {
         const res = await fetch(`/api/status?jobId=${jobId}&sessionId=dot`)
         const data = await res.json()
+        if (data.job?.progress) setProgress(data.job.progress)
         if (data.job?.status === 'completed' && data.job?.result_url) {
           setIsProcessing(false)
-          const { data: urlData } = await fetch(`/api/get-result-url?path=${data.job.result_url}`).then(r => r.json()).catch(() => ({ data: null }))
-          setResultUrl(urlData || data.job.result_url)
+          // Get signed URL for the result
+          const resultPath = data.job.result_url
+          const signedRes = await fetch(`/api/get-signed-url?path=${encodeURIComponent(resultPath)}`)
+          const signedData = await signedRes.json()
+          if (signedData.url) {
+            setResultUrl(signedData.url)
+          } else {
+            // Fallback to public URL
+            setResultUrl(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/images/${resultPath}`)
+          }
         } else if (data.job?.status === 'failed') {
           setIsProcessing(false)
-          setError('Generation failed')
+          setError(data.job.error_message || 'Generation failed')
         }
       } catch (err) { console.error(err) }
     }
@@ -85,6 +96,20 @@ export default function DotToDotPage() {
     setResultUrl(null)
     setJobId(null)
     setError('')
+    setProgress(0)
+  }
+
+  const handlePrint = () => {
+    if (!resultUrl) return
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <html><head><title>Dot-to-Dot Puzzle</title></head>
+        <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+          <img src="${resultUrl}" style="max-width:100%;max-height:100vh;" onload="window.print();window.close();" />
+        </body></html>
+      `)
+    }
   }
 
   return (
@@ -94,8 +119,10 @@ export default function DotToDotPage() {
           <Link href="/" className="relative w-12 h-12"><Image src="/logo.png" alt="colour.page" fill className="object-contain" priority unoptimized /></Link>
           <nav className="hidden md:flex items-center gap-1">
             <Link href="/" className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg">Create</Link>
-            <Link href="/dot-to-dot" className="px-4 py-2 text-sm font-semibold text-brand-primary hover:bg-zinc-800 rounded-lg">Dot-to-Dot</Link>
-            <Link href="/print" className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg">Print</Link>
+            <Link href="/print" className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg">Print Library</Link>
+            <Link href="/dot-to-dot" className="px-4 py-2 text-sm font-semibold text-amber-400 hover:bg-zinc-800 rounded-lg flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4" />Dot-to-Dot
+            </Link>
           </nav>
           <Link href="/pro" className="h-10 px-5 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold text-sm rounded-lg flex items-center shadow-md">Pro</Link>
         </div>
@@ -107,7 +134,7 @@ export default function DotToDotPage() {
           <span className="text-sm font-semibold text-amber-400">{freeUsesLeft > 0 ? '1 Free Try Available!' : 'Pro Feature'}</span>
         </div>
         <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">Dot-to-Dot Generator</h1>
-        <p className="text-xl text-gray-400 max-w-2xl mx-auto">Transform any photo into a connect-the-dots puzzle!</p>
+        <p className="text-xl text-gray-400 max-w-2xl mx-auto">Transform any photo into a connect-the-dots puzzle! Kids love these for learning numbers.</p>
       </section>
 
       <section className="container mx-auto px-6 pb-20">
@@ -117,19 +144,24 @@ export default function DotToDotPage() {
               <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl flex items-center justify-center">
                 <Sparkles className="w-6 h-6 text-white" />
               </div>
-              <h2 className="text-2xl font-bold text-gray-900">Dot-to-Dot Generator</h2>
+              <h2 className="text-2xl font-bold text-gray-900">Create Dot-to-Dot</h2>
             </div>
 
             {error && <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 mb-6"><p className="text-sm font-semibold text-red-600">{error}</p></div>}
 
             {resultUrl ? (
               <div className="space-y-4">
-                <div className="aspect-square bg-gray-100 rounded-xl overflow-hidden">
+                <div className="aspect-square bg-gray-100 rounded-xl overflow-hidden border-2 border-gray-200">
                   <img src={resultUrl} alt="Dot to dot result" className="w-full h-full object-contain" />
                 </div>
-                <a href={resultUrl} download="dot-to-dot.png" className="w-full h-12 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold rounded-xl flex items-center justify-center gap-2">
-                  <Download className="w-5 h-5" />Download
-                </a>
+                <div className="flex gap-3">
+                  <a href={resultUrl} download="dot-to-dot.png" className="flex-1 h-12 bg-gradient-to-r from-amber-400 to-amber-600 text-white font-semibold rounded-xl flex items-center justify-center gap-2 hover:from-amber-500 hover:to-amber-700">
+                    <Download className="w-5 h-5" />Download
+                  </a>
+                  <button onClick={handlePrint} className="flex-1 h-12 bg-zinc-800 text-white font-semibold rounded-xl flex items-center justify-center gap-2 hover:bg-zinc-700">
+                    <Printer className="w-5 h-5" />Print
+                  </button>
+                </div>
                 <button onClick={handleReset} className="w-full h-12 bg-gray-100 text-gray-700 font-semibold rounded-xl flex items-center justify-center gap-2 hover:bg-gray-200">
                   <RotateCcw className="w-5 h-5" />Create Another
                 </button>
@@ -140,7 +172,7 @@ export default function DotToDotPage() {
                   {previewUrl ? (
                     <div className="relative aspect-video bg-gray-100 rounded-xl overflow-hidden">
                       <img src={previewUrl} alt="Preview" className="w-full h-full object-contain" />
-                      <button onClick={() => { setSelectedFile(null); setPreviewUrl(null) }} className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600">×</button>
+                      <button onClick={() => { setSelectedFile(null); setPreviewUrl(null) }} className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 text-xl font-bold">×</button>
                     </div>
                   ) : (
                     <label className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-amber-400 hover:bg-amber-50 transition-colors">
@@ -153,10 +185,16 @@ export default function DotToDotPage() {
                 </div>
 
                 {isProcessing ? (
-                  <div className="flex flex-col items-center py-8">
-                    <Loader2 className="w-12 h-12 text-amber-500 animate-spin mb-4" />
-                    <p className="text-gray-600 font-medium">Creating your dot-to-dot puzzle...</p>
-                    <p className="text-gray-400 text-sm">This takes about 15-20 seconds</p>
+                  <div className="py-8">
+                    <div className="flex flex-col items-center mb-6">
+                      <Loader2 className="w-12 h-12 text-amber-500 animate-spin mb-4" />
+                      <p className="text-gray-600 font-medium">Creating your dot-to-dot puzzle...</p>
+                      <p className="text-gray-400 text-sm">This takes about 15-20 seconds</p>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="bg-amber-500 h-2 rounded-full transition-all duration-500" style={{ width: `${Math.max(progress, 10)}%` }}></div>
+                    </div>
+                    <p className="text-center text-sm text-gray-500 mt-2">{progress}% complete</p>
                   </div>
                 ) : (
                   <>
@@ -173,10 +211,10 @@ export default function DotToDotPage() {
                         </button>
                       ) : (
                         <Link href="/pro" className="w-full h-12 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold rounded-xl flex items-center justify-center gap-2">
-                          <Lock className="w-5 h-5" />Unlock with Pro
+                          <Lock className="w-5 h-5" />Unlock Unlimited with Pro
                         </Link>
                       )}
-                      <p className="text-sm text-gray-500 text-center mt-4">{freeUsesLeft > 0 ? '1 free generation • Then Pro required' : 'Unlimited with Pro subscription'}</p>
+                      <p className="text-sm text-gray-500 text-center mt-4">{freeUsesLeft > 0 ? '1 free generation • Then £4.99/mo for unlimited' : 'Unlimited dot-to-dot with Pro'}</p>
                     </div>
                   </>
                 )}
@@ -191,13 +229,13 @@ export default function DotToDotPage() {
           <h2 className="text-2xl font-bold text-white mb-6 text-center">Why Kids Love Dot-to-Dot</h2>
           <div className="grid md:grid-cols-3 gap-4">
             <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-5 text-center">
-              <div className="text-3xl mb-2">🔢</div><h3 className="font-semibold text-white mb-1">Learn Numbers</h3><p className="text-sm text-gray-400">Practice counting</p>
+              <div className="text-3xl mb-2">🔢</div><h3 className="font-semibold text-white mb-1">Learn Numbers</h3><p className="text-sm text-gray-400">Practice counting 1-100</p>
             </div>
             <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-5 text-center">
-              <div className="text-3xl mb-2">✏️</div><h3 className="font-semibold text-white mb-1">Fine Motor Skills</h3><p className="text-sm text-gray-400">Hand-eye coordination</p>
+              <div className="text-3xl mb-2">✏️</div><h3 className="font-semibold text-white mb-1">Motor Skills</h3><p className="text-sm text-gray-400">Hand-eye coordination</p>
             </div>
             <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-5 text-center">
-              <div className="text-3xl mb-2">🎨</div><h3 className="font-semibold text-white mb-1">Color After!</h3><p className="text-sm text-gray-400">Complete then color</p>
+              <div className="text-3xl mb-2">🎨</div><h3 className="font-semibold text-white mb-1">Then Color!</h3><p className="text-sm text-gray-400">Two activities in one</p>
             </div>
           </div>
         </div>

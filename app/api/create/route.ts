@@ -36,26 +36,29 @@ export async function POST(request: NextRequest) {
       await supabase.storage.from('uploads').upload(uploadPath, buffer, { contentType: file.type, upsert: true })
     }
 
+    // Insert job - use complexity field to store job type info if needed
+    const complexityWithType = jobType === 'dot-to-dot' ? `dot-to-dot-${dotCount}` : complexity
+    
     const { error: insertError } = await supabase.from('jobs').insert({
       id: jobId,
       session_id: sessionId,
       status: 'pending',
       upload_path: uploadPath,
-      complexity: complexity,
-      job_type: jobType,
-      dot_count: parseInt(dotCount),
+      complexity: complexityWithType,
       progress: 0,
       created_at: new Date().toISOString()
     })
 
     if (insertError) throw insertError
 
-    const processEndpoint = jobType === 'dot-to-dot' ? '/api/process/dot-to-dot' : '/api/process/ai-convert'
+    // Determine which processing endpoint to use
+    const isDotToDot = jobType === 'dot-to-dot'
+    const processEndpoint = isDotToDot ? '/api/process/dot-to-dot' : '/api/process/ai-convert'
     
     fetch(new URL(processEndpoint, request.url).toString(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId })
+      body: JSON.stringify({ jobId, dotCount: parseInt(dotCount) })
     }).catch(console.error)
 
     return NextResponse.json({ jobId, status: 'pending' })

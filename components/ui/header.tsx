@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { Search } from 'lucide-react'
+import { Search, Sparkles, Printer } from 'lucide-react'
 
 export function Header() {
   return (
@@ -14,16 +14,26 @@ export function Header() {
               <Image src="/logo.png" alt="colour.page" fill className="object-contain" priority unoptimized />
             </div>
           </Link>
+          
           <nav className="hidden md:flex items-center gap-1">
-            <Link href="/" className="px-4 py-2 text-sm font-semibold text-brand-primary hover:bg-zinc-800 rounded-lg transition-colors">Create</Link>
-            <Link href="/dot-to-dot" className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors">Dot-to-Dot</Link>
-            <Link href="/print" className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors">Print</Link>
+            <Link href="/" className="px-4 py-2 text-sm font-semibold text-brand-primary hover:bg-zinc-800 rounded-lg transition-colors">
+              Create
+            </Link>
+            <Link href="/print" className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors flex items-center gap-1.5">
+              <Printer className="w-4 h-4" />
+              Print Library
+            </Link>
+            <Link href="/dot-to-dot" className="px-4 py-2 text-sm font-semibold text-amber-400 hover:text-amber-300 hover:bg-zinc-800 rounded-lg transition-colors flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4" />
+              Dot-to-Dot
+              <span className="text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded-full">New</span>
+            </Link>
           </nav>
+
           <div className="flex items-center gap-3">
-            <button className="hidden sm:flex items-center gap-2 w-56 h-10 px-4 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm text-gray-400 transition-colors border border-zinc-700">
-              <Search className="w-4 h-4" /><span>Search...</span>
-            </button>
-            <Link href="/pro" className="h-10 px-5 bg-gradient-to-r from-brand-primary to-brand-border hover:from-brand-border hover:to-brand-hover text-white font-semibold text-sm rounded-lg transition-all flex items-center shadow-md hover:shadow-glow">Pro</Link>
+            <Link href="/pro" className="h-10 px-5 bg-gradient-to-r from-brand-primary to-brand-border hover:from-brand-border hover:to-brand-hover text-white font-semibold text-sm rounded-lg transition-all flex items-center shadow-md hover:shadow-glow">
+              Pro
+            </Link>
           </div>
         </div>
       </div>
