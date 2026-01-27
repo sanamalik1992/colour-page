@@ -1,127 +1,67 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { nanoid } from "nanoid";
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { v4 as uuidv4 } from 'uuid'
 
-export const dynamic = "force-dynamic";
+export const maxDuration = 30
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-
-function getString(formData: FormData, key: string): string {
-  const val = formData.get(key);
-  return typeof val === "string" ? val : "";
-}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 export async function POST(request: NextRequest) {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey)
+  
   try {
-    // IMPORTANT: anon client is fine here (just inserting job + upload)
-    const supabase = await createClient();
+    const formData = await request.formData()
+    const file = formData.get('file') as File
+    const complexity = formData.get('complexity') as string || 'medium'
+    const sessionId = formData.get('sessionId') as string
+    const jobType = formData.get('type') as string || 'coloring'
+    const dotCount = formData.get('dotCount') as string || '50'
 
-    const formData = await request.formData();
-
-    const fileValue = formData.get("file");
-    const file = fileValue instanceof File ? fileValue : null;
-
-    const complexity = getString(formData, "complexity") || "simple";
-    const instructions = getString(formData, "instructions");
-    const customText = getString(formData, "customText");
-    const addTextOverlay = getString(formData, "addTextOverlay") === "true";
-    const sessionId = getString(formData, "sessionId") || nanoid(12);
-
-    // ---- Validation ----
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!file || !sessionId) {
+      return NextResponse.json({ error: 'Missing file or session' }, { status: 400 })
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { error: "File too large. Maximum size is 10MB" },
-        { status: 400 }
-      );
-    }
+    const jobId = uuidv4()
+    const fileExt = file.name.split('.').pop() || 'png'
+    const uploadPath = `uploads/${jobId}.${fileExt}`
 
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      return NextResponse.json(
-        { error: "Invalid file type. Only JPG, PNG, and WEBP are allowed" },
-        { status: 400 }
-      );
-    }
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
 
-    // ---- File naming ----
-    const originalName = file.name || "upload";
-    const extFromName = originalName.includes(".")
-      ? originalName.split(".").pop()?.toLowerCase()
-      : undefined;
-
-    const fileExt =
-      extFromName && extFromName.length <= 5 ? extFromName : "png";
-
-    const fileName = `${nanoid()}.${fileExt}`;
-    const filePath = `uploads/${fileName}`;
-
-    // ---- Upload to storage ----
     const { error: uploadError } = await supabase.storage
-      .from("images")
-      .upload(filePath, file, {
-        contentType: file.type,
-        cacheControl: "3600",
-        upsert: false,
-      });
+      .from('images')
+      .upload(uploadPath, buffer, { contentType: file.type, upsert: true })
 
     if (uploadError) {
-      console.error("Upload error:", uploadError);
-      return NextResponse.json(
-        { error: "Failed to upload file" },
-        { status: 500 }
-      );
+      await supabase.storage.from('uploads').upload(uploadPath, buffer, { contentType: file.type, upsert: true })
     }
 
-    // ---- Create job ----
-    const { data: job, error: jobError } = await supabase
-      .from("jobs")
-      .insert({
-        session_id: sessionId,
-        upload_path: filePath,
-        original_filename: originalName,
-        status: "pending",
-        progress: 0,
-        complexity,
-        instructions: instructions || null,
-        custom_text: customText || null,
-        add_text_overlay: addTextOverlay,
-      })
-      .select()
-      .single();
+    const { error: insertError } = await supabase.from('jobs').insert({
+      id: jobId,
+      session_id: sessionId,
+      status: 'pending',
+      upload_path: uploadPath,
+      complexity: complexity,
+      job_type: jobType,
+      dot_count: parseInt(dotCount),
+      progress: 0,
+      created_at: new Date().toISOString()
+    })
 
-    if (jobError || !job) {
-      console.error("Job creation error:", jobError);
-      return NextResponse.json(
-        { error: "Failed to create job" },
-        { status: 500 }
-      );
-    }
+    if (insertError) throw insertError
 
-    // ---- CRITICAL FIX ----
-    // Always trigger process using absolute origin (Vercel-safe)
-    const origin = request.nextUrl.origin;
+    const processEndpoint = jobType === 'dot-to-dot' ? '/api/process/dot-to-dot' : '/api/process/ai-convert'
+    
+    fetch(new URL(processEndpoint, request.url).toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId })
+    }).catch(console.error)
 
-    fetch(`${origin}/api/process/ai-convert`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jobId: job.id }),
-    }).catch((err) =>
-      console.error("Failed to trigger processing:", err)
-    );
-
-    return NextResponse.json({
-      jobId: job.id,
-      status: "success",
-    });
-  } catch (error: unknown) {
-    console.error("Create job error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ jobId, status: 'pending' })
+  } catch (error) {
+    console.error('Create error:', error)
+    return NextResponse.json({ error: 'Failed to create job' }, { status: 500 })
   }
 }
