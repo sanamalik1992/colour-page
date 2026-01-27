@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { v4 as uuidv4 } from 'uuid'
 
 export const maxDuration = 30
 
@@ -22,7 +21,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing file or session' }, { status: 400 })
     }
 
-    const jobId = uuidv4()
+    const jobId = crypto.randomUUID()
     const fileExt = file.name.split('.').pop() || 'png'
     const uploadPath = `uploads/${jobId}.${fileExt}`
 
