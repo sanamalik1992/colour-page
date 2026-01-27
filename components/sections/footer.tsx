@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 export function Footer() {
   return (
     <footer className="border-t border-zinc-800 bg-zinc-900">
@@ -15,25 +17,26 @@ export function Footer() {
             <div>
               <h4 className="text-sm font-semibold text-white mb-3">Product</h4>
               <ul className="space-y-2">
-                <li><a href="#" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Features</a></li>
-                <li><a href="#" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Pricing</a></li>
-                <li><a href="#" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Examples</a></li>
+                <li><Link href="/" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Create</Link></li>
+                <li><Link href="/dot-to-dot" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Dot-to-Dot</Link></li>
+                <li><Link href="/print" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Print Library</Link></li>
+                <li><Link href="/pro" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Pro</Link></li>
               </ul>
             </div>
             
             <div>
               <h4 className="text-sm font-semibold text-white mb-3">Company</h4>
               <ul className="space-y-2">
-                <li><a href="#" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">About</a></li>
-                <li><a href="#" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Privacy</a></li>
-                <li><a href="#" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Terms</a></li>
+                <li><Link href="/privacy" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Privacy</Link></li>
+                <li><Link href="/terms" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Terms</Link></li>
+                <li><Link href="/contact" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Contact</Link></li>
               </ul>
             </div>
           </div>
           
           <div className="pt-8 border-t border-zinc-800 text-center">
             <p className="text-sm text-gray-500">
-              © 2026 colour.page. All rights reserved.
+              © 2025 colour.page. All rights reserved.
             </p>
           </div>
         </div>
