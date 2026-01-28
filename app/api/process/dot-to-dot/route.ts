@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     if (!webhookUrl) throw new Error("App URL not configured");
     const fullWebhookUrl = webhookUrl.startsWith("http") ? webhookUrl + "/api/webhooks/replicate" : "https://" + webhookUrl + "/api/webhooks/replicate";
     
-    const prompt = `Transform this image into a simple connect-the-dots puzzle for children. Create a clean black and white dot-to-dot activity page with approximately ${dotCount} numbered dots. Each dot should have a small number next to it in sequence (1, 2, 3, etc). Pure white background with black dots and small numbers. The numbered dots should outline the main subject of the image. When connected in order, the dots reveal the picture. Simple, clean, printable worksheet style. No shading, no filled areas - only numbered dots on white background.`;
+    const prompt = `Convert this image into a children's connect-the-dots puzzle worksheet. Replace the image with ONLY black numbered dots (1, 2, 3, 4... up to ${dotCount}) placed along the outline/edges of the main subject. Each dot must have its number printed clearly next to it. The dots should be connected in numerical order to reveal the shape. Pure white background. NO filled shapes, NO solid lines, NO shading - ONLY numbered dots. The final image should look like a classic dot-to-dot activity book page where children connect dot 1 to dot 2 to dot 3 etc. Make sure numbers are clearly readable. Professional printable worksheet style.`;
     
     const res = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions", {
       method: "POST",
