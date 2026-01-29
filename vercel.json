@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/generate-trending",
+      "schedule": "0 2 * * *"
+    }
+  ]
+}
