@@ -43,17 +43,16 @@ export async function POST(request: NextRequest) {
     if (!replicateToken) throw new Error("REPLICATE_API_TOKEN not configured")
 
     const complexity = job.complexity || "medium"
-    let prompt = "Transform this image into a black and white colouring book page. Clean bold black outlines on pure white background. No shading, no gradients, no gray tones - only pure black lines on white. Professional colouring book style suitable for children."
+    let prompt = "Transform this image into a clean black and white colouring book page with THIN, FINE, DELICATE line art. Use thin precise outlines on pure white background. No thick lines, no bold strokes. Light, elegant, fine pen-style lines only. No shading, no gradients, no gray - only thin black lines on white. Professional colouring book quality."
     
     if (complexity === "simple") {
-      prompt = "Transform this into a simple black and white colouring book page for young children. Very bold thick black outlines only on pure white background. Large simple shapes, minimal details. No shading or gradients."
+      prompt = "Transform this into a simple black and white colouring book page with THIN FINE lines for young children. Use thin delicate outlines on pure white background. Simple shapes with fine light lines, not thick or bold. No shading, no gradients. Thin elegant line art style."
     } else if (complexity === "detailed") {
-      prompt = "Transform this into a detailed black and white colouring book page. Clean precise black line art on pure white background. Include fine details and intricate patterns. No shading or gradients, only black lines on white."
+      prompt = "Transform this into a detailed black and white colouring book page with THIN, FINE, INTRICATE line art. Delicate precise thin lines on pure white background. Include fine details with light, elegant strokes. No thick lines, no bold outlines. Thin pen-style artwork only. No shading or gradients."
     }
 
     await supabase.from("jobs").update({ progress: 20 }).eq("id", jobId)
 
-    // Call Replicate API
     const res = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions", {
       method: "POST",
       headers: {
@@ -71,16 +70,15 @@ export async function POST(request: NextRequest) {
 
     if (!res.ok) {
       const errorText = await res.text()
-      throw new Error(`Failed to create prediction: ${errorText}`)
+      throw new Error(`Replicate error: ${errorText}`)
     }
 
     const prediction = await res.json()
     await supabase.from("jobs").update({ progress: 30, prediction_id: prediction.id }).eq("id", jobId)
 
-    // Poll for completion - this is more reliable than webhooks
     let result = prediction
     let attempts = 0
-    const maxAttempts = 90 // 3 minutes max
+    const maxAttempts = 120
 
     while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 2000))
@@ -91,12 +89,12 @@ export async function POST(request: NextRequest) {
       })
       result = await pollRes.json()
       
-      const progress = Math.min(30 + Math.floor(attempts * 0.5), 75)
+      const progress = Math.min(30 + Math.floor(attempts * 0.4), 80)
       await supabase.from("jobs").update({ progress }).eq("id", jobId)
     }
 
     if (result.status === 'failed') throw new Error(result.error || 'Generation failed')
-    if (result.status !== 'succeeded') throw new Error('Generation timed out')
+    if (result.status !== 'succeeded') throw new Error('Generation timed out - please try again')
 
     const output = result.output
     const outputUrl = typeof output === "string" ? output : Array.isArray(output) ? output[0] : output?.url
@@ -110,6 +108,8 @@ export async function POST(request: NextRequest) {
     const imageBuffer = Buffer.from(await imgRes.arrayBuffer())
     const resultPath = `results/${jobId}.png`
     
+    await supabase.from("jobs").update({ progress: 95 }).eq("id", jobId)
+
     const { error: uploadError } = await supabase.storage.from("images").upload(resultPath, imageBuffer, { contentType: "image/png", upsert: true })
     if (uploadError) {
       await supabase.storage.from("uploads").upload(resultPath, imageBuffer, { contentType: "image/png", upsert: true })
@@ -127,6 +127,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('AI convert error:', error)
     if (jobId) {
+      const supabase = createClient(supabaseUrl, supabaseServiceKey)
       await supabase.from("jobs").update({ 
         status: "failed", 
         error_message: error instanceof Error ? error.message : "Unknown error" 
