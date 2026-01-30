@@ -42,19 +42,17 @@ export async function POST(request: NextRequest) {
     const replicateToken = process.env.REPLICATE_API_TOKEN
     if (!replicateToken) throw new Error("REPLICATE_API_TOKEN not configured")
 
-    // Updated prompt for FINE, THIN lines - not thick
     const complexity = job.complexity || "medium"
-    let prompt = "Transform this image into a clean black and white colouring book page with THIN, FINE, DELICATE line art. Use thin precise outlines on pure white background. No thick lines, no bold strokes. Light, elegant, fine pen-style lines only. No shading, no gradients, no gray - only thin black lines on white. Professional colouring book quality."
+    let prompt = "Transform this image into a clean black and white colouring book page with medium-weight black outlines. Use clear, consistent line thickness suitable for colouring - not too thin and not too thick. Pure white background, no shading, no gradients, no gray tones. Professional colouring book style with clean readable lines that children can easily colour within."
     
     if (complexity === "simple") {
-      prompt = "Transform this into a simple black and white colouring book page with THIN FINE lines for young children. Use thin delicate outlines on pure white background. Simple shapes with fine light lines, not thick or bold. No shading, no gradients. Thin elegant line art style."
+      prompt = "Transform this into a simple black and white colouring book page for young children. Use medium-weight black outlines that are easy to see and colour within. Pure white background, simple shapes with clear readable lines. No shading, no gradients. Kid-friendly colouring book style."
     } else if (complexity === "detailed") {
-      prompt = "Transform this into a detailed black and white colouring book page with THIN, FINE, INTRICATE line art. Delicate precise thin lines on pure white background. Include fine details with light, elegant strokes. No thick lines, no bold outlines. Thin pen-style artwork only. No shading or gradients."
+      prompt = "Transform this into a detailed black and white colouring book page with medium-weight black line art. Use consistent line thickness throughout - clear and visible but not overly bold. Pure white background with intricate details. No shading or gradients, only clean black lines on white. Professional colouring book quality."
     }
 
     await supabase.from("jobs").update({ progress: 20 }).eq("id", jobId)
 
-    // Call Replicate API
     const res = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions", {
       method: "POST",
       headers: {
@@ -78,13 +76,12 @@ export async function POST(request: NextRequest) {
     const prediction = await res.json()
     await supabase.from("jobs").update({ progress: 30, prediction_id: prediction.id }).eq("id", jobId)
 
-    // Poll for completion - faster polling
     let result = prediction
     let attempts = 0
-    const maxAttempts = 120 // 4 minutes max
+    const maxAttempts = 120
 
     while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 2000)) // Poll every 2 seconds
+      await new Promise(resolve => setTimeout(resolve, 2000))
       attempts++
       
       const pollRes = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
@@ -92,20 +89,12 @@ export async function POST(request: NextRequest) {
       })
       result = await pollRes.json()
       
-      // Update progress more frequently
       const progress = Math.min(30 + Math.floor(attempts * 0.4), 80)
       await supabase.from("jobs").update({ progress }).eq("id", jobId)
-      
-      console.log(`Job ${jobId}: attempt ${attempts}, status: ${result.status}`)
     }
 
-    if (result.status === 'failed') {
-      throw new Error(result.error || 'Generation failed')
-    }
-    
-    if (result.status !== 'succeeded') {
-      throw new Error('Generation timed out - please try again')
-    }
+    if (result.status === 'failed') throw new Error(result.error || 'Generation failed')
+    if (result.status !== 'succeeded') throw new Error('Generation timed out - please try again')
 
     const output = result.output
     const outputUrl = typeof output === "string" ? output : Array.isArray(output) ? output[0] : output?.url
@@ -113,7 +102,6 @@ export async function POST(request: NextRequest) {
 
     await supabase.from("jobs").update({ progress: 85 }).eq("id", jobId)
 
-    // Download result
     const imgRes = await fetch(outputUrl)
     if (!imgRes.ok) throw new Error("Failed to download result")
     
@@ -122,13 +110,11 @@ export async function POST(request: NextRequest) {
     
     await supabase.from("jobs").update({ progress: 95 }).eq("id", jobId)
 
-    // Upload to storage
     const { error: uploadError } = await supabase.storage.from("images").upload(resultPath, imageBuffer, { contentType: "image/png", upsert: true })
     if (uploadError) {
       await supabase.storage.from("uploads").upload(resultPath, imageBuffer, { contentType: "image/png", upsert: true })
     }
 
-    // Mark complete
     await supabase.from("jobs").update({ 
       status: "completed", 
       result_url: resultPath, 
@@ -136,7 +122,6 @@ export async function POST(request: NextRequest) {
       completed_at: new Date().toISOString() 
     }).eq("id", jobId)
 
-    console.log(`Job ${jobId} completed successfully`)
     return NextResponse.json({ success: true, status: "completed" })
 
   } catch (error) {
