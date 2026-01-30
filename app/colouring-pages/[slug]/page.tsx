@@ -2,7 +2,7 @@ import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Download, Printer, ArrowLeft, Share2 } from 'lucide-react'
+import { Download, Printer, ArrowLeft } from 'lucide-react'
 
 interface PageData {
   id: string
@@ -16,13 +16,25 @@ interface PageData {
   created_at: string
 }
 
-async function getPage(slug: string): Promise<{ page: PageData; related: PageData[] } | null> {
+interface RelatedPage {
+  id: string
+  title: string
+  slug: string
+  preview_url: string
+  category: string
+}
+
+async function getPage(slug: string): Promise<{ page: PageData; related: RelatedPage[] } | null> {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://colour.page'
-  const res = await fetch(`${baseUrl}/api/colouring-pages/${slug}`, {
-    next: { revalidate: 3600 }
-  })
-  if (!res.ok) return null
-  return res.json()
+  try {
+    const res = await fetch(`${baseUrl}/api/colouring-pages/${slug}`, {
+      next: { revalidate: 3600 }
+    })
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -37,19 +49,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
   return {
     title: `${page.title} | Free Printable Colouring Page`,
-    description: page.description || `Download and print this free ${page.title.toLowerCase()} for kids. High quality colouring page suitable for all ages.`,
-    keywords: [page.title, 'colouring page', 'printable', 'free', 'kids', ...page.tags],
+    description: page.description || `Download and print this free ${page.title.toLowerCase()} for kids.`,
+    keywords: [page.title, 'colouring page', 'printable', 'free', 'kids', ...(page.tags || [])],
     openGraph: {
       title: page.title,
       description: page.description,
       images: page.preview_url ? [page.preview_url] : [],
       type: 'article'
-    },
-    twitter: {
-      card: 'summary_large_image',
-      title: page.title,
-      description: page.description,
-      images: page.preview_url ? [page.preview_url] : []
     },
     alternates: {
       canonical: `https://colour.page/colouring-pages/${slug}`
@@ -67,34 +73,14 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
 
   const { page, related } = data
 
-  const handlePrint = () => {
-    if (typeof window !== 'undefined' && page.preview_url) {
-      const w = window.open('', '_blank')
-      if (w) {
-        w.document.write(`<!DOCTYPE html><html><head><title>${page.title}</title><style>@page{size:A4;margin:0.5in}body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:white}img{max-width:100%;max-height:90vh}</style></head><body><img src="${page.preview_url}" onload="setTimeout(function(){window.print()},500)"/></body></html>`)
-        w.document.close()
-      }
-    }
-  }
-
-  // JSON-LD structured data
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'ImageObject',
     name: page.title,
     description: page.description,
     contentUrl: page.preview_url,
-    thumbnailUrl: page.preview_url,
     datePublished: page.created_at,
-    author: {
-      '@type': 'Organization',
-      name: 'colour.page'
-    },
-    publisher: {
-      '@type': 'Organization',
-      name: 'colour.page',
-      url: 'https://colour.page'
-    }
+    author: { '@type': 'Organization', name: 'colour.page' }
   }
 
   return (
@@ -105,7 +91,6 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
       />
       
       <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
-        {/* Header */}
         <header className="sticky top-0 z-50 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800">
           <div className="container mx-auto px-6 flex items-center justify-between h-16">
             <Link href="/" className="relative w-10 h-10">
@@ -119,7 +104,6 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
         </header>
 
         <main className="container mx-auto px-6 py-8">
-          {/* Breadcrumb */}
           <nav className="flex items-center gap-2 text-sm mb-6">
             <Link href="/" className="text-gray-500 hover:text-white">Home</Link>
             <span className="text-gray-600">/</span>
@@ -129,18 +113,19 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
           </nav>
 
           <div className="grid lg:grid-cols-2 gap-8">
-            {/* Image Preview */}
             <div className="bg-white rounded-2xl p-4 shadow-xl">
               {page.preview_url && (
-                <img 
+                <Image 
                   src={page.preview_url} 
                   alt={page.title}
+                  width={800}
+                  height={1000}
                   className="w-full rounded-lg"
+                  unoptimized
                 />
               )}
             </div>
 
-            {/* Details */}
             <div>
               <div className="mb-2">
                 <span className="inline-block px-3 py-1 bg-brand-primary/20 text-brand-primary text-sm font-medium rounded-full">
@@ -148,54 +133,39 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
                 </span>
               </div>
 
-              <h1 className="text-3xl md:text-4xl font-bold text-white mb-4">
-                {page.title}
-              </h1>
+              <h1 className="text-3xl md:text-4xl font-bold text-white mb-4">{page.title}</h1>
+              <p className="text-gray-400 mb-6">{page.description}</p>
 
-              <p className="text-gray-400 mb-6">
-                {page.description}
-              </p>
-
-              {/* Stats */}
               <div className="flex items-center gap-6 mb-8 text-sm text-gray-500">
                 <span>{page.download_count?.toLocaleString() || 0} downloads</span>
               </div>
 
-              {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-3 mb-8">
                 <a 
                   href={page.preview_url}
                   download={`${page.slug}.png`}
                   className="flex-1 h-14 bg-brand-primary hover:bg-brand-border text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
-                  onClick={() => fetch(`/api/colouring-pages/${slug}/download`, { method: 'POST' })}
                 >
                   <Download className="w-5 h-5" />
                   Download PNG
                 </a>
-                <button 
-                  onClick={handlePrint}
-                  className="flex-1 h-14 bg-zinc-700 hover:bg-zinc-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
-                >
+                <button className="flex-1 h-14 bg-zinc-700 hover:bg-zinc-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
                   <Printer className="w-5 h-5" />
                   Print
                 </button>
               </div>
 
-              {/* Tags */}
               {page.tags && page.tags.length > 0 && (
                 <div className="mb-8">
                   <h3 className="text-sm font-medium text-gray-400 mb-2">Tags</h3>
                   <div className="flex flex-wrap gap-2">
                     {page.tags.map(tag => (
-                      <span key={tag} className="px-3 py-1 bg-zinc-800 text-gray-300 text-sm rounded-full">
-                        {tag}
-                      </span>
+                      <span key={tag} className="px-3 py-1 bg-zinc-800 text-gray-300 text-sm rounded-full">{tag}</span>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Back Link */}
               <Link href="/print" className="inline-flex items-center gap-2 text-brand-primary hover:text-white transition-colors">
                 <ArrowLeft className="w-4 h-4" />
                 Back to all colouring pages
@@ -203,12 +173,11 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
             </div>
           </div>
 
-          {/* Related Pages */}
           {related && related.length > 0 && (
             <section className="mt-16">
               <h2 className="text-2xl font-bold text-white mb-6">More {page.category} Colouring Pages</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {related.map((r: any) => (
+                {related.map((r: RelatedPage) => (
                   <Link 
                     key={r.id} 
                     href={`/colouring-pages/${r.slug}`}
@@ -216,7 +185,7 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
                   >
                     <div className="aspect-[3/4] relative bg-gray-100">
                       {r.preview_url && (
-                        <img src={r.preview_url} alt={r.title} className="w-full h-full object-contain p-2" />
+                        <Image src={r.preview_url} alt={r.title} fill className="object-contain p-2" unoptimized />
                       )}
                     </div>
                     <div className="p-2">
@@ -229,7 +198,6 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
           )}
         </main>
 
-        {/* Footer */}
         <footer className="border-t border-zinc-800 py-8 mt-16">
           <div className="container mx-auto px-6 text-center text-gray-500 text-sm">
             © 2025 colour.page - Free Printable Colouring Pages

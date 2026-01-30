@@ -5,21 +5,20 @@ import { Loader2, CheckCircle2, Sparkles, Wand2, Printer, Download } from 'lucid
 
 interface ProcessingAnimationProps {
   isProcessing: boolean
-  progress?: number
 }
 
 const STEPS = [
   { id: 1, label: 'Uploading image', icon: Sparkles, duration: 2000 },
-  { id: 2, label: 'Analyzing photo', icon: Wand2, duration: 3000 },
+  { id: 2, label: 'Analysing photo', icon: Wand2, duration: 3000 },
   { id: 3, label: 'Creating line art', icon: Sparkles, duration: 8000 },
-  { id: 4, label: 'Optimizing for print', icon: Printer, duration: 2000 },
-  { id: 5, label: 'Finalizing', icon: Download, duration: 1000 },
+  { id: 4, label: 'Optimising for print', icon: Printer, duration: 2000 },
+  { id: 5, label: 'Finalising', icon: Download, duration: 1000 },
 ]
 
-export function ProcessingAnimation({ isProcessing, progress = 0 }: ProcessingAnimationProps) {
+export function ProcessingAnimation({ isProcessing }: ProcessingAnimationProps) {
   const [currentStep, setCurrentStep] = useState(0)
   const [elapsed, setElapsed] = useState(0)
-  const [estimatedTotal] = useState(15)
+  const estimatedTotal = 15
 
   useEffect(() => {
     if (!isProcessing) {
@@ -60,7 +59,7 @@ export function ProcessingAnimation({ isProcessing, progress = 0 }: ProcessingAn
             <div className="absolute -top-1 -right-1 w-3 h-3 bg-brand-primary rounded-full animate-pulse" />
           </div>
           <div>
-            <h3 className="font-semibold text-white">Creating your coloring page</h3>
+            <h3 className="font-semibold text-white">Creating your colouring page</h3>
             <p className="text-sm text-gray-400">This usually takes 10-15 seconds</p>
           </div>
         </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { AnimatedBorderCard } from '@/components/ui/animated-border-card'
 import { ProcessingAnimation } from '@/components/ui/processing-animation'
@@ -32,14 +32,7 @@ export function GeneratorSection() {
   const [usageCount, setUsageCount] = useState(0)
   const [canCreate, setCanCreate] = useState(true)
 
-  // Check usage limits on load
-  useEffect(() => {
-    if (sessionId) {
-      checkLimits()
-    }
-  }, [sessionId])
-
-  const checkLimits = async () => {
+  const checkLimits = useCallback(async () => {
     if (!sessionId) return
     try {
       const res = await fetch(`/api/check-limits?sessionId=${sessionId}`)
@@ -49,7 +42,13 @@ export function GeneratorSection() {
     } catch {
       setCanCreate(true)
     }
-  }
+  }, [sessionId])
+
+  useEffect(() => {
+    if (sessionId) {
+      checkLimits()
+    }
+  }, [sessionId, checkLimits])
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file)
@@ -69,7 +68,6 @@ export function GeneratorSection() {
   const handleCreate = async () => {
     if (!selectedFile || !sessionId) return
 
-    // Check limits before creating
     if (!canCreate) {
       setError('You have used all 3 free conversions. Upgrade to Pro for unlimited access!')
       return
@@ -101,7 +99,6 @@ export function GeneratorSection() {
       setJobId(data.jobId)
       setUsageCount(prev => prev + 1)
       
-      // Update canCreate
       if (usageCount + 1 >= FREE_LIMIT) {
         setCanCreate(false)
       }
@@ -112,7 +109,6 @@ export function GeneratorSection() {
     }
   }
 
-  // Poll for job status
   useEffect(() => {
     if (!jobId || !sessionId) return
 
@@ -167,168 +163,98 @@ export function GeneratorSection() {
       <div className="max-w-3xl mx-auto">
         <AnimatedBorderCard isAnimating={isProcessing}>
           <div className="p-8 md:p-10">
-            {/* Card Header */}
             <div className="flex items-center justify-between gap-3 mb-8 pb-6 border-b border-gray-200">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-brand-primary to-brand-border rounded-xl flex items-center justify-center shadow-glow">
                   <Sparkles className="w-6 h-6 text-white" />
                 </div>
-                <h2 className="text-2xl font-bold text-gray-900">
-                  Colouring Page Generator
-                </h2>
+                <h2 className="text-2xl font-bold text-gray-900">Colouring Page Generator</h2>
               </div>
               {!canCreate ? (
                 <span className="text-sm font-medium text-red-500 flex items-center gap-1">
                   <Lock className="w-4 h-4" /> Limit reached
                 </span>
               ) : (
-                <span className="text-sm font-medium text-gray-500">
-                  {remaining} free {remaining === 1 ? 'try' : 'tries'} left
-                </span>
+                <span className="text-sm font-medium text-gray-500">{remaining} free {remaining === 1 ? 'try' : 'tries'} left</span>
               )}
             </div>
 
-            {/* Limit Reached Message */}
             {!canCreate && !isProcessing && !job && (
               <div className="bg-gradient-to-r from-brand-primary/10 to-brand-border/10 border border-brand-primary/30 rounded-xl p-6 mb-6 text-center">
                 <Lock className="w-10 h-10 mx-auto mb-3 text-brand-primary" />
                 <h3 className="text-lg font-bold text-gray-900 mb-2">Free Limit Reached</h3>
-                <p className="text-gray-600 mb-4">
-                  You have used all 3 free colouring page conversions.
-                </p>
-                <Link 
-                  href="/pro" 
-                  className="inline-flex items-center gap-2 h-12 px-6 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold rounded-xl hover:opacity-90 transition-opacity"
-                >
+                <p className="text-gray-600 mb-4">You have used all 3 free colouring page conversions.</p>
+                <Link href="/pro" className="inline-flex items-center gap-2 h-12 px-6 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold rounded-xl hover:opacity-90 transition-opacity">
                   <Sparkles className="w-5 h-5" />
                   Upgrade to Pro - Unlimited Access
                 </Link>
               </div>
             )}
 
-            {/* Ready Ticker */}
             {job?.status === 'completed' && <ReadyTicker />}
-
-            {/* Processing Timer */}
             {isProcessing && <ProcessingAnimation isProcessing={isProcessing} />}
 
-            {/* Error Message */}
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 mb-6">
                 <p className="text-sm font-semibold text-red-600">{error}</p>
                 {error.includes('Pro') && (
-                  <Link href="/pro" className="text-sm text-brand-primary hover:underline mt-2 inline-block">
-                    View Pro Plans →
-                  </Link>
+                  <Link href="/pro" className="text-sm text-brand-primary hover:underline mt-2 inline-block">View Pro Plans →</Link>
                 )}
               </div>
             )}
 
-            {/* Upload Area - only show if can create */}
             {canCreate && (
               <div className="mb-6">
                 {previewUrl ? (
-                  <ImagePreview
-                    src={previewUrl}
-                    alt="Uploaded image"
-                    onRemove={handleRemoveFile}
-                  />
+                  <ImagePreview src={previewUrl} alt="Uploaded image" onRemove={handleRemoveFile} />
                 ) : (
-                  <UploadButton
-                    onFileSelect={handleFileSelect}
-                    disabled={isProcessing}
-                  />
+                  <UploadButton onFileSelect={handleFileSelect} disabled={isProcessing} />
                 )}
               </div>
             )}
 
-            {/* Options Panel */}
             {canCreate && !isProcessing && !job && (
               <>
                 <div className="space-y-4 mb-6">
-                  <OptionalField
-                    label="Instructions (optional)"
-                    placeholder="e.g., Make it more detailed, add borders"
-                    value={instructions}
-                    onChange={setInstructions}
-                  />
+                  <OptionalField label="Instructions (optional)" placeholder="e.g., Make it more detailed, add borders" value={instructions} onChange={setInstructions} />
                   
                   <div>
                     <label className="flex items-center gap-2 mb-2">
-                      <input
-                        type="checkbox"
-                        checked={addTextOverlay}
-                        onChange={(e) => setAddTextOverlay(e.target.checked)}
-                        className="w-4 h-4 text-brand-primary border-gray-300 rounded focus:ring-brand-primary"
-                      />
-                      <span className="text-sm font-medium text-gray-700">
-                        Add text to image
-                      </span>
+                      <input type="checkbox" checked={addTextOverlay} onChange={(e) => setAddTextOverlay(e.target.checked)} className="w-4 h-4 text-brand-primary border-gray-300 rounded focus:ring-brand-primary" />
+                      <span className="text-sm font-medium text-gray-700">Add text to image</span>
                     </label>
                     
                     {addTextOverlay && (
-                      <OptionalField
-                        label=""
-                        placeholder="Enter your text here"
-                        value={customText}
-                        onChange={setCustomText}
-                      />
+                      <OptionalField label="" placeholder="Enter your text here" value={customText} onChange={setCustomText} />
                     )}
                   </div>
                 </div>
 
-                {/* Controls */}
                 <div className="pt-6 border-t border-gray-200 space-y-4">
-                  <ComplexityToggle
-                    value={complexity}
-                    onChange={setComplexity}
-                  />
+                  <ComplexityToggle value={complexity} onChange={setComplexity} />
                   
-                  <button
-                    onClick={handleCreate}
-                    disabled={!selectedFile || isProcessing}
-                    className="btn-primary w-full"
-                  >
+                  <button onClick={handleCreate} disabled={!selectedFile || isProcessing} className="btn-primary w-full">
                     <Sparkles className="w-5 h-5" />
                     Generate Colouring Page
                   </button>
                   
-                  <p className="text-sm text-gray-500 text-center">
-                    {remaining} of 3 free conversions remaining
-                  </p>
+                  <p className="text-sm text-gray-500 text-center">{remaining} of 3 free conversions remaining</p>
                 </div>
               </>
             )}
 
-            {/* Email Gate Button */}
             {job?.status === 'completed' && (
-              <button
-                onClick={() => setShowEmailGate(true)}
-                className="btn-primary w-full"
-              >
-                Get Download Link via Email
-              </button>
+              <button onClick={() => setShowEmailGate(true)} className="btn-primary w-full">Get Download Link via Email</button>
             )}
 
-            {/* Start Over Button */}
             {job && (
-              <button
-                onClick={handleReset}
-                className="btn-secondary w-full mt-4"
-              >
-                Create Another
-              </button>
+              <button onClick={handleReset} className="btn-secondary w-full mt-4">Create Another</button>
             )}
           </div>
         </AnimatedBorderCard>
 
-        {/* Email Gate Modal */}
         {showEmailGate && jobId && sessionId && (
-          <EmailGateModal
-            jobId={jobId}
-            sessionId={sessionId}
-            onClose={() => setShowEmailGate(false)}
-          />
+          <EmailGateModal jobId={jobId} sessionId={sessionId} onClose={() => setShowEmailGate(false)} />
         )}
       </div>
     </section>
