@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { Search, Sparkles, Printer } from 'lucide-react'
+import { Sparkles, Printer } from 'lucide-react'
 
 export function Header() {
   return (

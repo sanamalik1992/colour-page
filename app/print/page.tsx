@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Search, Download, Printer, X, Sparkles, Loader2, TrendingUp } from 'lucide-react'
@@ -24,11 +24,7 @@ export default function PrintLibraryPage() {
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [sortBy, setSortBy] = useState<'trending' | 'newest' | 'popular'>('trending')
 
-  useEffect(() => {
-    loadPages()
-  }, [selectedCategory, sortBy])
-
-  const loadPages = async () => {
+  const loadPages = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams({
@@ -51,7 +47,11 @@ export default function PrintLibraryPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedCategory, sortBy])
+
+  useEffect(() => {
+    loadPages()
+  }, [loadPages])
 
   const filteredPages = pages.filter(page => {
     if (!searchQuery) return true
@@ -65,7 +65,6 @@ export default function PrintLibraryPage() {
       w.document.write(`<!DOCTYPE html><html><head><title>${page.title}</title><style>@page{size:A4;margin:0.5in}body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:white}img{max-width:100%;max-height:90vh}</style></head><body><img src="${page.preview_url}" onload="setTimeout(function(){window.print()},500)"/></body></html>`)
       w.document.close()
     }
-    // Track download
     fetch(`/api/colouring-pages/${page.slug}/download`, { method: 'POST' }).catch(() => {})
   }
 
@@ -81,8 +80,6 @@ export default function PrintLibraryPage() {
       a.download = `${page.slug}.png`
       a.click()
       URL.revokeObjectURL(url)
-      
-      // Track download
       fetch(`/api/colouring-pages/${page.slug}/download`, { method: 'POST' }).catch(() => {})
     } catch {
       window.open(page.preview_url, '_blank')
@@ -91,7 +88,6 @@ export default function PrintLibraryPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
-      {/* Header */}
       <header className="sticky top-0 z-50 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800">
         <div className="container mx-auto px-6 flex items-center justify-between h-20">
           <Link href="/" className="relative w-12 h-12">
@@ -110,7 +106,6 @@ export default function PrintLibraryPage() {
         </div>
       </header>
 
-      {/* Hero */}
       <section className="container mx-auto px-6 py-12">
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 bg-brand-primary/10 border border-brand-primary/20 rounded-full px-4 py-2 mb-4">
@@ -118,10 +113,9 @@ export default function PrintLibraryPage() {
             <span className="text-sm font-medium text-brand-primary">Updated Daily</span>
           </div>
           <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">Trending Colouring Pages</h1>
-          <p className="text-xl text-gray-400 max-w-2xl mx-auto">Free printable colouring pages updated daily with trending topics. Download, print, and colour!</p>
+          <p className="text-xl text-gray-400 max-w-2xl mx-auto">Free printable colouring pages updated daily. Download, print, and colour!</p>
         </div>
 
-        {/* Search */}
         <div className="max-w-2xl mx-auto mb-6">
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -140,34 +134,24 @@ export default function PrintLibraryPage() {
           </div>
         </div>
 
-        {/* Sort */}
         <div className="flex justify-center gap-2 mb-6">
           {(['trending', 'newest', 'popular'] as const).map(sort => (
             <button
               key={sort}
               onClick={() => setSortBy(sort)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                sortBy === sort
-                  ? 'bg-brand-primary text-white'
-                  : 'bg-zinc-800 text-gray-400 hover:bg-zinc-700'
-              }`}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${sortBy === sort ? 'bg-brand-primary text-white' : 'bg-zinc-800 text-gray-400 hover:bg-zinc-700'}`}
             >
               {sort.charAt(0).toUpperCase() + sort.slice(1)}
             </button>
           ))}
         </div>
 
-        {/* Categories */}
         <div className="flex flex-wrap justify-center gap-2 mb-10">
           {CATEGORIES.map(cat => (
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                selectedCategory === cat
-                  ? 'bg-brand-primary text-white'
-                  : 'bg-zinc-800 text-gray-400 hover:bg-zinc-700 hover:text-white'
-              }`}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${selectedCategory === cat ? 'bg-brand-primary text-white' : 'bg-zinc-800 text-gray-400 hover:bg-zinc-700 hover:text-white'}`}
             >
               {cat}
             </button>
@@ -175,7 +159,6 @@ export default function PrintLibraryPage() {
         </div>
       </section>
 
-      {/* Gallery */}
       <section className="container mx-auto px-6 pb-20">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
@@ -197,11 +180,12 @@ export default function PrintLibraryPage() {
                 >
                   <div className="aspect-[3/4] relative bg-gray-50">
                     {page.preview_url ? (
-                      <img 
+                      <Image 
                         src={page.preview_url} 
                         alt={page.title} 
-                        className="w-full h-full object-contain p-2" 
-                        loading="lazy"
+                        fill
+                        className="object-contain p-2" 
+                        unoptimized
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-gray-300">
@@ -237,7 +221,6 @@ export default function PrintLibraryPage() {
         )}
       </section>
 
-      {/* CTA */}
       <section className="container mx-auto px-6 pb-20">
         <div className="bg-gradient-to-r from-brand-primary/20 to-brand-border/20 border border-brand-primary/30 rounded-3xl p-12 text-center">
           <h2 className="text-3xl font-bold text-white mb-4">Create Your Own Colouring Pages</h2>
@@ -249,7 +232,6 @@ export default function PrintLibraryPage() {
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="border-t border-zinc-800 py-12">
         <div className="container mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <span className="text-gray-400 text-sm">© 2025 colour.page</span>

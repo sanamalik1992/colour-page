@@ -30,7 +30,7 @@ export default function ProPage() {
       } else {
         setError(data.error || 'Failed to start checkout')
       }
-    } catch (e) {
+    } catch {
       setError('Something went wrong. Please try again.')
     } finally {
       setLoading(false)
