@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
     const replicateToken = process.env.REPLICATE_API_TOKEN
     if (!replicateToken) throw new Error("REPLICATE_API_TOKEN not configured")
 
+    // Updated prompt for MEDIUM weight lines - not too thin, not too thick
     const complexity = job.complexity || "medium"
     let prompt = "Transform this image into a clean black and white colouring book page with medium-weight black outlines. Use clear, consistent line thickness suitable for colouring - not too thin and not too thick. Pure white background, no shading, no gradients, no gray tones. Professional colouring book style with clean readable lines that children can easily colour within."
     
