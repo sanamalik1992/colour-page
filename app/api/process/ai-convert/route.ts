@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
         input: {
           prompt: prompt,
           input_image: signedUrl,
-          aspect_ratio: "match_input_image"
+          aspect_ratio: "3:4"
         }
       })
     })
