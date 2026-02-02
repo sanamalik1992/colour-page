@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import sharp from "sharp"
 
 export const maxDuration = 300
 
@@ -64,7 +63,7 @@ export async function POST(request: NextRequest) {
         input: {
           prompt: prompt,
           input_image: signedUrl,
-          aspect_ratio: "match_input_image"
+          aspect_ratio: "3:4"
         }
       })
     })
@@ -106,26 +105,14 @@ export async function POST(request: NextRequest) {
     const imgRes = await fetch(outputUrl)
     if (!imgRes.ok) throw new Error("Failed to download result")
     
-    const arrayBuffer = await imgRes.arrayBuffer()
-    
-    const A4_WIDTH = 2480
-    const A4_HEIGHT = 3508
-    
-    const finalBuffer = await sharp(Buffer.from(arrayBuffer))
-      .resize(A4_WIDTH, A4_HEIGHT, {
-        fit: 'contain',
-        background: { r: 255, g: 255, b: 255, alpha: 1 }
-      })
-      .png({ quality: 100 })
-      .toBuffer()
-    
+    const imageBuffer = Buffer.from(await imgRes.arrayBuffer())
     const resultPath = `results/${jobId}.png`
     
     await supabase.from("jobs").update({ progress: 95 }).eq("id", jobId)
 
-    const { error: uploadError } = await supabase.storage.from("images").upload(resultPath, finalBuffer, { contentType: "image/png", upsert: true })
+    const { error: uploadError } = await supabase.storage.from("images").upload(resultPath, imageBuffer, { contentType: "image/png", upsert: true })
     if (uploadError) {
-      await supabase.storage.from("uploads").upload(resultPath, finalBuffer, { contentType: "image/png", upsert: true })
+      await supabase.storage.from("uploads").upload(resultPath, imageBuffer, { contentType: "image/png", upsert: true })
     }
 
     await supabase.from("jobs").update({ 
