@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
 
     await supabase.from("jobs").update({ progress: 20 }).eq("id", jobId)
 
+    // Use match_input_image to preserve original orientation and quality
     const res = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions", {
       method: "POST",
       headers: {
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
         input: {
           prompt: prompt,
           input_image: signedUrl,
-          aspect_ratio: "3:4"
+          aspect_ratio: "match_input_image"
         }
       })
     })
