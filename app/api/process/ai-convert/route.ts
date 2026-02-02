@@ -42,7 +42,6 @@ export async function POST(request: NextRequest) {
     const replicateToken = process.env.REPLICATE_API_TOKEN
     if (!replicateToken) throw new Error("REPLICATE_API_TOKEN not configured")
 
-    // Updated prompt for MEDIUM weight lines - not too thin, not too thick
     const complexity = job.complexity || "medium"
     let prompt = "Transform this image into a clean black and white colouring book page with medium-weight black outlines. Use clear, consistent line thickness suitable for colouring - not too thin and not too thick. Pure white background, no shading, no gradients, no gray tones. Professional colouring book style with clean readable lines that children can easily colour within."
     
@@ -64,7 +63,7 @@ export async function POST(request: NextRequest) {
         input: {
           prompt: prompt,
           input_image: signedUrl,
-          aspect_ratio: "3:4"
+          aspect_ratio: "match_input_image"
         }
       })
     })
@@ -106,7 +105,25 @@ export async function POST(request: NextRequest) {
     const imgRes = await fetch(outputUrl)
     if (!imgRes.ok) throw new Error("Failed to download result")
     
-    const imageBuffer = Buffer.from(await imgRes.arrayBuffer())
+    let imageBuffer = Buffer.from(await imgRes.arrayBuffer())
+    
+    // Resize to fit A4 (2480x3508 at 300dpi) with white background - no cropping
+    try {
+      const sharp = (await import('sharp')).default
+      const A4_WIDTH = 2480
+      const A4_HEIGHT = 3508
+      
+      imageBuffer = await sharp(imageBuffer)
+        .resize(A4_WIDTH, A4_HEIGHT, {
+          fit: 'contain',
+          background: { r: 255, g: 255, b: 255, alpha: 1 }
+        })
+        .png()
+        .toBuffer()
+    } catch (resizeError) {
+      console.error('Resize error (using original):', resizeError)
+    }
+    
     const resultPath = `results/${jobId}.png`
     
     await supabase.from("jobs").update({ progress: 95 }).eq("id", jobId)
