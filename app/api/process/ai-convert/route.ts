@@ -54,7 +54,6 @@ export async function POST(request: NextRequest) {
 
     await supabase.from("jobs").update({ progress: 20 }).eq("id", jobId)
 
-    // Generate at ORIGINAL quality - no aspect ratio change
     const res = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions", {
       method: "POST",
       headers: {
@@ -109,7 +108,6 @@ export async function POST(request: NextRequest) {
     
     const arrayBuffer = await imgRes.arrayBuffer()
     
-    // Resize to A4 (2480x3508 @ 300dpi) with white background - CONTAIN mode (no crop)
     const A4_WIDTH = 2480
     const A4_HEIGHT = 3508
     
