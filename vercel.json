@@ -19,6 +19,9 @@
     "app/api/process/ai-convert/route.ts": {
       "maxDuration": 300
     },
+    "app/api/dot-jobs/process/route.ts": {
+      "maxDuration": 300
+    },
     "app/api/print-pages/admin/route.ts": {
       "maxDuration": 60
     }

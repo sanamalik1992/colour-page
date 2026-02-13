@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { Printer, Sparkles, BookOpen, ImagePlus } from 'lucide-react'
+import { Printer, Sparkles, BookOpen, ImagePlus, Crown, CircleDot } from 'lucide-react'
 
 interface NavHeaderProps {
-  active?: 'create' | 'library' | 'print-pages' | 'pro'
+  active?: 'create' | 'library' | 'print-pages' | 'dot-to-dot' | 'pro'
+  isPro?: boolean
 }
 
-export function NavHeader({ active }: NavHeaderProps) {
+export function NavHeader({ active, isPro }: NavHeaderProps) {
   const linkClass = (key: string) =>
     `px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 transition-colors ${
       active === key
@@ -29,6 +30,10 @@ export function NavHeader({ active }: NavHeaderProps) {
               <ImagePlus className="w-4 h-4" />
               <span className="hidden sm:inline">Create</span>
             </Link>
+            <Link href="/dot-to-dot" className={linkClass('dot-to-dot')}>
+              <CircleDot className="w-4 h-4" />
+              <span className="hidden sm:inline">Dot-to-Dot</span>
+            </Link>
             <Link href="/library" className={linkClass('library')}>
               <BookOpen className="w-4 h-4" />
               <span className="hidden sm:inline">My Library</span>
@@ -39,13 +44,23 @@ export function NavHeader({ active }: NavHeaderProps) {
             </Link>
           </nav>
 
-          <Link
-            href="/pro"
-            className="h-9 px-4 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold text-sm rounded-lg flex items-center shadow-md hover:opacity-90 transition-opacity"
-          >
-            <Sparkles className="w-4 h-4 mr-1.5" />
-            Pro
-          </Link>
+          {isPro ? (
+            <Link
+              href="/account"
+              className="h-9 px-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold text-sm rounded-lg flex items-center shadow-md hover:opacity-90 transition-opacity"
+            >
+              <Crown className="w-4 h-4 mr-1.5" />
+              Pro
+            </Link>
+          ) : (
+            <Link
+              href="/pro"
+              className="h-9 px-4 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold text-sm rounded-lg flex items-center shadow-md hover:opacity-90 transition-opacity"
+            >
+              <Sparkles className="w-4 h-4 mr-1.5" />
+              Pro
+            </Link>
+          )}
         </div>
       </div>
     </header>

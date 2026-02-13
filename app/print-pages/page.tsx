@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import {
   Search,
@@ -13,6 +13,7 @@ import {
   Calendar,
   TrendingUp,
   Filter,
+  AlertTriangle,
 } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
@@ -61,6 +62,70 @@ export default function PrintPagesPage() {
   const [total, setTotal] = useState(0)
   const [showFilters, setShowFilters] = useState(false)
 
+  // Search suggestions state
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [copyrightWarning, setCopyrightWarning] = useState<{ message: string; alternatives: string[] } | null>(null)
+  const searchRef = useRef<HTMLDivElement>(null)
+  const debounceRef = useRef<NodeJS.Timeout>(null)
+
+  // Fetch suggestions on input
+  const fetchSuggestions = useCallback(async (q: string) => {
+    try {
+      const res = await fetch(`/api/search-suggestions?q=${encodeURIComponent(q)}`)
+      const data = await res.json()
+
+      if (data.blocked) {
+        setCopyrightWarning({ message: data.message, alternatives: data.alternatives })
+        setSuggestions([])
+      } else {
+        setCopyrightWarning(null)
+        setSuggestions(data.suggestions || [])
+      }
+      setShowSuggestions(true)
+    } catch {
+      setSuggestions([])
+    }
+  }, [])
+
+  const handleSearchInput = (value: string) => {
+    setSearchQuery(value)
+    setCopyrightWarning(null)
+
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (value.length >= 2) {
+      debounceRef.current = setTimeout(() => fetchSuggestions(value), 300)
+    } else if (value.length === 0) {
+      fetchSuggestions('')
+    } else {
+      setSuggestions([])
+      setShowSuggestions(false)
+    }
+  }
+
+  const handleSuggestionClick = (term: string) => {
+    setSearchQuery(term)
+    setShowSuggestions(false)
+    setCopyrightWarning(null)
+    // Track the search
+    fetch('/api/search-suggestions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ term }),
+    }).catch(() => {})
+  }
+
+  // Close suggestions on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
   const loadPages = useCallback(async () => {
     setLoading(true)
     try {
@@ -89,6 +154,20 @@ export default function PrintPagesPage() {
   useEffect(() => {
     loadPages()
   }, [loadPages])
+
+  // Track search on submit
+  useEffect(() => {
+    if (searchQuery.length >= 3) {
+      const timer = setTimeout(() => {
+        fetch('/api/search-suggestions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ term: searchQuery }),
+        }).catch(() => {})
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [searchQuery])
 
   const handlePrint = (page: PrintPageItem) => {
     if (!page.preview_url) return
@@ -141,21 +220,62 @@ export default function PrintPagesPage() {
           </p>
         </div>
 
-        {/* Search */}
-        <div className="max-w-xl mx-auto mb-6">
+        {/* Search with Typeahead */}
+        <div className="max-w-xl mx-auto mb-6" ref={searchRef}>
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"
               placeholder="Search colouring pages..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearchInput(e.target.value)}
+              onFocus={() => { if (suggestions.length > 0 || searchQuery.length === 0) fetchSuggestions(searchQuery) }}
               className="w-full h-12 pl-12 pr-12 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-brand-primary transition-colors"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+              <button onClick={() => { setSearchQuery(''); setCopyrightWarning(null); setShowSuggestions(false) }} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
+            )}
+
+            {/* Copyright Warning */}
+            {copyrightWarning && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 z-50">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-400 mb-2">{copyrightWarning.message}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {copyrightWarning.alternatives.map(alt => (
+                        <button
+                          key={alt}
+                          onClick={() => handleSuggestionClick(alt)}
+                          className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white text-xs rounded-full transition-colors"
+                        >
+                          {alt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Suggestions Dropdown */}
+            {showSuggestions && !copyrightWarning && suggestions.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-zinc-800 border border-zinc-700 rounded-xl overflow-hidden z-50 shadow-xl">
+                {!searchQuery && <p className="px-4 pt-3 pb-1 text-xs text-gray-500 font-semibold uppercase">Popular Searches</p>}
+                {suggestions.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => handleSuggestionClick(s)}
+                    className="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2"
+                  >
+                    <Search className="w-3.5 h-3.5 text-gray-500" />
+                    {s}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         </div>
