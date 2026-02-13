@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Printer, Sparkles } from 'lucide-react'
+import { Printer, Sparkles, BookOpen } from 'lucide-react'
 import { Hero } from '@/components/sections/hero'
 import { GeneratorSection } from '@/components/sections/generator-section'
 import { HowItWorks } from '@/components/sections/how-it-works'
@@ -23,12 +23,12 @@ export default function Home() {
               <Image src="/logo.png" alt="colour.page" fill className="object-contain" priority unoptimized />
             </Link>
             <nav className="flex items-center gap-2">
-              <Link href="/" className="px-4 py-2 text-sm font-semibold text-brand-primary hover:bg-zinc-800 rounded-lg">Create</Link>
-              <Link href="/print" className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg flex items-center gap-2">
-                <Printer className="w-4 h-4" />Print
+              <Link href="/create" className="px-4 py-2 text-sm font-semibold text-brand-primary hover:bg-zinc-800 rounded-lg">Create</Link>
+              <Link href="/library" className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg flex items-center gap-2">
+                <BookOpen className="w-4 h-4" />My Library
               </Link>
-              <Link href="/dot-to-dot" className="px-4 py-2 text-sm font-semibold text-amber-400 hover:bg-zinc-800 rounded-lg flex items-center gap-2">
-                <Sparkles className="w-4 h-4" />Dot-to-Dot
+              <Link href="/print-pages" className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg flex items-center gap-2">
+                <Printer className="w-4 h-4" />Print Pages
               </Link>
             </nav>
             <Link href="/pro" className="h-10 px-5 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold text-sm rounded-lg flex items-center shadow-md">Pro</Link>
