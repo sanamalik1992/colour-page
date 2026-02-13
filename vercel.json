@@ -1,12 +1,13 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/generate-trending",
-      "schedule": "0 2 * * *"
+  "functions": {
+    "app/api/photo-jobs/process/route.ts": {
+      "maxDuration": 60
     },
-    {
-      "path": "/api/photo-jobs/worker",
-      "schedule": "* * * * *"
+    "app/api/photo-jobs/webhook/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/print-pages/admin/route.ts": {
+      "maxDuration": 60
     }
-  ]
+  }
 }
