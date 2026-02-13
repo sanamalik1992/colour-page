@@ -3,6 +3,24 @@
     {
       "path": "/api/cron/generate-trending",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/photo-jobs/worker",
+      "schedule": "* * * * *"
     }
-  ]
+  ],
+  "functions": {
+    "app/api/photo-jobs/process/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/photo-jobs/webhook/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/process/ai-convert/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/print-pages/admin/route.ts": {
+      "maxDuration": 60
+    }
+  }
 }
