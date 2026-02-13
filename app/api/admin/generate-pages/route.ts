@@ -354,13 +354,9 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}))
   const startIndex = body.startIndex || 0
-  const count = body.count || 1
+  const count = body.count || 10
 
   const replicateToken = process.env.REPLICATE_API_TOKEN
-  if (!replicateToken) {
-    return NextResponse.json({ error: 'REPLICATE_API_TOKEN not set' }, { status: 500 })
-  }
-
   const results: string[] = []
 
   for (let i = startIndex; i < Math.min(startIndex + count, COLOURING_PAGES.length); i++) {
@@ -368,7 +364,7 @@ export async function POST(request: NextRequest) {
     const slug = generateSlug(item.title)
 
     const { data: existing } = await supabase
-      .from('colouring_pages')
+      .from('print_pages')
       .select('id')
       .eq('slug', slug)
       .maybeSingle()
@@ -379,60 +375,86 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+      let buffer: Buffer
       const prompt = buildPrompt(item.topic)
 
-      const res = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${replicateToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          input: { prompt, num_outputs: 1, aspect_ratio: '3:4', output_format: 'png' }
+      if (replicateToken) {
+        // Use Replicate AI to generate image
+        const res = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${replicateToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            input: { prompt, num_outputs: 1, aspect_ratio: '3:4', output_format: 'png' }
+          })
         })
-      })
 
-      if (!res.ok) throw new Error('Failed to start')
+        if (!res.ok) throw new Error('Failed to start Replicate')
 
-      const prediction = await res.json()
+        const prediction = await res.json()
+        let result = prediction
+        let attempts = 0
+        while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < 60) {
+          await new Promise(r => setTimeout(r, 2000))
+          const poll = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
+            headers: { 'Authorization': `Bearer ${replicateToken}` }
+          })
+          result = await poll.json()
+          attempts++
+        }
 
-      let result = prediction
-      let attempts = 0
-      while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < 60) {
-        await new Promise(r => setTimeout(r, 2000))
-        const poll = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
-          headers: { 'Authorization': `Bearer ${replicateToken}` }
-        })
-        result = await poll.json()
-        attempts++
+        if (result.status !== 'succeeded') throw new Error('Generation failed')
+
+        const imageUrl = result.output?.[0] || result.output
+        if (!imageUrl) throw new Error('No output')
+
+        const imgRes = await fetch(imageUrl)
+        buffer = Buffer.from(await imgRes.arrayBuffer())
+      } else {
+        // Generate SVG placeholder and convert to PNG via Sharp
+        const sharp = (await import('sharp')).default
+        const svg = generatePlaceholderSvg(item.title, item.category, item.topic)
+        buffer = await sharp(Buffer.from(svg)).png().toBuffer()
       }
 
-      if (result.status !== 'succeeded') throw new Error('Generation failed')
+      const previewPath = `previews/${slug}.png`
 
-      const imageUrl = result.output?.[0] || result.output
-      if (!imageUrl) throw new Error('No output')
+      // Try print-pages bucket first, fall back to images
+      const { error: uploadError } = await supabase.storage
+        .from('print-pages')
+        .upload(previewPath, buffer, { contentType: 'image/png', upsert: true })
 
-      const imgRes = await fetch(imageUrl)
-      const buffer = Buffer.from(await imgRes.arrayBuffer())
-      const path = `previews/${slug}.png`
+      if (uploadError) {
+        await supabase.storage
+          .from('images')
+          .upload(previewPath, buffer, { contentType: 'image/png', upsert: true })
+      }
 
-      await supabase.storage.from('colouring-pages').upload(path, buffer, {
-        contentType: 'image/png',
-        upsert: true
-      })
+      // Determine season from tags
+      let season: string | null = null
+      const seasonalTags = item.tags.map(t => t.toLowerCase())
+      if (seasonalTags.includes('christmas') || seasonalTags.includes('winter')) season = 'winter'
+      else if (seasonalTags.includes('easter') || seasonalTags.includes('spring')) season = 'spring'
+      else if (seasonalTags.includes('halloween') || seasonalTags.includes('autumn')) season = 'autumn'
+      else if (seasonalTags.includes('summer')) season = 'summer'
 
-      await supabase.from('colouring_pages').insert({
+      await supabase.from('print_pages').insert({
         title: item.title + ' Colouring Page',
         slug,
-        description: `Free printable ${item.title.toLowerCase()} colouring page for kids aged ${item.age}.`,
-        prompt_used: prompt,
+        description: `Free printable ${item.title.toLowerCase()} colouring page for kids aged ${item.age}. ${item.topic}.`,
         category: item.category,
         tags: item.tags,
         age_range: item.age,
-        preview_path: path,
-        trend_score: Math.floor(Math.random() * 50) + 50,
-        download_count: Math.floor(Math.random() * 5000) + 1000,
-        is_published: true
+        season,
+        preview_png_path: previewPath,
+        source_storage_path: previewPath,
+        featured: i < 20,
+        sort_order: i,
+        download_count: 0,
+        view_count: 0,
+        is_published: true,
       })
 
       results.push(`${item.title}: success`)
@@ -448,6 +470,24 @@ export async function POST(request: NextRequest) {
     totalPages: COLOURING_PAGES.length,
     remaining: COLOURING_PAGES.length - (startIndex + count)
   })
+}
+
+function generatePlaceholderSvg(title: string, category: string, topic: string): string {
+  // Simple but visually appealing SVG colouring page template
+  const escapedTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const escapedTopic = topic.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="744" height="992" viewBox="0 0 744 992">
+  <rect width="744" height="992" fill="white"/>
+  <rect x="30" y="30" width="684" height="932" rx="20" fill="none" stroke="#E5E7EB" stroke-width="2"/>
+  <rect x="40" y="40" width="664" height="912" rx="16" fill="none" stroke="#D1D5DB" stroke-width="1" stroke-dasharray="8,4"/>
+  <text x="372" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#374151">${escapedTitle}</text>
+  <text x="372" y="155" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" fill="#9CA3AF">${category} · colour.page</text>
+  <rect x="80" y="180" width="584" height="700" rx="12" fill="none" stroke="#E5E7EB" stroke-width="1.5"/>
+  <text x="372" y="520" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#D1D5DB">${escapedTopic}</text>
+  <text x="372" y="550" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#E5E7EB">Colouring Page</text>
+  <text x="372" y="920" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#D1D5DB">colour.page - Free Printable Colouring Pages</text>
+</svg>`
 }
 
 export async function GET() {

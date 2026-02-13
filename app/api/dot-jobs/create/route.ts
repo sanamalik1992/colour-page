@@ -86,13 +86,20 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to create job')
     }
 
-    // Trigger processing (fire and forget)
+    // Trigger background processing
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
     fetch(`${appUrl}/api/dot-jobs/process`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jobId: job.id }),
-    }).catch(console.error)
+    }).catch((err) => {
+      console.error('Failed to trigger dot-jobs/process:', err)
+      supabase.from('dot_jobs').update({
+        status: 'failed',
+        error: 'Processing failed to start. Please try again.',
+        updated_at: new Date().toISOString(),
+      }).eq('id', job.id)
+    })
 
     return NextResponse.json({
       jobId: job.id,
