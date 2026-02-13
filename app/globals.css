@@ -9,11 +9,11 @@
     --brand-border: #059669;
     --brand-hover: #047857;
   }
-  
+
   * {
     @apply border-gray-200;
   }
-  
+
   body {
     @apply bg-zinc-900 text-gray-900 antialiased;
   }
@@ -27,7 +27,7 @@
     @apply transition-all duration-200;
     @apply placeholder:text-gray-400;
   }
-  
+
   /* Primary button with green gradient */
   .btn-primary {
     @apply h-12 px-8 rounded-xl font-semibold text-base;
@@ -40,7 +40,7 @@
     @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none;
     @apply flex items-center justify-center gap-2;
   }
-  
+
   /* Secondary button */
   .btn-secondary {
     @apply h-12 px-8 rounded-xl font-semibold text-base;
@@ -50,7 +50,7 @@
     @apply focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2 focus:ring-offset-zinc-900;
     @apply flex items-center justify-center gap-2;
   }
-  
+
   /* Outline button with green */
   .btn-outline {
     @apply h-12 px-8 rounded-xl font-semibold text-base;
@@ -91,11 +91,11 @@
     animation-duration: 0.5s;
     animation-fill-mode: both;
   }
-  
+
   .fade-in {
     animation-name: fadeIn;
   }
-  
+
   .slide-in-from-bottom-4 {
     animation-name: slideInFromBottom;
   }
@@ -121,17 +121,47 @@
   }
 }
 
+/* Gradient text utility */
+.text-gradient {
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #18181b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
 /* Print styles */
 @media print {
   @page {
     margin: 0;
     size: A4;
   }
-  
+
   body {
     @apply bg-white;
   }
-  
+
   header,
   .no-print {
     display: none !important;
