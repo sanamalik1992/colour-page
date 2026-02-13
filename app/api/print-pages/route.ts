@@ -69,26 +69,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Generate signed URLs for previews
+  // Generate signed URLs for previews (try print-pages bucket, then images bucket)
+  async function getSignedUrl(path: string): Promise<string | undefined> {
+    const { data: d1 } = await supabase.storage.from('print-pages').createSignedUrl(path, 3600)
+    if (d1?.signedUrl) return d1.signedUrl
+    const { data: d2 } = await supabase.storage.from('images').createSignedUrl(path, 3600)
+    return d2?.signedUrl
+  }
+
   const pagesWithUrls = await Promise.all(
     (pages || []).map(async (page) => {
-      let preview_url: string | undefined
-      let pdf_url: string | undefined
-
-      if (page.preview_png_path) {
-        const { data } = await supabase.storage
-          .from('print-pages')
-          .createSignedUrl(page.preview_png_path, 3600)
-        preview_url = data?.signedUrl
-      }
-
-      if (page.pdf_storage_path) {
-        const { data } = await supabase.storage
-          .from('print-pages')
-          .createSignedUrl(page.pdf_storage_path, 3600)
-        pdf_url = data?.signedUrl
-      }
-
+      const preview_url = page.preview_png_path ? await getSignedUrl(page.preview_png_path) : undefined
+      const pdf_url = page.pdf_storage_path ? await getSignedUrl(page.pdf_storage_path) : undefined
       return { ...page, preview_url, pdf_url }
     })
   )

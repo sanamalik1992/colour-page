@@ -107,13 +107,20 @@ export async function POST(request: NextRequest) {
 
     if (insertError) throw insertError
 
-    // Trigger background processing (fire-and-forget)
-    const baseUrl = request.nextUrl.origin
+    // Trigger background processing
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
     fetch(`${baseUrl}/api/photo-jobs/process`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jobId }),
-    }).catch(console.error)
+    }).catch((err) => {
+      console.error('Failed to trigger photo-jobs/process:', err)
+      supabase.from('photo_jobs').update({
+        status: 'failed',
+        error: 'Processing failed to start. Please try again.',
+        updated_at: new Date().toISOString(),
+      }).eq('id', jobId)
+    })
 
     return NextResponse.json({
       jobId,

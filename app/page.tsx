@@ -1,207 +1,366 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { ImagePlus, CircleDot, Printer, ArrowRight, Sparkles, Crown, Shield, Zap, Heart } from 'lucide-react'
+import {
+  Upload,
+  Sparkles,
+  ArrowRight,
+  CircleDot,
+  Printer,
+  FileText,
+  Image as ImageIcon,
+  RotateCcw,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+} from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
-import { Hero } from '@/components/sections/hero'
-import { ShowcaseGallery } from '@/components/sections/showcase-gallery'
-import { HowItWorks } from '@/components/sections/how-it-works'
-import { StatsSection } from '@/components/sections/stats-section'
-import { Testimonials } from '@/components/sections/testimonials'
 import { Footer } from '@/components/sections/footer'
+import { useSessionId } from '@/hooks/useSessionId'
+import type { PhotoJobStatus } from '@/types/photo-job'
 
-function FeatureCard({
-  href,
-  icon: Icon,
-  title,
-  description,
-  gradient,
-  badge,
-  features,
-}: {
-  href: string
-  icon: React.ElementType
-  title: string
-  description: string
-  gradient: string
-  badge?: string
-  features: string[]
-}) {
-  return (
-    <Link href={href} className="group relative block">
-      {/* Animated gradient border */}
-      <div className="absolute -inset-[2px] rounded-2xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-500">
-        <div
-          className="absolute inset-[-200%] animate-border-spin"
-          style={{
-            background: `conic-gradient(from 0deg, transparent 0deg, transparent 240deg, ${gradient} 280deg, transparent 320deg, transparent 360deg)`,
-          }}
-        />
-      </div>
-      <div className="relative bg-zinc-800/50 border border-zinc-700 rounded-2xl p-8 group-hover:border-transparent transition-all duration-300 group-hover:-translate-y-1 h-full flex flex-col">
-        {badge && (
-          <span className="absolute top-4 right-4 text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
-            {badge}
-          </span>
-        )}
-        <div className={`w-14 h-14 rounded-xl flex items-center justify-center mb-5 bg-gradient-to-br ${gradient} shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-          <Icon className="w-7 h-7 text-white" />
-        </div>
-        <h3 className="text-xl font-bold text-white mb-2 group-hover:text-brand-primary transition-colors">{title}</h3>
-        <p className="text-gray-400 text-sm mb-5">{description}</p>
-
-        {/* Feature list */}
-        <ul className="space-y-2 mb-6 flex-1">
-          {features.map((f, i) => (
-            <li key={i} className="flex items-center gap-2 text-sm text-gray-500">
-              <div className="w-1.5 h-1.5 rounded-full bg-brand-primary flex-shrink-0" />
-              {f}
-            </li>
-          ))}
-        </ul>
-
-        <span className="inline-flex items-center gap-1 text-sm font-semibold text-brand-primary group-hover:gap-2 transition-all">
-          Get Started <ArrowRight className="w-4 h-4" />
-        </span>
-      </div>
-    </Link>
-  )
+const STATUS_LABELS: Record<PhotoJobStatus, string> = {
+  queued: 'Queued...',
+  processing: 'Processing image...',
+  rendering: 'Rendering PDF...',
+  done: 'Ready!',
+  failed: 'Failed',
 }
 
 export default function Home() {
+  const sessionId = useSessionId()
   const [mounted, setMounted] = useState(false)
+
+  // Upload state
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  // Job state
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [jobStatus, setJobStatus] = useState<PhotoJobStatus | null>(null)
+  const [progress, setProgress] = useState(0)
+  const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Results
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [pngUrl, setPngUrl] = useState<string | null>(null)
+
+  // Limits
+  const [remaining, setRemaining] = useState(3)
+
   useEffect(() => { setMounted(true) }, [])
+
+  useEffect(() => {
+    if (!sessionId) return
+    fetch(`/api/check-limits?sessionId=${sessionId}`)
+      .then((r) => r.json())
+      .then((d) => setRemaining(d.remaining ?? 3))
+      .catch(() => {})
+  }, [sessionId])
+
+  const handleFile = useCallback((f: File) => {
+    setFile(f)
+    setError('')
+    const reader = new FileReader()
+    reader.onloadend = () => setPreview(reader.result as string)
+    reader.readAsDataURL(f)
+  }, [])
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      setDragOver(false)
+      const f = e.dataTransfer.files[0]
+      if (f && f.type.startsWith('image/')) handleFile(f)
+    },
+    [handleFile]
+  )
+
+  const handleGenerate = async () => {
+    if (!file || !sessionId) return
+    setIsSubmitting(true)
+    setError('')
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('sessionId', sessionId)
+      formData.append('orientation', 'portrait')
+      formData.append('lineThickness', 'medium')
+      formData.append('detailLevel', 'medium')
+
+      const res = await fetch('/api/photo-jobs/create', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to create job')
+
+      setJobId(data.jobId)
+      setJobStatus('queued')
+      setProgress(0)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start generation')
+      setIsSubmitting(false)
+    }
+  }
+
+  // Poll for status
+  useEffect(() => {
+    if (!jobId || !sessionId) return
+    if (jobStatus === 'done' || jobStatus === 'failed') return
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/photo-jobs/status?jobId=${jobId}&sessionId=${sessionId}`)
+        const data = await res.json()
+        if (data.job) {
+          setJobStatus(data.job.status)
+          setProgress(data.job.progress || 0)
+          if (data.job.status === 'done') {
+            setPdfUrl(data.signedPdfUrl || null)
+            setPngUrl(data.signedPngUrl || null)
+            setIsSubmitting(false)
+          }
+          if (data.job.status === 'failed') {
+            setError(data.job.error || 'Generation failed')
+            setIsSubmitting(false)
+          }
+        }
+      } catch { /* retry */ }
+    }
+
+    const interval = setInterval(poll, 2000)
+    poll()
+    return () => clearInterval(interval)
+  }, [jobId, sessionId, jobStatus])
+
+  const handleReset = () => {
+    setFile(null)
+    setPreview(null)
+    setJobId(null)
+    setJobStatus(null)
+    setProgress(0)
+    setError('')
+    setPdfUrl(null)
+    setPngUrl(null)
+    setIsSubmitting(false)
+  }
+
   if (!mounted) return null
+
+  const isProcessing = jobStatus && jobStatus !== 'done' && jobStatus !== 'failed'
+  const isDone = jobStatus === 'done'
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
       <NavHeader active="create" />
-      <Hero />
 
-      {/* Stats bar */}
-      <StatsSection />
-
-      {/* Feature Cards */}
-      <section className="container mx-auto px-6 py-16">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-14">
-            <h2 className="text-3xl md:text-5xl font-extrabold text-white mb-4 tracking-tight">
-              Three Ways to Create
-            </h2>
-            <p className="text-lg text-gray-400">
-              Choose the tool that fits your needs
+      <main className="container mx-auto px-4 sm:px-6 pt-8 sm:pt-12 pb-16">
+        <div className="max-w-xl mx-auto">
+          {/* Headline */}
+          <div className="text-center mb-8">
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-3 leading-tight tracking-tight">
+              Upload a Photo,<br />Print & Colour
+            </h1>
+            <p className="text-gray-400 text-base sm:text-lg">
+              AI turns any photo into a printable colouring page
             </p>
           </div>
-          <div className="grid md:grid-cols-3 gap-6">
-            <FeatureCard
-              href="/create"
-              icon={ImagePlus}
-              title="Photo to Colouring Page"
-              description="Upload any photo and AI transforms it into a beautiful, printable A4 colouring page."
-              gradient="from-brand-primary to-brand-border"
-              features={[
-                'AI-powered line art',
-                'Adjustable detail levels',
-                'A4 PDF & PNG download',
-                '3 free pages per day',
-              ]}
-            />
-            <FeatureCard
-              href="/dot-to-dot"
-              icon={CircleDot}
-              title="Dot-to-Dot Puzzles"
-              description="Turn photos into numbered connect-the-dots puzzles. Choose 50-200 dots for any difficulty."
-              gradient="from-amber-400 to-orange-500"
-              badge="New"
-              features={[
-                'Custom dot counts (50-200)',
-                'Optional guide lines',
-                'Numbered dots for easy following',
-                '1 free puzzle to try',
-              ]}
-            />
-            <FeatureCard
-              href="/print-pages"
-              icon={Printer}
-              title="Ready-Made Library"
-              description="Browse hundreds of original colouring pages. Animals, fantasy, seasonal themes and more."
-              gradient="from-violet-500 to-purple-600"
-              badge="Free"
-              features={[
-                '300+ curated pages',
-                'Animals, vehicles, fantasy & more',
-                'Search & filter by category',
-                'Instant download & print',
-              ]}
-            />
-          </div>
-        </div>
-      </section>
 
-      {/* Showcase */}
-      <ShowcaseGallery />
+          {/* Generator Card */}
+          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="p-5 sm:p-8">
 
-      {/* How it works */}
-      <HowItWorks />
-
-      {/* Testimonials */}
-      <Testimonials />
-
-      {/* Pro CTA */}
-      <section className="container mx-auto px-6 pb-20">
-        <div className="max-w-4xl mx-auto">
-          <div className="relative overflow-hidden rounded-3xl">
-            {/* Animated border */}
-            <div className="absolute -inset-[2px] rounded-3xl overflow-hidden">
-              <div
-                className="absolute inset-[-200%] animate-border-spin"
-                style={{
-                  background: 'conic-gradient(from 0deg, transparent 0deg, transparent 200deg, #10B981 240deg, #34D399 280deg, #10B981 320deg, transparent 360deg)',
-                }}
-              />
-            </div>
-            <div className="relative bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 rounded-3xl p-10 md:p-14">
-              <div className="grid md:grid-cols-2 gap-10 items-center">
-                <div>
-                  <div className="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-full px-4 py-2 mb-6">
-                    <Crown className="w-4 h-4 text-amber-400" />
-                    <span className="text-sm font-semibold text-amber-400">Go Pro</span>
-                  </div>
-                  <h2 className="text-3xl md:text-4xl font-extrabold text-white mb-4 tracking-tight">
-                    Unlock Everything
-                  </h2>
-                  <p className="text-gray-400 mb-8 leading-relaxed">
-                    Remove all limits and get the best experience. Unlimited colouring pages, unlimited dot-to-dot puzzles, HD downloads, and priority processing.
-                  </p>
-                  <Link
-                    href="/pro"
-                    className="inline-flex items-center gap-2 h-14 px-10 bg-gradient-to-r from-brand-primary to-brand-border text-white font-bold text-lg rounded-2xl hover:opacity-90 transition-all shadow-glow hover:shadow-glow-lg hover:-translate-y-0.5 duration-300"
-                  >
-                    <Sparkles className="w-5 h-5" />
-                    Go Pro — From £2.99/month
-                  </Link>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  {[
-                    { icon: Zap, label: 'Unlimited Pages', desc: 'No daily limits' },
-                    { icon: ImagePlus, label: 'HD Downloads', desc: 'Full resolution' },
-                    { icon: Shield, label: 'No Watermarks', desc: 'Clean output' },
-                    { icon: Heart, label: 'Priority Queue', desc: 'Faster processing' },
-                  ].map((perk, i) => (
-                    <div key={i} className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4 text-center">
-                      <perk.icon className="w-6 h-6 text-brand-primary mx-auto mb-2" />
-                      <p className="text-sm font-semibold text-white">{perk.label}</p>
-                      <p className="text-xs text-gray-500">{perk.desc}</p>
+              {/* Upload State */}
+              {!jobId && !isSubmitting && (
+                <>
+                  {!preview ? (
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={handleDrop}
+                      className={`border-2 border-dashed rounded-xl p-8 sm:p-10 text-center cursor-pointer transition-all ${
+                        dragOver
+                          ? 'border-brand-primary bg-brand-primary/5'
+                          : 'border-gray-200 hover:border-brand-primary/50 hover:bg-gray-50'
+                      }`}
+                      onClick={() => {
+                        const input = document.createElement('input')
+                        input.type = 'file'
+                        input.accept = 'image/*,.heic,.heif'
+                        input.onchange = (e) => {
+                          const f = (e.target as HTMLInputElement).files?.[0]
+                          if (f) handleFile(f)
+                        }
+                        input.click()
+                      }}
+                    >
+                      <Upload className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                      <p className="font-semibold text-gray-700 mb-1">
+                        Tap to select a photo
+                      </p>
+                      <p className="text-sm text-gray-400">
+                        or drag and drop &middot; JPG, PNG, HEIC
+                      </p>
                     </div>
-                  ))}
+                  ) : (
+                    <div className="space-y-5">
+                      <div className="relative rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
+                        <img src={preview} alt="Preview" className="w-full max-h-64 object-contain" />
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setFile(null); setPreview(null) }}
+                          className="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center shadow hover:bg-red-50 transition-colors"
+                        >
+                          <RotateCcw className="w-4 h-4 text-gray-600" />
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={handleGenerate}
+                        disabled={remaining <= 0}
+                        className="btn-primary w-full"
+                      >
+                        <Sparkles className="w-5 h-5" />
+                        Generate Colouring Page
+                      </button>
+
+                      <p className="text-xs text-gray-400 text-center">
+                        {remaining > 0 ? `${remaining} free generation${remaining !== 1 ? 's' : ''} left today` : 'Daily limit reached'}
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Processing State */}
+              {isProcessing && (
+                <div className="text-center py-6">
+                  <div className="relative w-20 h-20 mx-auto mb-5">
+                    <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+                      <circle cx="40" cy="40" r="35" className="fill-none stroke-gray-100" strokeWidth="6" />
+                      <circle
+                        cx="40" cy="40" r="35"
+                        className="fill-none stroke-brand-primary"
+                        strokeWidth="6"
+                        strokeLinecap="round"
+                        strokeDasharray={`${2 * Math.PI * 35}`}
+                        strokeDashoffset={`${2 * Math.PI * 35 * (1 - progress / 100)}`}
+                        style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+                      />
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center text-lg font-bold text-gray-800">
+                      {progress}%
+                    </span>
+                  </div>
+                  <p className="font-semibold text-gray-700">{STATUS_LABELS[jobStatus!]}</p>
+                  <p className="text-sm text-gray-400 mt-1">This usually takes 10-30 seconds</p>
                 </div>
+              )}
+
+              {/* Error State */}
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-red-700">{error}</p>
+                      <button onClick={handleReset} className="text-sm text-red-600 hover:underline mt-1 flex items-center gap-1">
+                        <RefreshCw className="w-3.5 h-3.5" /> Try again
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Done State */}
+              {isDone && (
+                <div className="space-y-5">
+                  {pngUrl && (
+                    <div className="rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
+                      <img src={pngUrl} alt="Generated colouring page" className="w-full object-contain max-h-[400px]" />
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 text-brand-primary">
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span className="font-semibold">Your colouring page is ready!</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {pdfUrl && (
+                      <a href={pdfUrl} download="colouring-page.pdf" className="btn-primary">
+                        <FileText className="w-5 h-5" /> PDF
+                      </a>
+                    )}
+                    {pngUrl && (
+                      <a href={pngUrl} download="colouring-page.png" className="btn-secondary">
+                        <ImageIcon className="w-5 h-5" /> PNG
+                      </a>
+                    )}
+                  </div>
+
+                  <button onClick={handleReset} className="btn-outline w-full">
+                    <RotateCcw className="w-4 h-4" /> Create Another
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Links */}
+          <div className="grid grid-cols-2 gap-3 mt-6">
+            <Link
+              href="/dot-to-dot"
+              className="flex items-center gap-3 bg-zinc-800/50 border border-zinc-700 rounded-xl p-4 hover:border-zinc-600 transition-colors group"
+            >
+              <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                <CircleDot className="w-5 h-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white leading-tight">Dot-to-Dot</p>
+                <p className="text-xs text-gray-500 truncate">Photo puzzles</p>
+              </div>
+            </Link>
+            <Link
+              href="/print-pages"
+              className="flex items-center gap-3 bg-zinc-800/50 border border-zinc-700 rounded-xl p-4 hover:border-zinc-600 transition-colors group"
+            >
+              <div className="w-10 h-10 bg-gradient-to-br from-violet-500 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Printer className="w-5 h-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white leading-tight">Print Library</p>
+                <p className="text-xs text-gray-500 truncate">300+ free pages</p>
+              </div>
+            </Link>
+          </div>
+
+          {/* How it works - compact */}
+          <div className="mt-8 text-center">
+            <div className="flex items-center justify-center gap-8 text-sm text-gray-500">
+              <div className="flex flex-col items-center gap-1">
+                <Upload className="w-5 h-5 text-gray-600" />
+                <span>Upload</span>
+              </div>
+              <ArrowRight className="w-4 h-4 text-gray-700" />
+              <div className="flex flex-col items-center gap-1">
+                <Sparkles className="w-5 h-5 text-gray-600" />
+                <span>AI generates</span>
+              </div>
+              <ArrowRight className="w-4 h-4 text-gray-700" />
+              <div className="flex flex-col items-center gap-1">
+                <FileText className="w-5 h-5 text-gray-600" />
+                <span>Print</span>
               </div>
             </div>
           </div>
         </div>
-      </section>
+      </main>
 
       <Footer />
     </div>
