@@ -5,7 +5,7 @@
  * optional watermark, and optional footer branding.
  */
 
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib'
 import sharp from 'sharp'
 
 // A4 dimensions in points (1 pt = 1/72 inch)
@@ -107,7 +107,6 @@ export async function renderA4Pdf(
   if (watermark) {
     const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
     const fontSize = 60
-    const textWidth = font.widthOfTextAtSize(WATERMARK_TEXT, fontSize)
 
     // Draw diagonal watermark
     page.pushOperators()
@@ -128,7 +127,7 @@ export async function renderA4Pdf(
           font,
           color: rgb(0.7, 0.7, 0.7),
           opacity,
-          rotate: { type: 'degrees' as const, angle: -35 },
+          rotate: degrees(-35),
         })
       }
     }

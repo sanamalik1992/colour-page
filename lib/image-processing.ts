@@ -59,13 +59,8 @@ export async function preprocessImage(
 export class ReplicateProvider implements LineArtProvider {
   name = 'replicate'
 
-  async generate(imageBuffer: Buffer, settings: PhotoJobSettings): Promise<Buffer> {
-    const token = process.env.REPLICATE_API_TOKEN
-    if (!token) throw new Error('REPLICATE_API_TOKEN not configured')
-
-    // We need a URL for Replicate – upload as data URI is not supported,
-    // so the caller should supply a signed URL instead. This provider
-    // is called from the API route which handles Supabase URLs directly.
+  async generate(_imageBuffer: Buffer, _settings: PhotoJobSettings): Promise<Buffer> {
+    // Replicate needs a URL, not a buffer. Use processWithReplicate() instead.
     throw new Error('ReplicateProvider.generate should be called via processWithReplicate()')
   }
 }

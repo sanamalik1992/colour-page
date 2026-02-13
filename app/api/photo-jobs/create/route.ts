@@ -63,13 +63,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Read file buffer
-    let buffer = Buffer.from(await file.arrayBuffer())
+    let buffer: Buffer = Buffer.from(await file.arrayBuffer()) as Buffer
     let contentType = file.type
     const originalFilename = file.name
 
     // Convert HEIC to PNG
     if (isHeic(file.name, file.type)) {
-      buffer = await convertHeicToPng(buffer)
+      buffer = await convertHeicToPng(buffer) as Buffer
       contentType = 'image/png'
     }
 

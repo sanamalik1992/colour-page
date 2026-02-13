@@ -50,7 +50,7 @@ export default function AdminPrintPagesPage() {
   // Upload form state
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploadTitle, setUploadTitle] = useState('')
-  const [uploadCategory, setUploadCategory] = useState(PRINT_PAGE_CATEGORIES[0])
+  const [uploadCategory, setUploadCategory] = useState<string>(PRINT_PAGE_CATEGORIES[0])
   const [uploadTags, setUploadTags] = useState('')
   const [uploadSeason, setUploadSeason] = useState('')
   const [uploadFeatured, setUploadFeatured] = useState(false)

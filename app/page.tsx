@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Printer, Sparkles, BookOpen } from 'lucide-react'
+import { Printer, BookOpen } from 'lucide-react'
 import { Hero } from '@/components/sections/hero'
 import { GeneratorSection } from '@/components/sections/generator-section'
 import { HowItWorks } from '@/components/sections/how-it-works'
