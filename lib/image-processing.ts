@@ -5,7 +5,9 @@
  *   Stage A: Preprocessing (denoise, contrast, background flattening)
  *   Stage B: Line extraction via Replicate (primary) or Sharp CV fallback
  *
- * The adapter pattern lets us swap providers without touching calling code.
+ * The Sharp CV fallback uses multi-scale edge detection with morphological
+ * cleanup to produce clean, kid-friendly colouring pages without any
+ * external API dependency.
  */
 
 import sharp from 'sharp'
@@ -60,14 +62,12 @@ export class ReplicateProvider implements LineArtProvider {
   name = 'replicate'
 
   async generate(_imageBuffer: Buffer, _settings: PhotoJobSettings): Promise<Buffer> {
-    // Replicate needs a URL, not a buffer. Use processWithReplicate() instead.
     throw new Error('ReplicateProvider.generate should be called via processWithReplicate()')
   }
 }
 
 /**
- * Process a photo job using Replicate API (called from the API route
- * which manages Supabase storage and signed URLs).
+ * Process a photo job using Replicate API.
  */
 export async function processWithReplicate(
   signedUrl: string,
@@ -77,7 +77,6 @@ export async function processWithReplicate(
   const token = process.env.REPLICATE_API_TOKEN
   if (!token) throw new Error('REPLICATE_API_TOKEN not configured')
 
-  // Build prompt based on settings
   const thickness =
     settings.lineThickness === 'thin'
       ? 'fine, delicate'
@@ -96,7 +95,6 @@ export async function processWithReplicate(
 
   await onProgress?.(20)
 
-  // Create prediction
   const res = await fetch(
     'https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions',
     {
@@ -123,7 +121,6 @@ export async function processWithReplicate(
   const prediction = await res.json()
   await onProgress?.(30)
 
-  // Poll for completion
   let result = prediction
   let attempts = 0
   const maxAttempts = 150
@@ -156,7 +153,6 @@ export async function processWithReplicate(
 
   await onProgress?.(85)
 
-  // Download the result
   const imgRes = await fetch(outputUrl)
   if (!imgRes.ok) throw new Error('Failed to download generated image')
 
@@ -165,77 +161,138 @@ export async function processWithReplicate(
 
 // ---------------------------------------------------------------------------
 // Stage B Option 2 – Sharp CV fallback (no external API needed)
+//
+// Multi-scale adaptive thresholding + morphological cleanup produces
+// clean colouring-page line art from any photograph.
 // ---------------------------------------------------------------------------
 export class SharpCVProvider implements LineArtProvider {
   name = 'sharp-cv'
 
   async generate(imageBuffer: Buffer, settings: PhotoJobSettings): Promise<Buffer> {
-    // Preprocessing is already done; imageBuffer is greyscale
     const metadata = await sharp(imageBuffer).metadata()
     const width = metadata.width || 2480
     const height = metadata.height || 3508
 
-    // Adaptive threshold simulation using Sharp:
-    // 1. Create a blurred version (local mean)
-    // 2. Compare original to blurred to get edges
-    // 3. Apply morphological operations via erode/dilate
+    // Resize to a workable resolution for processing
+    const maxDim = 2000
+    const scaleFactor = Math.min(maxDim / Math.max(width, height), 1)
+    const procW = Math.round(width * scaleFactor)
+    const procH = Math.round(height * scaleFactor)
 
-    const blurSigma =
-      settings.detailLevel === 'low' ? 3 : settings.detailLevel === 'high' ? 0.8 : 1.5
-
-    // Get raw pixels for edge detection
-    const original = await sharp(imageBuffer)
-      .resize(width, height, { fit: 'inside' })
+    const grey = await sharp(imageBuffer)
+      .resize(procW, procH, { fit: 'fill' })
+      .greyscale()
+      .normalize()
       .raw()
       .toBuffer()
 
-    const blurred = await sharp(imageBuffer)
-      .resize(width, height, { fit: 'inside' })
-      .blur(blurSigma + 0.5)
+    // Multi-scale edge detection: combine fine + coarse edges
+    const cfg = {
+      low:    { blurS: 2,   blurL: 8, thS: 12, thL: 8, minComp: 100 },
+      medium: { blurS: 1.5, blurL: 6, thS: 10, thL: 6, minComp: 50 },
+      high:   { blurS: 1,   blurL: 4, thS: 8,  thL: 5, minComp: 25 },
+    }[settings.detailLevel] || { blurS: 1.5, blurL: 6, thS: 10, thL: 6, minComp: 50 }
+
+    const [blurredSmall, blurredLarge] = await Promise.all([
+      sharp(Buffer.from(grey), { raw: { width: procW, height: procH, channels: 1 } })
+        .blur(cfg.blurS + 0.5)
+        .raw()
+        .toBuffer(),
+      sharp(Buffer.from(grey), { raw: { width: procW, height: procH, channels: 1 } })
+        .blur(cfg.blurL + 0.5)
+        .raw()
+        .toBuffer(),
+    ])
+
+    // Combine edges from both scales
+    const edgeBuffer = Buffer.alloc(procW * procH)
+    for (let i = 0; i < procW * procH; i++) {
+      const diffSmall = Math.abs(grey[i] - blurredSmall[i])
+      const diffLarge = Math.abs(grey[i] - blurredLarge[i])
+      edgeBuffer[i] = (diffSmall > cfg.thS || diffLarge > cfg.thL) ? 0 : 255
+    }
+
+    // Morphological cleanup: thicken lines, then remove noise
+    const lineWeight = settings.lineThickness === 'thin' ? 1 : settings.lineThickness === 'thick' ? 3 : 2
+
+    // Invert so lines = white for morphological ops
+    const inverted = Buffer.alloc(procW * procH)
+    for (let i = 0; i < procW * procH; i++) {
+      inverted[i] = edgeBuffer[i] === 0 ? 255 : 0
+    }
+
+    // Dilate (thicken lines) via blur + threshold
+    const dilated = await sharp(inverted, { raw: { width: procW, height: procH, channels: 1 } })
+      .blur(lineWeight * 0.4 + 0.5)
+      .threshold(80)
       .raw()
       .toBuffer()
 
-    const resizedMeta = await sharp(imageBuffer)
-      .resize(width, height, { fit: 'inside' })
-      .metadata()
+    // Remove tiny noise components via flood fill
+    const cleaned = removeSmallComponents(dilated, procW, procH, cfg.minComp)
 
-    const w = resizedMeta.width || width
-    const h = resizedMeta.height || height
-
-    // Edge detection: where original is darker than local mean
-    const edgeBuffer = Buffer.alloc(w * h)
-    const threshold = settings.detailLevel === 'low' ? 15 : settings.detailLevel === 'high' ? 5 : 10
-
-    for (let i = 0; i < w * h; i++) {
-      const diff = blurred[i] - original[i]
-      edgeBuffer[i] = diff > threshold ? 0 : 255 // black lines on white
+    // Invert back to black-on-white
+    for (let i = 0; i < procW * procH; i++) {
+      cleaned[i] = cleaned[i] > 128 ? 0 : 255
     }
 
-    // Line thickening via dilate (erode on inverted = dilate on lines)
-    const kernelSize =
-      settings.lineThickness === 'thin' ? 1 : settings.lineThickness === 'thick' ? 3 : 2
-
-    let result = sharp(edgeBuffer, { raw: { width: w, height: h, channels: 1 } })
-
-    if (kernelSize > 1) {
-      // Simulate dilation by slightly blurring then thresholding
-      result = sharp(
-        await result
-          .blur(kernelSize * 0.5 + 0.5)
-          .toBuffer()
-      , { raw: { width: w, height: h, channels: 1 } })
-        .threshold(200) // re-binarize
-    }
-
-    // Final cleanup: ensure pure black and white
-    return result
+    // Scale back to original resolution
+    return sharp(cleaned, { raw: { width: procW, height: procH, channels: 1 } })
+      .resize(width, height, { fit: 'fill', kernel: 'nearest' })
       .threshold(128)
+      .flatten({ background: { r: 255, g: 255, b: 255 } })
       .png()
       .toBuffer()
   }
 }
 
+/**
+ * Remove connected components smaller than minSize pixels.
+ * Simple BFS flood fill on a binary image (white >= 128 = foreground).
+ */
+function removeSmallComponents(buffer: Buffer, w: number, h: number, minSize: number): Buffer {
+  const result = Buffer.from(buffer)
+  const visited = new Uint8Array(w * h)
+
+  for (let startIdx = 0; startIdx < w * h; startIdx++) {
+    if (visited[startIdx] || result[startIdx] < 128) continue
+
+    const component: number[] = []
+    const queue: number[] = [startIdx]
+    visited[startIdx] = 1
+
+    while (queue.length > 0) {
+      const idx = queue.pop()!
+      component.push(idx)
+      const x = idx % w
+      const y = Math.floor(idx / w)
+
+      const neighbors = [
+        y > 0 ? idx - w : -1,
+        y < h - 1 ? idx + w : -1,
+        x > 0 ? idx - 1 : -1,
+        x < w - 1 ? idx + 1 : -1,
+      ]
+
+      for (const ni of neighbors) {
+        if (ni >= 0 && !visited[ni] && result[ni] >= 128) {
+          visited[ni] = 1
+          queue.push(ni)
+        }
+      }
+    }
+
+    if (component.length < minSize) {
+      for (const idx of component) {
+        result[idx] = 0
+      }
+    }
+  }
+
+  return result
+}
+
 // ---------------------------------------------------------------------------
-// Exported adapter – tries Replicate first, falls back to Sharp CV
+// Exported adapter
 // ---------------------------------------------------------------------------
 export const sharpCVFallback = new SharpCVProvider()
