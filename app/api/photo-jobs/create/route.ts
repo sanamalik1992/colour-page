@@ -113,9 +113,9 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jobId }),
-    }).catch((err) => {
+    }).catch(async (err) => {
       console.error('Failed to trigger photo-jobs/process:', err)
-      supabase.from('photo_jobs').update({
+      await supabase.from('photo_jobs').update({
         status: 'failed',
         error: 'Processing failed to start. Please try again.',
         updated_at: new Date().toISOString(),

@@ -6,6 +6,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+const STUCK_THRESHOLD_MS = 45_000
+
 export async function GET(request: NextRequest) {
   const jobId = request.nextUrl.searchParams.get('jobId')
   const sessionId = request.nextUrl.searchParams.get('sessionId')
@@ -16,7 +18,6 @@ export async function GET(request: NextRequest) {
 
   let query = supabase.from('photo_jobs').select('*').eq('id', jobId)
 
-  // If sessionId provided, scope to that user for security
   if (sessionId) {
     query = query.eq('user_id', sessionId)
   }
@@ -25,6 +26,19 @@ export async function GET(request: NextRequest) {
 
   if (error || !job) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+  }
+
+  // Stuck-job recovery: re-trigger processing if stuck at 'queued' for too long
+  if (job.status === 'queued') {
+    const createdAt = new Date(job.created_at).getTime()
+    if (Date.now() - createdAt > STUCK_THRESHOLD_MS) {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+      fetch(`${baseUrl}/api/photo-jobs/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId }),
+      }).catch(() => {})
+    }
   }
 
   // Generate signed URLs for outputs
