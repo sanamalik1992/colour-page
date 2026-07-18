@@ -5,7 +5,6 @@ import Link from 'next/link'
 import {
   Download,
   FileText,
-  Image as ImageIcon,
   Loader2,
   ImagePlus,
   Clock,

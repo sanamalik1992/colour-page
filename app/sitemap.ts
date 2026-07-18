@@ -1,24 +1,23 @@
 import { MetadataRoute } from 'next'
 
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://colour.page'
+
 export default function sitemap(): MetadataRoute.Sitemap {
-  return [
-    {
-      url: 'https://colour.page',
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 1,
-    },
-    {
-      url: 'https://colour.page/upload',
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.9,
-    },
-    {
-      url: 'https://colour.page/pricing',
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.7,
-    },
+  const now = new Date()
+  const routes: { path: string; changeFrequency: 'weekly' | 'monthly'; priority: number }[] = [
+    { path: '/', changeFrequency: 'weekly', priority: 1 },
+    { path: '/print-pages', changeFrequency: 'weekly', priority: 0.9 },
+    { path: '/dot-to-dot', changeFrequency: 'weekly', priority: 0.8 },
+    { path: '/pro', changeFrequency: 'monthly', priority: 0.7 },
+    { path: '/contact', changeFrequency: 'monthly', priority: 0.4 },
+    { path: '/privacy', changeFrequency: 'monthly', priority: 0.3 },
+    { path: '/terms', changeFrequency: 'monthly', priority: 0.3 },
   ]
+
+  return routes.map(({ path, changeFrequency, priority }) => ({
+    url: `${BASE_URL}${path}`,
+    lastModified: now,
+    changeFrequency,
+    priority,
+  }))
 }

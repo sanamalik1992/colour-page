@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
-import Image from 'next/image'
-import { Check, Crown, ArrowRight, Loader2, Printer, Sparkles } from 'lucide-react'
+import { Check, Crown, ArrowRight, Loader2 } from 'lucide-react'
+import { NavHeader } from '@/components/ui/nav-header'
+import { PageFooter } from '@/components/ui/page-footer'
 
 export default function ProPage() {
   const [email, setEmail] = useState('')
@@ -39,23 +39,7 @@ export default function ProPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
-      <header className="sticky top-0 z-50 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800">
-        <div className="container mx-auto px-6 flex items-center justify-between h-20">
-          <Link href="/" className="relative w-12 h-12">
-            <Image src="/logo.png" alt="colour.page" fill className="object-contain" priority unoptimized />
-          </Link>
-          <nav className="flex items-center gap-2">
-            <Link href="/" className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg">Create</Link>
-            <Link href="/print" className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg flex items-center gap-2">
-              <Printer className="w-4 h-4" />Print
-            </Link>
-            <Link href="/dot-to-dot" className="px-4 py-2 text-sm font-semibold text-amber-400 hover:bg-zinc-800 rounded-lg flex items-center gap-2">
-              <Sparkles className="w-4 h-4" />Dot-to-Dot
-            </Link>
-          </nav>
-          <div className="h-10 px-5 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold text-sm rounded-lg flex items-center shadow-md">Pro</div>
-        </div>
-      </header>
+      <NavHeader active="pro" />
 
       <section className="container mx-auto px-6 py-16">
         <div className="text-center max-w-3xl mx-auto mb-12">
@@ -63,8 +47,8 @@ export default function ProPage() {
             <Crown className="w-4 h-4 text-brand-primary" />
             <span className="text-sm font-semibold text-brand-primary">Upgrade to Pro</span>
           </div>
-          <h1 className="text-5xl font-bold text-white mb-6">Unlimited Coloring Pages</h1>
-          <p className="text-xl text-gray-400">Create unlimited coloring pages and dot-to-dot puzzles for just £2.99/month</p>
+          <h1 className="text-5xl font-bold text-white mb-6">Unlimited Colouring Pages</h1>
+          <p className="text-xl text-gray-400">Create unlimited colouring pages and dot-to-dot puzzles for just £2.99/month</p>
         </div>
 
         <div className="max-w-md mx-auto mb-12">
@@ -90,7 +74,7 @@ export default function ProPage() {
               </div>
             </div>
             <ul className="space-y-3 mb-8">
-              {['Unlimited coloring pages', 'Unlimited dot-to-dot', 'HD quality downloads', 'No watermarks', 'Priority processing'].map((f) => (
+              {['Unlimited colouring pages', 'Unlimited dot-to-dot', 'HD quality downloads', 'No watermarks', 'Priority processing'].map((f) => (
                 <li key={f} className="flex items-start gap-3">
                   <Check className="w-5 h-5 text-brand-primary flex-shrink-0" />
                   <span className="text-gray-300 text-sm">{f}</span>
@@ -134,16 +118,7 @@ export default function ProPage() {
         </div>
       </section>
 
-      <footer className="border-t border-zinc-800 py-12 mt-20">
-        <div className="container mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
-          <span className="text-gray-400 text-sm">© 2025 colour.page</span>
-          <div className="flex gap-6 text-sm text-gray-400">
-            <Link href="/privacy" className="hover:text-white">Privacy</Link>
-            <Link href="/terms" className="hover:text-white">Terms</Link>
-            <Link href="/contact" className="hover:text-white">Contact</Link>
-          </div>
-        </div>
-      </footer>
+      <PageFooter />
     </div>
   )
 }

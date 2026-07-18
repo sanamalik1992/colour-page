@@ -10,15 +10,10 @@ function SuccessContent() {
   const searchParams = useSearchParams()
   const sessionId = searchParams.get('session_id')
   const [loading, setLoading] = useState(true)
-  const [verified, setVerified] = useState(false)
 
   useEffect(() => {
-    // Give webhook time to process
-    const timer = setTimeout(() => {
-      setLoading(false)
-      setVerified(true)
-    }, 2000)
-
+    // Give the Stripe webhook a moment to activate the subscription
+    const timer = setTimeout(() => setLoading(false), 2000)
     return () => clearTimeout(timer)
   }, [sessionId])
 
