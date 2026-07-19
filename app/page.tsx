@@ -20,6 +20,7 @@ import {
 import { NavHeader } from '@/components/ui/nav-header'
 import { Footer } from '@/components/sections/footer'
 import { useSessionId } from '@/hooks/useSessionId'
+import { prepareImageForUpload, readJsonSafe, friendlyError } from '@/lib/client-image'
 import type { PhotoJobStatus } from '@/types/photo-job'
 
 const STATUS_LABELS: Record<PhotoJobStatus, string> = {
@@ -73,12 +74,13 @@ export default function Home() {
       .catch(() => {})
   }, [sessionId])
 
-  const handleFile = useCallback((f: File) => {
-    setFile(f)
+  const handleFile = useCallback(async (f: File) => {
     setError('')
+    const prepared = await prepareImageForUpload(f)
+    setFile(prepared)
     const reader = new FileReader()
     reader.onloadend = () => setPreview(reader.result as string)
-    reader.readAsDataURL(f)
+    reader.readAsDataURL(prepared)
   }, [])
 
   const handleDrop = useCallback(
@@ -109,13 +111,13 @@ export default function Home() {
         body: formData,
       })
 
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to create job')
+      const data = await readJsonSafe(res)
+      if (!res.ok) throw new Error(friendlyError(res.status, data))
 
-      setJobId(data.jobId)
+      setJobId(data.jobId as string)
       setJobStatus('queued')
       setProgress(0)
-      setIsPro(data.isPro ?? false)
+      setIsPro((data.isPro as boolean) ?? false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start generation')
       setIsSubmitting(false)
