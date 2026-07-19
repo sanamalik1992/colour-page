@@ -23,8 +23,8 @@ import { PageFooter } from '@/components/ui/page-footer'
 const ANNUAL_ENABLED = Boolean(process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL)
 
 const PLANS = {
-  monthly: { label: 'Monthly', price: '£4.99', per: '/month', note: 'Billed monthly · cancel anytime' },
-  annual: { label: 'Yearly', price: '£24.99', per: '/year', note: 'Just £2.08/month · save 30%' },
+  monthly: { label: 'Monthly', price: '£4.99', per: '/month', note: 'Billed monthly · cancel anytime', badge: '' },
+  annual: { label: 'Yearly', price: '£49.99', per: '/year', note: 'Just £4.17/month · 2 months free', badge: '-17%' },
 } as const
 
 const FEATURES = [
@@ -110,7 +110,7 @@ export default function ProPage() {
                       }`}
                     >
                       {PLANS[p].label}
-                      {p === 'annual' && <span className="ml-1.5 text-brand-primary text-xs">-30%</span>}
+                      {PLANS[p].badge && <span className="ml-1.5 text-brand-primary text-xs">{PLANS[p].badge}</span>}
                     </button>
                   ))}
                 </div>
