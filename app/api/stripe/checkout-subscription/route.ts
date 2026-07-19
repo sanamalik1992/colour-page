@@ -21,12 +21,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Valid email required' }, { status: 400 })
     }
 
-    const priceId = process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID || process.env.STRIPE_PRO_PRICE_ID
+    const monthlyPriceId =
+      process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY ||
+      process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID ||
+      process.env.STRIPE_PRO_PRICE_ID
+    const annualPriceId =
+      process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL || process.env.STRIPE_PRICE_ANNUAL
+
+    // Pick the price that matches the selected plan so the customer is
+    // charged the correct amount (previously both plans used one price).
+    const priceId = plan === 'annual' ? annualPriceId : monthlyPriceId
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.colour.page'
 
     if (!priceId) {
-      console.error('Missing STRIPE_PRO_PRICE_ID')
-      return NextResponse.json({ error: 'Payment not configured' }, { status: 500 })
+      console.error(`Missing Stripe price ID for plan: ${plan}`)
+      return NextResponse.json(
+        { error: "That plan isn't available right now. Please try again later." },
+        { status: 500 }
+      )
     }
 
     // Check for existing Stripe customer
@@ -84,9 +96,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url: session.url })
   } catch (error) {
+    // Log the real error server-side, but never leak Stripe internals
+    // (keys, IDs) to the customer.
     console.error('Stripe checkout error:', error)
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : 'Checkout failed' 
-    }, { status: 500 })
+    return NextResponse.json(
+      { error: "We couldn't start checkout. Please try again in a moment." },
+      { status: 500 }
+    )
   }
 }

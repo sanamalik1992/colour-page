@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
-import { User, CreditCard, Calendar, CheckCircle, AlertCircle, Loader2, Crown, ArrowLeft } from 'lucide-react'
+import { User, CreditCard, Calendar, CheckCircle, AlertCircle, Loader2, Crown } from 'lucide-react'
+import { NavHeader } from '@/components/ui/nav-header'
+import { PageFooter } from '@/components/ui/page-footer'
 
 interface SubscriptionStatus {
   isPro: boolean
@@ -16,7 +17,6 @@ interface SubscriptionStatus {
 export default function AccountPage() {
   const [email, setEmail] = useState('')
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus | null>(null)
-  const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(false)
   const [portalLoading, setPortalLoading] = useState(false)
 
@@ -131,18 +131,7 @@ export default function AccountPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800">
-        <div className="container mx-auto px-6 flex items-center justify-between h-16">
-          <Link href="/" className="relative w-10 h-10">
-            <Image src="/logo.png" alt="colour.page" fill className="object-contain" />
-          </Link>
-          <Link href="/" className="text-sm text-gray-400 hover:text-white flex items-center gap-2">
-            <ArrowLeft className="w-4 h-4" />
-            Back to Home
-          </Link>
-        </div>
-      </header>
+      <NavHeader isPro={subscriptionStatus?.isPro} />
 
       <main className="container mx-auto px-6 py-12 max-w-2xl">
         <h1 className="text-3xl font-bold text-white mb-8">My Account</h1>
@@ -283,6 +272,8 @@ export default function AccountPage() {
           )}
         </div>
       </main>
+
+      <PageFooter />
     </div>
   )
 }

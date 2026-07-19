@@ -1,8 +1,12 @@
 import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { headers } from 'next/headers'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Download, Printer, ArrowLeft } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
+import { NavHeader } from '@/components/ui/nav-header'
+import { PageFooter } from '@/components/ui/page-footer'
+import { PageActions } from './page-actions'
 
 interface PageData {
   id: string
@@ -24,8 +28,16 @@ interface RelatedPage {
   category: string
 }
 
+async function getBaseUrl(): Promise<string> {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL
+  const h = await headers()
+  const host = h.get('host')
+  const protocol = h.get('x-forwarded-proto') || 'https'
+  return host ? `${protocol}://${host}` : 'https://colour.page'
+}
+
 async function getPage(slug: string): Promise<{ page: PageData; related: RelatedPage[] } | null> {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://colour.page'
+  const baseUrl = await getBaseUrl()
   try {
     const res = await fetch(`${baseUrl}/api/colouring-pages/${slug}`, {
       next: { revalidate: 3600 }
@@ -40,7 +52,7 @@ async function getPage(slug: string): Promise<{ page: PageData; related: Related
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const data = await getPage(slug)
-  
+
   if (!data) {
     return { title: 'Colouring Page Not Found' }
   }
@@ -89,25 +101,15 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      
+
       <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
-        <header className="sticky top-0 z-50 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800">
-          <div className="container mx-auto px-6 flex items-center justify-between h-16">
-            <Link href="/" className="relative w-10 h-10">
-              <Image src="/logo.png" alt="colour.page" fill className="object-contain" />
-            </Link>
-            <nav className="flex items-center gap-4">
-              <Link href="/print" className="text-sm font-medium text-gray-400 hover:text-white">All Pages</Link>
-              <Link href="/pro" className="h-9 px-4 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold text-sm rounded-lg flex items-center">Pro</Link>
-            </nav>
-          </div>
-        </header>
+        <NavHeader active="print-pages" />
 
         <main className="container mx-auto px-6 py-8">
           <nav className="flex items-center gap-2 text-sm mb-6">
             <Link href="/" className="text-gray-500 hover:text-white">Home</Link>
             <span className="text-gray-600">/</span>
-            <Link href="/print" className="text-gray-500 hover:text-white">Colouring Pages</Link>
+            <Link href="/print-pages" className="text-gray-500 hover:text-white">Gallery</Link>
             <span className="text-gray-600">/</span>
             <span className="text-gray-400">{page.category}</span>
           </nav>
@@ -115,8 +117,8 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
           <div className="grid lg:grid-cols-2 gap-8">
             <div className="bg-white rounded-2xl p-4 shadow-xl">
               {page.preview_url && (
-                <Image 
-                  src={page.preview_url} 
+                <Image
+                  src={page.preview_url}
                   alt={page.title}
                   width={800}
                   height={1000}
@@ -140,20 +142,7 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
                 <span>{page.download_count?.toLocaleString() || 0} downloads</span>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3 mb-8">
-                <a 
-                  href={page.preview_url}
-                  download={`${page.slug}.png`}
-                  className="flex-1 h-14 bg-brand-primary hover:bg-brand-border text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
-                >
-                  <Download className="w-5 h-5" />
-                  Download PNG
-                </a>
-                <button className="flex-1 h-14 bg-zinc-700 hover:bg-zinc-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
-                  <Printer className="w-5 h-5" />
-                  Print
-                </button>
-              </div>
+              <PageActions previewUrl={page.preview_url} slug={page.slug} title={page.title} />
 
               {page.tags && page.tags.length > 0 && (
                 <div className="mb-8">
@@ -166,7 +155,7 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
                 </div>
               )}
 
-              <Link href="/print" className="inline-flex items-center gap-2 text-brand-primary hover:text-white transition-colors">
+              <Link href="/print-pages" className="inline-flex items-center gap-2 text-brand-primary hover:text-white transition-colors">
                 <ArrowLeft className="w-4 h-4" />
                 Back to all colouring pages
               </Link>
@@ -178,8 +167,8 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
               <h2 className="text-2xl font-bold text-white mb-6">More {page.category} Colouring Pages</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 {related.map((r: RelatedPage) => (
-                  <Link 
-                    key={r.id} 
+                  <Link
+                    key={r.id}
                     href={`/colouring-pages/${r.slug}`}
                     className="group bg-white rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all hover:-translate-y-1"
                   >
@@ -198,11 +187,7 @@ export default async function ColouringPageDetail({ params }: { params: Promise<
           )}
         </main>
 
-        <footer className="border-t border-zinc-800 py-8 mt-16">
-          <div className="container mx-auto px-6 text-center text-gray-500 text-sm">
-            © 2025 colour.page - Free Printable Colouring Pages
-          </div>
-        </footer>
+        <PageFooter />
       </div>
     </>
   )

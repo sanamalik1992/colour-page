@@ -14,6 +14,8 @@ import {
   CheckCircle2,
   AlertCircle,
   RefreshCw,
+  Lock,
+  BookOpen,
 } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { Footer } from '@/components/sections/footer'
@@ -37,6 +39,11 @@ export default function Home() {
   const [preview, setPreview] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
 
+  // Settings
+  const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait')
+  const [lineThickness, setLineThickness] = useState<'thin' | 'medium' | 'thick'>('medium')
+  const [detailLevel, setDetailLevel] = useState<'low' | 'medium' | 'high'>('medium')
+
   // Job state
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<PhotoJobStatus | null>(null)
@@ -47,9 +54,11 @@ export default function Home() {
   // Results
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [pngUrl, setPngUrl] = useState<string | null>(null)
+  const [isWatermarked, setIsWatermarked] = useState(true)
 
   // Limits
   const [remaining, setRemaining] = useState(3)
+  const [isPro, setIsPro] = useState(false)
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -57,7 +66,10 @@ export default function Home() {
     if (!sessionId) return
     fetch(`/api/check-limits?sessionId=${sessionId}`)
       .then((r) => r.json())
-      .then((d) => setRemaining(d.remaining ?? 3))
+      .then((d) => {
+        setRemaining(d.remaining ?? 3)
+        setIsPro(d.isPro ?? false)
+      })
       .catch(() => {})
   }, [sessionId])
 
@@ -88,9 +100,9 @@ export default function Home() {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('sessionId', sessionId)
-      formData.append('orientation', 'portrait')
-      formData.append('lineThickness', 'medium')
-      formData.append('detailLevel', 'medium')
+      formData.append('orientation', orientation)
+      formData.append('lineThickness', lineThickness)
+      formData.append('detailLevel', detailLevel)
 
       const res = await fetch('/api/photo-jobs/create', {
         method: 'POST',
@@ -103,6 +115,7 @@ export default function Home() {
       setJobId(data.jobId)
       setJobStatus('queued')
       setProgress(0)
+      setIsPro(data.isPro ?? false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start generation')
       setIsSubmitting(false)
@@ -121,6 +134,7 @@ export default function Home() {
         if (data.job) {
           setJobStatus(data.job.status)
           setProgress(data.job.progress || 0)
+          setIsWatermarked(data.job.is_watermarked ?? true)
           if (data.job.status === 'done') {
             setPdfUrl(data.signedPdfUrl || null)
             setPngUrl(data.signedPngUrl || null)
@@ -155,17 +169,18 @@ export default function Home() {
 
   const isProcessing = jobStatus && jobStatus !== 'done' && jobStatus !== 'failed'
   const isDone = jobStatus === 'done'
+  const limitReached = !isPro && remaining <= 0
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
-      <NavHeader active="create" />
+      <NavHeader active="create" isPro={isPro} />
 
       <main className="container mx-auto px-4 sm:px-6 pt-8 sm:pt-12 pb-16">
         <div className="max-w-xl mx-auto">
           {/* Headline */}
           <div className="text-center mb-8">
             <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-3 leading-tight tracking-tight">
-              Upload a Photo,<br />Print & Colour
+              Upload a Photo,<br />Print &amp; Colour
             </h1>
             <p className="text-gray-400 text-base sm:text-lg">
               AI turns any photo into a printable colouring page
@@ -175,6 +190,22 @@ export default function Home() {
           {/* Generator Card */}
           <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
             <div className="p-5 sm:p-8">
+
+              {/* Limit indicator */}
+              {!isPro && !jobId && !isSubmitting && (
+                <div className="flex items-center justify-between mb-5 pb-4 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">
+                    {remaining > 0
+                      ? `${remaining} free generation${remaining !== 1 ? 's' : ''} left today`
+                      : 'Daily free limit reached'}
+                  </span>
+                  {limitReached && (
+                    <Link href="/pro" className="text-sm font-semibold text-brand-primary hover:underline flex items-center gap-1">
+                      <Lock className="w-3.5 h-3.5" /> Upgrade
+                    </Link>
+                  )}
+                </div>
+              )}
 
               {/* Upload State */}
               {!jobId && !isSubmitting && (
@@ -211,27 +242,92 @@ export default function Home() {
                   ) : (
                     <div className="space-y-5">
                       <div className="relative rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={preview} alt="Preview" className="w-full max-h-64 object-contain" />
                         <button
                           onClick={(e) => { e.stopPropagation(); setFile(null); setPreview(null) }}
                           className="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center shadow hover:bg-red-50 transition-colors"
+                          aria-label="Remove photo"
                         >
                           <RotateCcw className="w-4 h-4 text-gray-600" />
                         </button>
                       </div>
 
+                      {/* Settings */}
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-sm font-medium text-gray-600 mb-2 block">Orientation</label>
+                          <div className="flex gap-2">
+                            {(['portrait', 'landscape'] as const).map((o) => (
+                              <button
+                                key={o}
+                                onClick={() => setOrientation(o)}
+                                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-all ${
+                                  orientation === o
+                                    ? 'border-brand-primary bg-brand-primary/10 text-brand-primary'
+                                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                                }`}
+                              >
+                                {o.charAt(0).toUpperCase() + o.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-sm font-medium text-gray-600 mb-2 block">Line Thickness</label>
+                          <div className="flex gap-2">
+                            {(['thin', 'medium', 'thick'] as const).map((t) => (
+                              <button
+                                key={t}
+                                onClick={() => setLineThickness(t)}
+                                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-all ${
+                                  lineThickness === t
+                                    ? 'border-brand-primary bg-brand-primary/10 text-brand-primary'
+                                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                                }`}
+                              >
+                                {t.charAt(0).toUpperCase() + t.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-sm font-medium text-gray-600 mb-2 block">Detail Level</label>
+                          <div className="flex gap-2">
+                            {(['low', 'medium', 'high'] as const).map((d) => (
+                              <button
+                                key={d}
+                                onClick={() => setDetailLevel(d)}
+                                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-all ${
+                                  detailLevel === d
+                                    ? 'border-brand-primary bg-brand-primary/10 text-brand-primary'
+                                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                                }`}
+                              >
+                                {d === 'low' ? 'Simple' : d === 'high' ? 'Detailed' : 'Medium'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
                       <button
                         onClick={handleGenerate}
-                        disabled={remaining <= 0}
+                        disabled={limitReached}
                         className="btn-primary w-full"
                       >
                         <Sparkles className="w-5 h-5" />
                         Generate Colouring Page
                       </button>
 
-                      <p className="text-xs text-gray-400 text-center">
-                        {remaining > 0 ? `${remaining} free generation${remaining !== 1 ? 's' : ''} left today` : 'Daily limit reached'}
-                      </p>
+                      {limitReached && (
+                        <p className="text-xs text-gray-400 text-center">
+                          You&apos;ve used your free generations for today.{' '}
+                          <Link href="/pro" className="text-brand-primary font-semibold hover:underline">Go Pro</Link> for unlimited.
+                        </p>
+                      )}
                     </div>
                   )}
                 </>
@@ -282,7 +378,19 @@ export default function Home() {
                 <div className="space-y-5">
                   {pngUrl && (
                     <div className="rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={pngUrl} alt="Generated colouring page" className="w-full object-contain max-h-[400px]" />
+                    </div>
+                  )}
+
+                  {isWatermarked && !isPro && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-3">
+                      <Lock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <p className="text-sm text-amber-700">
+                        Free downloads include a light watermark.{' '}
+                        <Link href="/pro" className="font-semibold underline">Upgrade to Pro</Link>{' '}
+                        for clean pages.
+                      </p>
                     </div>
                   )}
 
@@ -304,9 +412,14 @@ export default function Home() {
                     )}
                   </div>
 
-                  <button onClick={handleReset} className="btn-outline w-full">
-                    <RotateCcw className="w-4 h-4" /> Create Another
-                  </button>
+                  <div className="flex gap-3">
+                    <button onClick={handleReset} className="btn-outline flex-1">
+                      <RotateCcw className="w-4 h-4" /> Create Another
+                    </button>
+                    <Link href="/library" className="btn-secondary flex-1">
+                      <BookOpen className="w-4 h-4" /> My Pages
+                    </Link>
+                  </div>
                 </div>
               )}
             </div>
@@ -334,8 +447,8 @@ export default function Home() {
                 <Printer className="w-5 h-5 text-white" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-white leading-tight">Print Library</p>
-                <p className="text-xs text-gray-500 truncate">300+ free pages</p>
+                <p className="text-sm font-semibold text-white leading-tight">Gallery</p>
+                <p className="text-xs text-gray-500 truncate">Ready-made pages</p>
               </div>
             </Link>
           </div>

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Sparkles } from 'lucide-react'
 
 export function Footer() {
+  const year = new Date().getFullYear()
   return (
     <footer className="border-t border-zinc-800 bg-zinc-950">
       <div className="container mx-auto px-6 py-14">
@@ -23,10 +24,10 @@ export function Footer() {
             <div>
               <h4 className="text-sm font-semibold text-white mb-4">Product</h4>
               <ul className="space-y-2.5">
-                <li><Link href="/create" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Create Page</Link></li>
+                <li><Link href="/" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Create Page</Link></li>
                 <li><Link href="/dot-to-dot" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Dot-to-Dot</Link></li>
-                <li><Link href="/print-pages" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Print Library</Link></li>
-                <li><Link href="/library" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">My Library</Link></li>
+                <li><Link href="/print-pages" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Gallery</Link></li>
+                <li><Link href="/library" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">My Pages</Link></li>
                 <li><Link href="/pro" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Go Pro</Link></li>
               </ul>
             </div>
@@ -34,6 +35,7 @@ export function Footer() {
             <div>
               <h4 className="text-sm font-semibold text-white mb-4">Company</h4>
               <ul className="space-y-2.5">
+                <li><Link href="/account" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">My Account</Link></li>
                 <li><Link href="/privacy" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Privacy Policy</Link></li>
                 <li><Link href="/terms" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Terms of Service</Link></li>
                 <li><Link href="/contact" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Contact Us</Link></li>
@@ -43,7 +45,7 @@ export function Footer() {
 
           <div className="pt-8 border-t border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-sm text-gray-500">
-              © 2026 colour.page. All rights reserved.
+              © {year} colour.page. All rights reserved.
             </p>
             <p className="text-xs text-gray-600">
               Made with love for creative families
