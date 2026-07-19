@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkUsage, recordUsage } from '@/lib/pro-gating'
 import { generateDotToDot } from '@/lib/dot-to-dot-engine'
+import { isHeic, convertHeicToPng } from '@/lib/heic-convert'
 import type { DotJobSettings } from '@/types/dot-job'
 
 // Dot-to-dot generation is fast (a few seconds) and CPU-only, so we run it
@@ -60,18 +61,36 @@ export async function POST(request: NextRequest) {
     }
 
     // Read the upload once; we process from this buffer directly.
-    const buffer = Buffer.from(await file.arrayBuffer())
-    const ext = file.name.split('.').pop() || 'jpg'
+    let buffer: Buffer = Buffer.from(await file.arrayBuffer()) as Buffer
+    let contentType = file.type || 'image/jpeg'
+    let ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+
+    // iPhone photos are HEIC by default and Sharp can't decode them —
+    // convert to PNG up front (mirrors the photo-to-colouring pipeline).
+    if (isHeic(file.name, file.type)) {
+      try {
+        buffer = (await convertHeicToPng(buffer)) as Buffer
+        contentType = 'image/png'
+        ext = 'png'
+      } catch (heicErr) {
+        console.error('HEIC conversion failed:', heicErr)
+        return NextResponse.json(
+          { error: 'We could not read that photo. Please try a JPG or PNG.' },
+          { status: 400 }
+        )
+      }
+    }
+
     const storagePath = `dot-jobs/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
 
     // Store the input (best-effort; not required for processing)
     const { error: uploadError } = await supabase.storage
       .from('uploads')
-      .upload(storagePath, buffer, { contentType: file.type, upsert: true })
+      .upload(storagePath, buffer, { contentType, upsert: true })
     if (uploadError) {
       await supabase.storage
         .from('images')
-        .upload(storagePath, buffer, { contentType: file.type, upsert: true })
+        .upload(storagePath, buffer, { contentType, upsert: true })
     }
 
     // Record usage (atomic increment)
