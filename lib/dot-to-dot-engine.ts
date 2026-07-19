@@ -1,14 +1,19 @@
 /**
  * Dot-to-Dot Engine
  *
- * Converts a photo into a numbered dot-to-dot puzzle using Sharp.
+ * Converts a photo into a numbered connect-the-dots puzzle that traces the
+ * subject's main outline (so the finished puzzle reveals a recognisable shape).
+ *
  * Pipeline:
- *   1. Preprocess (greyscale, denoise, contrast)
- *   2. Edge detection (difference-of-gaussians)
- *   3. Contour extraction (connected component boundary tracing)
- *   4. Simplify contours (Ramer-Douglas-Peucker)
- *   5. Sample N dots along the major contours
- *   6. Render dots + numbers on an A4 canvas
+ *   1. Downscale + greyscale + denoise
+ *   2. Otsu threshold -> foreground silhouette (background inferred from borders)
+ *   3. Largest connected component = the subject
+ *   4. Moore-neighbour boundary trace -> ordered outline
+ *   5. Simplify (RDP) + distribute exactly N dots (corners preserved)
+ *   6. Render dots + numbers on an A4 canvas (PNG + PDF)
+ *
+ * If no clear subject is found it falls back to an edge-cloud path so it
+ * always produces a usable puzzle.
  */
 
 import sharp from 'sharp'
@@ -32,6 +37,9 @@ const A4_W_PT = 595.28
 const A4_H_PT = 841.89
 const MARGIN_PT = 28.35
 
+// Resolution used for silhouette tracing (keeps it fast + smooth)
+const TRACE_MAX = 640
+
 /**
  * Full pipeline: photo buffer -> dot-to-dot PNG + PDF buffers.
  */
@@ -42,115 +50,376 @@ export async function generateDotToDot(
 ): Promise<{ png: Buffer; pdf: Buffer }> {
   await onProgress?.(10)
 
-  // 1. Preprocess
   const metadata = await sharp(imageBuffer).metadata()
   const srcW = metadata.width || 800
   const srcH = metadata.height || 600
 
-  // Scale to fit content area while keeping aspect ratio
+  // Final placement space (fits within the A4 content area, keeps aspect)
   const scale = Math.min(CONTENT_W / srcW, CONTENT_H / srcH)
-  const fitW = Math.round(srcW * scale)
-  const fitH = Math.round(srcH * scale)
+  const fitW = Math.max(2, Math.round(srcW * scale))
+  const fitH = Math.max(2, Math.round(srcH * scale))
 
-  const grey = await sharp(imageBuffer)
-    .resize(fitW, fitH, { fit: 'inside' })
+  // Low-res working image for tracing
+  const tScale = Math.min(1, TRACE_MAX / Math.max(srcW, srcH))
+  const tW = Math.max(2, Math.round(srcW * tScale))
+  const tH = Math.max(2, Math.round(srcH * tScale))
+
+  const { data } = await sharp(imageBuffer)
+    .resize(tW, tH, { fit: 'fill' })
     .greyscale()
     .normalize()
-    .median(3)
-    .toBuffer()
+    .blur(1.2)
+    .raw()
+    .toBuffer({ resolveWithObject: true })
 
-  await onProgress?.(20)
+  await onProgress?.(30)
 
-  // 2. Edge detection (Difference of Gaussians)
-  const greyMeta = await sharp(grey).metadata()
-  const w = greyMeta.width!
-  const h = greyMeta.height!
+  const targetDots = clampDots(settings.dotCount)
 
-  const [original, blurred] = await Promise.all([
-    sharp(grey).raw().toBuffer(),
-    sharp(grey).blur(2.5).raw().toBuffer(),
-  ])
+  // --- Trace the subject outline ---
+  let contour = traceSubjectOutline(data, tW, tH)
 
-  const edges = Buffer.alloc(w * h)
-  for (let i = 0; i < w * h; i++) {
-    const diff = Math.abs(original[i] - blurred[i])
-    edges[i] = diff > 15 ? 255 : 0
+  await onProgress?.(50)
+
+  let dots: Point[]
+  if (contour.length >= 8) {
+    // Map trace coords -> fit coords
+    const sx = fitW / tW
+    const sy = fitH / tH
+    contour = contour.map((p) => ({ x: p.x * sx, y: p.y * sy }))
+    dots = distributeDots(contour, targetDots)
+  } else {
+    // Fallback: edge-cloud nearest-neighbour path (never fails)
+    dots = fallbackDots(data, tW, tH, fitW, fitH, targetDots)
   }
-
-  await onProgress?.(35)
-
-  // 3. Extract edge points
-  const edgePoints: Point[] = []
-  // Sample every few pixels to avoid density issues
-  const step = Math.max(1, Math.floor(Math.sqrt((w * h) / 50000)))
-  for (let y = 0; y < h; y += step) {
-    for (let x = 0; x < w; x += step) {
-      if (edges[y * w + x] === 255) {
-        edgePoints.push({ x, y })
-      }
-    }
-  }
-
-  await onProgress?.(45)
-
-  // 4. Order points into a path using nearest-neighbor greedy traversal
-  const targetDots = settings.dotCount
-  const orderedPoints = orderPointsByPath(edgePoints, targetDots * 3)
-
-  await onProgress?.(55)
-
-  // 5. Simplify with RDP and sample to target count
-  const simplified = rdpSimplify(orderedPoints, Math.max(2, fitW / (targetDots * 0.8)))
-  const dots = sampleEvenly(simplified, targetDots)
 
   await onProgress?.(65)
 
-  // 6. Render PNG
-  const pngBuffer = await renderDotToDotPng(dots, w, h, settings)
+  const pngBuffer = await renderDotToDotPng(dots, fitW, fitH, settings)
   await onProgress?.(80)
 
-  // 7. Render PDF
-  const pdfBuffer = await renderDotToDotPdf(dots, w, h, settings)
+  const pdfBuffer = await renderDotToDotPdf(dots, fitW, fitH, settings)
   await onProgress?.(95)
 
   return { png: pngBuffer, pdf: pdfBuffer }
 }
 
-/**
- * Order a cloud of edge points into a path via nearest-neighbor.
- */
-function orderPointsByPath(points: Point[], maxPoints: number): Point[] {
-  if (points.length <= 2) return points
+function clampDots(n: number): number {
+  if (!Number.isFinite(n)) return 100
+  return Math.max(8, Math.min(300, Math.round(n)))
+}
 
-  // Subsample if too many
+// ---------------------------------------------------------------------------
+// Silhouette outline tracing
+// ---------------------------------------------------------------------------
+function traceSubjectOutline(grey: Uint8Array | Buffer, w: number, h: number): Point[] {
+  const thr = otsuThreshold(grey, w * h)
+
+  // Decide which polarity is the background by sampling the border.
+  let darkBorder = 0
+  let borderN = 0
+  for (let x = 0; x < w; x++) {
+    darkBorder += grey[x] < thr ? 1 : 0
+    darkBorder += grey[(h - 1) * w + x] < thr ? 1 : 0
+    borderN += 2
+  }
+  for (let y = 0; y < h; y++) {
+    darkBorder += grey[y * w] < thr ? 1 : 0
+    darkBorder += grey[y * w + w - 1] < thr ? 1 : 0
+    borderN += 2
+  }
+  const borderIsDark = darkBorder > borderN / 2
+
+  // Foreground = the polarity that is NOT the background
+  const fg = new Uint8Array(w * h)
+  for (let i = 0; i < w * h; i++) {
+    const isDark = grey[i] < thr
+    fg[i] = isDark !== borderIsDark ? 1 : 0
+  }
+
+  const mask = largestComponentMask(fg, w, h)
+  if (!mask) return []
+  return mooreTrace(mask, w, h)
+}
+
+function otsuThreshold(data: Uint8Array | Buffer, len: number): number {
+  const hist = new Array(256).fill(0)
+  for (let i = 0; i < len; i++) hist[data[i]]++
+  let sum = 0
+  for (let t = 0; t < 256; t++) sum += t * hist[t]
+  let sumB = 0
+  let wB = 0
+  let max = 0
+  let thr = 127
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t]
+    if (wB === 0) continue
+    const wF = len - wB
+    if (wF === 0) break
+    sumB += t * hist[t]
+    const mB = sumB / wB
+    const mF = (sum - sumB) / wF
+    const between = wB * wF * (mB - mF) * (mB - mF)
+    if (between > max) {
+      max = between
+      thr = t
+    }
+  }
+  return thr
+}
+
+function largestComponentMask(fg: Uint8Array, w: number, h: number): Uint8Array | null {
+  const label = new Int32Array(w * h)
+  const stack = new Int32Array(w * h)
+  let cur = 0
+  let bestLabel = 0
+  let bestSize = 0
+
+  for (let s = 0; s < w * h; s++) {
+    if (fg[s] !== 1 || label[s] !== 0) continue
+    cur++
+    let sp = 0
+    stack[sp++] = s
+    label[s] = cur
+    let size = 0
+    while (sp > 0) {
+      const p = stack[--sp]
+      size++
+      const px = p % w
+      const py = (p / w) | 0
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue
+          const nx = px + dx
+          const ny = py + dy
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+          const np = ny * w + nx
+          if (fg[np] === 1 && label[np] === 0) {
+            label[np] = cur
+            stack[sp++] = np
+          }
+        }
+      }
+    }
+    if (size > bestSize) {
+      bestSize = size
+      bestLabel = cur
+    }
+  }
+
+  // Reject if the subject is too tiny to be meaningful
+  if (bestLabel === 0 || bestSize < w * h * 0.01) return null
+
+  const out = new Uint8Array(w * h)
+  for (let i = 0; i < w * h; i++) out[i] = label[i] === bestLabel ? 1 : 0
+  return out
+}
+
+// Moore-neighbour boundary tracing (clockwise, Jacob's stopping criterion)
+const N8: ReadonlyArray<readonly [number, number]> = [
+  [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1],
+]
+function mooreTrace(mask: Uint8Array, w: number, h: number): Point[] {
+  const at = (x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : mask[y * w + x])
+
+  let sx = -1
+  let sy = -1
+  for (let y = 0; y < h && sy < 0; y++) {
+    for (let x = 0; x < w; x++) {
+      if (mask[y * w + x] === 1) {
+        sx = x
+        sy = y
+        break
+      }
+    }
+  }
+  if (sx < 0) return []
+
+  const contour: Point[] = []
+  let px = sx
+  let py = sy
+  let back = 4 // arrived from the West (background to the left of the start)
+  // Any real boundary is far shorter than this; a hard cap guarantees we
+  // terminate even on pathological masks (and never blow up downstream).
+  const maxSteps = Math.min(w * h, 8 * (w + h) + 1000)
+  let steps = 0
+
+  while (steps++ < maxSteps) {
+    contour.push({ x: px, y: py })
+    let found = false
+    for (let i = 1; i <= 8; i++) {
+      const d = (back + i) % 8
+      const nx = px + N8[d][0]
+      const ny = py + N8[d][1]
+      if (at(nx, ny) === 1) {
+        back = (d + 4) % 8
+        px = nx
+        py = ny
+        found = true
+        break
+      }
+    }
+    if (!found) break // isolated pixel
+    // Stop once we return to the start after tracing the loop.
+    if (px === sx && py === sy && contour.length > 2) break
+  }
+  return contour
+}
+
+// ---------------------------------------------------------------------------
+// Dot distribution (exactly N dots, corners preserved)
+// ---------------------------------------------------------------------------
+function distributeDots(contour: Point[], n: number): Point[] {
+  let pts = rdpSimplify(contour, 1.6)
+  if (pts.length < 3) pts = contour.slice()
+
+  // Too many corners -> raise epsilon until we're at/under n
+  if (pts.length > n) {
+    let lo = 1.6
+    let hi = 800
+    for (let it = 0; it < 24 && hi - lo > 0.5; it++) {
+      const mid = (lo + hi) / 2
+      const r = rdpSimplify(contour, mid)
+      if (r.length > n) lo = mid
+      else hi = mid
+    }
+    pts = rdpSimplify(contour, hi)
+    if (pts.length > n) {
+      const step = pts.length / n
+      const out: Point[] = []
+      for (let i = 0; i < n; i++) out.push(pts[Math.floor(i * step)])
+      pts = out
+    }
+  }
+
+  // Fewer than n -> subdivide the longest closed-loop edges (keeps corners)
+  const distSq = (a: Point, b: Point) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2
+  let guard = 0
+  while (pts.length < n && guard++ < n * 4) {
+    let bi = 0
+    let bd = -1
+    for (let i = 0; i < pts.length; i++) {
+      const j = (i + 1) % pts.length
+      const d = distSq(pts[i], pts[j])
+      if (d > bd) {
+        bd = d
+        bi = i
+      }
+    }
+    const a = pts[bi]
+    const b = pts[(bi + 1) % pts.length]
+    pts.splice(bi + 1, 0, { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2) })
+  }
+
+  return pts.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }))
+}
+
+function rdpSimplify(points: Point[], epsilon: number): Point[] {
+  if (points.length <= 2) return points
+  let maxDist = 0
+  let maxIdx = 0
+  const first = points[0]
+  const last = points[points.length - 1]
+  for (let i = 1; i < points.length - 1; i++) {
+    const dist = perpendicularDistance(points[i], first, last)
+    if (dist > maxDist) {
+      maxDist = dist
+      maxIdx = i
+    }
+  }
+  if (maxDist > epsilon) {
+    const left = rdpSimplify(points.slice(0, maxIdx + 1), epsilon)
+    const right = rdpSimplify(points.slice(maxIdx), epsilon)
+    return [...left.slice(0, -1), ...right]
+  }
+  return [first, last]
+}
+
+function perpendicularDistance(point: Point, lineStart: Point, lineEnd: Point): number {
+  const dx = lineEnd.x - lineStart.x
+  const dy = lineEnd.y - lineStart.y
+  const lenSq = dx * dx + dy * dy
+  if (lenSq === 0) {
+    const ex = point.x - lineStart.x
+    const ey = point.y - lineStart.y
+    return Math.sqrt(ex * ex + ey * ey)
+  }
+  const t = Math.max(0, Math.min(1, ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lenSq))
+  const projX = lineStart.x + t * dx
+  const projY = lineStart.y + t * dy
+  const ex = point.x - projX
+  const ey = point.y - projY
+  return Math.sqrt(ex * ex + ey * ey)
+}
+
+// ---------------------------------------------------------------------------
+// Fallback: edge-cloud nearest-neighbour path (used only if no subject found)
+// ---------------------------------------------------------------------------
+function fallbackDots(
+  grey: Uint8Array | Buffer,
+  w: number,
+  h: number,
+  fitW: number,
+  fitH: number,
+  n: number
+): Point[] {
+  const edges: Point[] = []
+  // Sobel-ish gradient magnitude via neighbour differences
+  const step = Math.max(1, Math.floor(Math.sqrt((w * h) / 40000)))
+  for (let y = 1; y < h - 1; y += step) {
+    for (let x = 1; x < w - 1; x += step) {
+      const gx = grey[y * w + x + 1] - grey[y * w + x - 1]
+      const gy = grey[(y + 1) * w + x] - grey[(y - 1) * w + x]
+      if (gx * gx + gy * gy > 900) edges.push({ x, y })
+    }
+  }
+  if (edges.length < 3) {
+    // Last resort: a friendly circle of dots
+    const cx = w / 2
+    const cy = h / 2
+    const r = Math.min(w, h) * 0.4
+    const out: Point[] = []
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2
+      out.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r })
+    }
+    return scalePoints(out, w, h, fitW, fitH)
+  }
+
+  const ordered = nearestNeighbourPath(edges, n * 3)
+  const dots = distributeDots(ordered, n)
+  return scalePoints(dots, w, h, fitW, fitH)
+}
+
+function scalePoints(pts: Point[], w: number, h: number, fitW: number, fitH: number): Point[] {
+  const sx = fitW / w
+  const sy = fitH / h
+  return pts.map((p) => ({ x: Math.round(p.x * sx), y: Math.round(p.y * sy) }))
+}
+
+function nearestNeighbourPath(points: Point[], maxPoints: number): Point[] {
   let working = points
   if (working.length > maxPoints) {
     const step = Math.ceil(working.length / maxPoints)
     working = working.filter((_, i) => i % step === 0)
   }
-
   const visited = new Set<number>()
   const path: Point[] = []
-
-  // Start from the topmost-leftmost point
   let currentIdx = 0
   let minVal = Infinity
   for (let i = 0; i < working.length; i++) {
-    const val = working[i].y * 10000 + working[i].x
+    const val = working[i].y * 100000 + working[i].x
     if (val < minVal) {
       minVal = val
       currentIdx = i
     }
   }
-
   path.push(working[currentIdx])
   visited.add(currentIdx)
-
   while (path.length < working.length) {
     let bestDist = Infinity
     let bestIdx = -1
     const cur = path[path.length - 1]
-
     for (let i = 0; i < working.length; i++) {
       if (visited.has(i)) continue
       const dx = working[i].x - cur.x
@@ -161,174 +430,72 @@ function orderPointsByPath(points: Point[], maxPoints: number): Point[] {
         bestIdx = i
       }
     }
-
     if (bestIdx === -1) break
     path.push(working[bestIdx])
     visited.add(bestIdx)
   }
-
   return path
 }
 
-/**
- * Ramer-Douglas-Peucker line simplification.
- */
-function rdpSimplify(points: Point[], epsilon: number): Point[] {
-  if (points.length <= 2) return points
-
-  let maxDist = 0
-  let maxIdx = 0
-  const first = points[0]
-  const last = points[points.length - 1]
-
-  for (let i = 1; i < points.length - 1; i++) {
-    const dist = perpendicularDistance(points[i], first, last)
-    if (dist > maxDist) {
-      maxDist = dist
-      maxIdx = i
-    }
-  }
-
-  if (maxDist > epsilon) {
-    const left = rdpSimplify(points.slice(0, maxIdx + 1), epsilon)
-    const right = rdpSimplify(points.slice(maxIdx), epsilon)
-    return [...left.slice(0, -1), ...right]
-  }
-
-  return [first, last]
-}
-
-function perpendicularDistance(point: Point, lineStart: Point, lineEnd: Point): number {
-  const dx = lineEnd.x - lineStart.x
-  const dy = lineEnd.y - lineStart.y
-  const lenSq = dx * dx + dy * dy
-
-  if (lenSq === 0) {
-    const ex = point.x - lineStart.x
-    const ey = point.y - lineStart.y
-    return Math.sqrt(ex * ex + ey * ey)
-  }
-
-  const t = Math.max(0, Math.min(1, ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lenSq))
-  const projX = lineStart.x + t * dx
-  const projY = lineStart.y + t * dy
-  const ex = point.x - projX
-  const ey = point.y - projY
-  return Math.sqrt(ex * ex + ey * ey)
-}
-
-/**
- * Sample N evenly-spaced points along a path.
- */
-function sampleEvenly(points: Point[], n: number): Point[] {
-  if (points.length <= n) return points
-  if (n <= 1) return [points[0]]
-
-  // Calculate total path length
-  let totalLength = 0
-  for (let i = 1; i < points.length; i++) {
-    const dx = points[i].x - points[i - 1].x
-    const dy = points[i].y - points[i - 1].y
-    totalLength += Math.sqrt(dx * dx + dy * dy)
-  }
-
-  const interval = totalLength / (n - 1)
-  const result: Point[] = [points[0]]
-  let accumulated = 0
-  let nextTarget = interval
-
-  for (let i = 1; i < points.length && result.length < n; i++) {
-    const dx = points[i].x - points[i - 1].x
-    const dy = points[i].y - points[i - 1].y
-    const segLen = Math.sqrt(dx * dx + dy * dy)
-
-    while (accumulated + segLen >= nextTarget && result.length < n) {
-      const t = (nextTarget - accumulated) / segLen
-      result.push({
-        x: Math.round(points[i - 1].x + dx * t),
-        y: Math.round(points[i - 1].y + dy * t),
-      })
-      nextTarget += interval
-    }
-
-    accumulated += segLen
-  }
-
-  // Ensure we have exactly n points
-  if (result.length < n) {
-    result.push(points[points.length - 1])
-  }
-
-  return result.slice(0, n)
-}
-
-/**
- * Render dots and numbers to a PNG on an A4-sized white canvas.
- */
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
 async function renderDotToDotPng(
   dots: Point[],
   imageW: number,
   imageH: number,
   settings: DotJobSettings
 ): Promise<Buffer> {
-  // Offset to center the image in the A4 canvas
   const offsetX = MARGIN + Math.round((CONTENT_W - imageW) / 2)
   const offsetY = MARGIN + Math.round((CONTENT_H - imageH) / 2)
 
-  // We'll build an SVG and convert it via Sharp
-  const dotRadius = 8
-  const fontSize = 14
+  const dotRadius = 11
+  const fontSize = 30
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
   svg += `<rect width="100%" height="100%" fill="white"/>`
 
-  // Optional faint guide lines
   if (settings.showGuideLines) {
-    svg += `<g stroke="#e0e0e0" stroke-width="1" fill="none">`
-    for (let i = 0; i < dots.length - 1; i++) {
+    svg += `<g stroke="#e2e2e2" stroke-width="1.5" fill="none">`
+    for (let i = 0; i < dots.length; i++) {
       const a = dots[i]
-      const b = dots[i + 1]
+      const b = dots[(i + 1) % dots.length]
       svg += `<line x1="${a.x + offsetX}" y1="${a.y + offsetY}" x2="${b.x + offsetX}" y2="${b.y + offsetY}"/>`
     }
     svg += `</g>`
   }
 
-  // Dots
-  svg += `<g fill="black">`
+  // Numbers with a white halo for legibility
+  svg += `<g font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="bold">`
   for (let i = 0; i < dots.length; i++) {
-    const d = dots[i]
-    const cx = d.x + offsetX
-    const cy = d.y + offsetY
-    svg += `<circle cx="${cx}" cy="${cy}" r="${dotRadius}"/>`
+    const cx = dots[i].x + offsetX
+    const cy = dots[i].y + offsetY
+    const nx = cx + dotRadius + 5
+    const ny = cy - dotRadius - 3
+    svg += `<text x="${nx}" y="${ny}" stroke="white" stroke-width="5" fill="white">${i + 1}</text>`
+    svg += `<text x="${nx}" y="${ny}" fill="#111">${i + 1}</text>`
   }
   svg += `</g>`
 
-  // Numbers
-  svg += `<g font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="bold" fill="black">`
+  // Dots (mark #1 with a ring)
+  svg += `<g fill="#111">`
   for (let i = 0; i < dots.length; i++) {
-    const d = dots[i]
-    const cx = d.x + offsetX
-    const cy = d.y + offsetY
-    // Position number slightly offset from dot
-    const numX = cx + dotRadius + 4
-    const numY = cy - dotRadius - 2
-    svg += `<text x="${numX}" y="${numY}">${i + 1}</text>`
+    svg += `<circle cx="${dots[i].x + offsetX}" cy="${dots[i].y + offsetY}" r="${dotRadius}"/>`
   }
   svg += `</g>`
+  if (dots.length > 0) {
+    const s = dots[0]
+    svg += `<circle cx="${s.x + offsetX}" cy="${s.y + offsetY}" r="${dotRadius + 9}" fill="none" stroke="#111" stroke-width="3"/>`
+    svg += `<text x="${s.x + offsetX}" y="${s.y + offsetY - dotRadius - 20}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="bold" fill="#111">START</text>`
+  }
 
   // Footer branding
-  svg += `<text x="${A4_W / 2}" y="${A4_H - 40}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#cccccc">colour.page</text>`
-
+  svg += `<text x="${A4_W / 2}" y="${A4_H - 46}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#c9c9c9">colour.page</text>`
   svg += `</svg>`
 
-  return sharp(Buffer.from(svg))
-    .png()
-    .toBuffer()
+  return sharp(Buffer.from(svg)).png().toBuffer()
 }
 
-/**
- * Render dots and numbers to a PDF.
- */
 async function renderDotToDotPdf(
   dots: Point[],
   imageW: number,
@@ -339,57 +506,49 @@ async function renderDotToDotPdf(
   const page = pdfDoc.addPage([A4_W_PT, A4_H_PT])
   const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
 
-  // Scale from pixel coords to PDF points
   const scaleX = (A4_W_PT - MARGIN_PT * 2) / CONTENT_W
   const scaleY = (A4_H_PT - MARGIN_PT * 2) / CONTENT_H
-
   const offsetX = (CONTENT_W - imageW) / 2
   const offsetY = (CONTENT_H - imageH) / 2
 
   const toPdfX = (px: number) => MARGIN_PT + (px + offsetX) * scaleX
   const toPdfY = (px: number) => A4_H_PT - MARGIN_PT - (px + offsetY) * scaleY
 
-  const dotRadius = 3
-  const fontSize = 7
+  const dotRadius = 3.4
+  const fontSize = 8
 
-  // Optional faint guide lines
   if (settings.showGuideLines) {
-    for (let i = 0; i < dots.length - 1; i++) {
+    for (let i = 0; i < dots.length; i++) {
       const a = dots[i]
-      const b = dots[i + 1]
+      const b = dots[(i + 1) % dots.length]
       page.drawLine({
         start: { x: toPdfX(a.x), y: toPdfY(a.y) },
         end: { x: toPdfX(b.x), y: toPdfY(b.y) },
-        thickness: 0.3,
+        thickness: 0.4,
         color: rgb(0.88, 0.88, 0.88),
       })
     }
   }
 
-  // Dots + numbers
   for (let i = 0; i < dots.length; i++) {
-    const d = dots[i]
-    const cx = toPdfX(d.x)
-    const cy = toPdfY(d.y)
-
-    page.drawCircle({
-      x: cx,
-      y: cy,
-      size: dotRadius,
-      color: rgb(0, 0, 0),
-    })
-
-    const numText = String(i + 1)
-    page.drawText(numText, {
+    const cx = toPdfX(dots[i].x)
+    const cy = toPdfY(dots[i].y)
+    page.drawCircle({ x: cx, y: cy, size: dotRadius, color: rgb(0.07, 0.07, 0.07) })
+    page.drawText(String(i + 1), {
       x: cx + dotRadius + 2,
       y: cy + dotRadius + 1,
       size: fontSize,
       font,
-      color: rgb(0, 0, 0),
+      color: rgb(0.07, 0.07, 0.07),
     })
   }
 
-  // Footer
+  if (dots.length > 0) {
+    const cx = toPdfX(dots[0].x)
+    const cy = toPdfY(dots[0].y)
+    page.drawCircle({ x: cx, y: cy, size: dotRadius + 3, borderColor: rgb(0.07, 0.07, 0.07), borderWidth: 1 })
+  }
+
   const footerText = 'colour.page'
   const footerWidth = font.widthOfTextAtSize(footerText, 8)
   page.drawText(footerText, {
@@ -397,7 +556,7 @@ async function renderDotToDotPdf(
     y: 12,
     size: 8,
     font,
-    color: rgb(0.75, 0.75, 0.75),
+    color: rgb(0.78, 0.78, 0.78),
   })
 
   const pdfBytes = await pdfDoc.save()

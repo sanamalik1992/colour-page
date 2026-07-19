@@ -92,11 +92,13 @@ export async function processWithReplicate(
         ? 'intricate detail, many elements, suitable for adults'
         : 'moderate detail, clear shapes'
 
-  const prompt = `Transform this image into a clean black and white colouring book page. Use ${thickness} black outlines with ${detail}. Pure white background, no shading, no gradients, no gray tones. Professional colouring book style with clean closed contours that are easy to colour within. Lines should be smooth and consistent.`
+  const prompt = `Convert this photo into a clean black-and-white line drawing for a children's colouring book. ${detail}. Use ${thickness} solid black outlines on a pure white background. Only clean black outlines — absolutely no shading, no grey tones, no colour and no fill. Keep every shape as a closed contour so it is easy to colour inside the lines. Smooth, confident, evenly weighted lines.`
 
   await onProgress?.(20)
 
-  // Create prediction
+  // Create prediction. `Prefer: wait` asks Replicate to hold the connection
+  // and return the finished prediction directly (up to ~60s), which removes
+  // polling latency for the common fast case.
   const res = await fetch(
     'https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions',
     {
@@ -104,12 +106,15 @@ export async function processWithReplicate(
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
+        Prefer: 'wait=55',
       },
       body: JSON.stringify({
         input: {
           prompt,
           input_image: signedUrl,
           aspect_ratio: 'match_input_image',
+          output_format: 'png',
+          safety_tolerance: 2,
         },
       }),
     }
@@ -121,15 +126,15 @@ export async function processWithReplicate(
   }
 
   const prediction = await res.json()
-  await onProgress?.(30)
+  await onProgress?.(60)
 
-  // Poll for completion
+  // If `Prefer: wait` already returned a finished prediction, skip polling.
   let result = prediction
   let attempts = 0
-  const maxAttempts = 150
+  const maxAttempts = 120
 
   while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
-    await new Promise((r) => setTimeout(r, 2000))
+    await new Promise((r) => setTimeout(r, 1500))
     attempts++
 
     const pollRes = await fetch(
@@ -138,7 +143,7 @@ export async function processWithReplicate(
     )
     result = await pollRes.json()
 
-    const progress = Math.min(30 + Math.floor(attempts * 0.35), 80)
+    const progress = Math.min(60 + Math.floor(attempts * 0.6), 80)
     await onProgress?.(progress)
   }
 
