@@ -267,7 +267,7 @@ export default function AccountPage() {
               className="mt-6 w-full h-12 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold rounded-xl transition-opacity hover:opacity-90 flex items-center justify-center gap-2"
             >
               <Crown className="w-4 h-4" />
-              Get Pro - £2.99/month
+              Get Pro - £4.99/month
             </Link>
           )}
         </div>

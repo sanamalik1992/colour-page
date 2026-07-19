@@ -110,7 +110,7 @@ Only upload artwork you created or have explicit license to distribute. The admi
 
 ## Tiering
 
-| Feature | Free | Pro (£2.99/mo) |
+| Feature | Free | Pro (£4.99/mo) |
 |---------|------|-----------------|
 | Generations per day | 3 | Unlimited |
 | Watermark | Yes | No |

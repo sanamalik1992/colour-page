@@ -23,7 +23,7 @@ import { PageFooter } from '@/components/ui/page-footer'
 const ANNUAL_ENABLED = Boolean(process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL)
 
 const PLANS = {
-  monthly: { label: 'Monthly', price: '£2.99', per: '/month', note: 'Billed monthly · cancel anytime' },
+  monthly: { label: 'Monthly', price: '£4.99', per: '/month', note: 'Billed monthly · cancel anytime' },
   annual: { label: 'Yearly', price: '£24.99', per: '/year', note: 'Just £2.08/month · save 30%' },
 } as const
 
