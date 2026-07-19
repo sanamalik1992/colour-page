@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isHeic, convertHeicToPng } from '@/lib/heic-convert'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
-export const maxDuration = 30
+export const maxDuration = 60
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -107,19 +107,22 @@ export async function POST(request: NextRequest) {
 
     if (insertError) throw insertError
 
-    // Trigger background processing
+    // Trigger background processing reliably. `after()` keeps this function
+    // alive past the response so the request is actually sent (a plain
+    // fire-and-forget fetch is often dropped by the platform once the
+    // response returns). The /process route runs in its own invocation with a
+    // longer timeout; the cron worker is a secondary safety net.
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
-    fetch(`${baseUrl}/api/photo-jobs/process`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId }),
-    }).catch((err) => {
-      console.error('Failed to trigger photo-jobs/process:', err)
-      supabase.from('photo_jobs').update({
-        status: 'failed',
-        error: 'Processing failed to start. Please try again.',
-        updated_at: new Date().toISOString(),
-      }).eq('id', jobId)
+    after(async () => {
+      try {
+        await fetch(`${baseUrl}/api/photo-jobs/process`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobId }),
+        })
+      } catch (err) {
+        console.error('Failed to trigger photo-jobs/process:', err)
+      }
     })
 
     return NextResponse.json({

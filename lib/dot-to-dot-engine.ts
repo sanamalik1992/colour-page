@@ -68,7 +68,8 @@ export async function generateDotToDot(
     .resize(tW, tH, { fit: 'fill' })
     .greyscale()
     .normalize()
-    .blur(1.2)
+    .median(3)
+    .blur(1.6)
     .raw()
     .toBuffer({ resolveWithObject: true })
 
@@ -82,7 +83,9 @@ export async function generateDotToDot(
   await onProgress?.(50)
 
   let dots: Point[]
-  if (contour.length >= 8) {
+  if (contour.length >= 8 && !isFrameContour(contour, tW, tH)) {
+    // Smooth the pixel-jagged boundary into a flowing outline
+    contour = smoothClosed(contour, 2, 2)
     // Map trace coords -> fit coords
     const sx = fitW / tW
     const sy = fitH / tH
@@ -107,6 +110,40 @@ export async function generateDotToDot(
 function clampDots(n: number): number {
   if (!Number.isFinite(n)) return 100
   return Math.max(8, Math.min(300, Math.round(n)))
+}
+
+// Reject a contour that just traces the image frame (subject fills/opens to
+// the borders) so we fall back to a feature-based puzzle instead of a box.
+function isFrameContour(contour: Point[], w: number, h: number): boolean {
+  let onBorder = 0
+  for (const p of contour) {
+    if (p.x <= 1 || p.y <= 1 || p.x >= w - 2 || p.y >= h - 2) onBorder++
+  }
+  return onBorder / contour.length > 0.5
+}
+
+// Moving-average smoothing around a closed loop for a flowing outline.
+function smoothClosed(points: Point[], iterations: number, window: number): Point[] {
+  const n = points.length
+  if (n < 5) return points
+  let pts = points
+  for (let it = 0; it < iterations; it++) {
+    const next: Point[] = new Array(n)
+    for (let i = 0; i < n; i++) {
+      let sx = 0
+      let sy = 0
+      let c = 0
+      for (let k = -window; k <= window; k++) {
+        const p = pts[(i + k + n) % n]
+        sx += p.x
+        sy += p.y
+        c++
+      }
+      next[i] = { x: sx / c, y: sy / c }
+    }
+    pts = next
+  }
+  return pts
 }
 
 // ---------------------------------------------------------------------------
