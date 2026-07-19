@@ -19,6 +19,7 @@
 import sharp from 'sharp'
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import type { DotJobSettings } from '@/types/dot-job'
+import { DOT_FONT_B64 } from './dot-font-data'
 
 interface Point {
   x: number
@@ -174,9 +175,41 @@ function traceSubjectOutline(grey: Uint8Array | Buffer, w: number, h: number): P
     fg[i] = isDark !== borderIsDark ? 1 : 0
   }
 
-  const mask = largestComponentMask(fg, w, h)
+  // Morphological close (dilate then erode) to fill holes and merge nearby
+  // regions into one solid subject blob — gives a cleaner single outline.
+  const cleaned = morphClose(fg, w, h, 2)
+
+  const mask = largestComponentMask(cleaned, w, h)
   if (!mask) return []
   return mooreTrace(mask, w, h)
+}
+
+// Square-kernel dilate/erode; close = dilate then erode.
+function dilateErode(src: Uint8Array, w: number, h: number, r: number, dilate: boolean): Uint8Array {
+  const out = new Uint8Array(w * h)
+  const hit = dilate ? 1 : 0 // dilate: any neighbour set -> set; erode: any neighbour clear -> clear
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let val = dilate ? 0 : 1
+      for (let dy = -r; dy <= r && val !== hit; dy++) {
+        const ny = y + dy
+        if (ny < 0 || ny >= h) { if (!dilate) { val = 0 } continue }
+        for (let dx = -r; dx <= r; dx++) {
+          const nx = x + dx
+          if (nx < 0 || nx >= w) { if (!dilate) { val = 0; break } continue }
+          const s = src[ny * w + nx]
+          if (dilate && s === 1) { val = 1; break }
+          if (!dilate && s === 0) { val = 0; break }
+        }
+      }
+      out[y * w + x] = val
+    }
+  }
+  return out
+}
+
+function morphClose(src: Uint8Array, w: number, h: number, r: number): Uint8Array {
+  return dilateErode(dilateErode(src, w, h, r, true), w, h, r, false)
 }
 
 function otsuThreshold(data: Uint8Array | Buffer, len: number): number {
@@ -489,7 +522,12 @@ async function renderDotToDotPng(
   const dotRadius = 11
   const fontSize = 30
 
+  // Embed the font directly so numbers render on servers with no system
+  // fonts (e.g. Vercel), where SVG <text> otherwise shows as empty boxes.
+  const fontFace = `@font-face{font-family:'DotFont';src:url('data:font/ttf;base64,${DOT_FONT_B64}') format('truetype');font-weight:700;}`
+
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
+  svg += `<defs><style>${fontFace}</style></defs>`
   svg += `<rect width="100%" height="100%" fill="white"/>`
 
   if (settings.showGuideLines) {
@@ -503,7 +541,7 @@ async function renderDotToDotPng(
   }
 
   // Numbers with a white halo for legibility
-  svg += `<g font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="bold">`
+  svg += `<g font-family="DotFont" font-size="${fontSize}" font-weight="bold">`
   for (let i = 0; i < dots.length; i++) {
     const cx = dots[i].x + offsetX
     const cy = dots[i].y + offsetY
@@ -523,11 +561,11 @@ async function renderDotToDotPng(
   if (dots.length > 0) {
     const s = dots[0]
     svg += `<circle cx="${s.x + offsetX}" cy="${s.y + offsetY}" r="${dotRadius + 9}" fill="none" stroke="#111" stroke-width="3"/>`
-    svg += `<text x="${s.x + offsetX}" y="${s.y + offsetY - dotRadius - 20}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="bold" fill="#111">START</text>`
+    svg += `<text x="${s.x + offsetX}" y="${s.y + offsetY - dotRadius - 20}" text-anchor="middle" font-family="DotFont" font-size="26" font-weight="bold" fill="#111">START</text>`
   }
 
   // Footer branding
-  svg += `<text x="${A4_W / 2}" y="${A4_H - 46}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#c9c9c9">colour.page</text>`
+  svg += `<text x="${A4_W / 2}" y="${A4_H - 46}" text-anchor="middle" font-family="DotFont" font-size="24" fill="#c9c9c9">colour.page</text>`
   svg += `</svg>`
 
   return sharp(Buffer.from(svg)).png().toBuffer()
