@@ -172,23 +172,28 @@ export default function Home() {
   const limitReached = !isPro && remaining <= 0
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
+    <div className="min-h-screen app-bg">
       <NavHeader active="create" isPro={isPro} />
 
       <main className="container mx-auto px-4 sm:px-6 pt-8 sm:pt-12 pb-16">
         <div className="max-w-xl mx-auto">
           {/* Headline */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-3 leading-tight tracking-tight">
-              Upload a Photo,<br />Print &amp; Colour
+          <div className="text-center mb-7">
+            <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-5">
+              <Sparkles className="w-3.5 h-3.5 text-brand-glow" />
+              <span className="text-xs sm:text-sm font-medium text-gray-300">Free &middot; No sign-up needed</span>
+            </div>
+            <h1 className="text-3xl sm:text-[2.75rem] font-extrabold text-white mb-3 leading-[1.1] tracking-tight">
+              Turn any photo into a<br />
+              <span className="bg-gradient-to-r from-brand-glow to-sky-400 bg-clip-text text-transparent">colouring page</span>
             </h1>
-            <p className="text-gray-400 text-base sm:text-lg">
-              AI turns any photo into a printable colouring page
+            <p className="text-gray-400 text-base sm:text-lg max-w-md mx-auto">
+              Upload a picture and print a clean, kid-ready A4 colouring sheet in seconds.
             </p>
           </div>
 
           {/* Generator Card */}
-          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+          <div className="bg-white rounded-3xl shadow-2xl ring-1 ring-black/5 overflow-hidden">
             <div className="p-5 sm:p-8">
 
               {/* Limit indicator */}

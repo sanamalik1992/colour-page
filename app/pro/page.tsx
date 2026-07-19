@@ -72,11 +72,8 @@ export default function ProPage() {
   const active = PLANS[plan]
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
+    <div className="min-h-screen app-bg">
       <NavHeader active="pro" />
-
-      {/* Rainbow accent bar */}
-      <div className="h-1.5 w-full bg-gradient-to-r from-rose-400 via-amber-400 via-emerald-400 via-sky-400 to-violet-500" />
 
       <main className="container mx-auto px-4 sm:px-6 py-10 sm:py-14">
         <div className="max-w-lg mx-auto">

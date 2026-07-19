@@ -3,7 +3,7 @@ import { PageFooter } from '@/components/ui/page-footer'
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
+    <div className="min-h-screen app-bg">
       <NavHeader />
 
       <main className="container mx-auto px-6 py-16 max-w-3xl">
