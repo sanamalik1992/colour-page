@@ -1,11 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkUsage, recordUsage } from '@/lib/pro-gating'
+import { generateDotToDot } from '@/lib/dot-to-dot-engine'
+import type { DotJobSettings } from '@/types/dot-job'
+
+// Dot-to-dot generation is fast (a few seconds) and CPU-only, so we run it
+// inline here instead of relying on a fire-and-forget background trigger
+// (which Vercel routinely drops once the response is sent, leaving jobs
+// stuck with no output — i.e. a blank result). This makes it reliable.
+export const maxDuration = 60
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+async function uploadOutput(path: string, buf: Buffer, ct: string) {
+  const { error } = await supabase.storage
+    .from('outputs')
+    .upload(path, buf, { contentType: ct, upsert: true })
+  if (error) {
+    await supabase.storage
+      .from('images')
+      .upload(path, buf, { contentType: ct, upsert: true })
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,30 +59,31 @@ export async function POST(request: NextRequest) {
       }, { status: 429 })
     }
 
-    // Upload the file
+    // Read the upload once; we process from this buffer directly.
     const buffer = Buffer.from(await file.arrayBuffer())
     const ext = file.name.split('.').pop() || 'jpg'
     const storagePath = `dot-jobs/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
 
+    // Store the input (best-effort; not required for processing)
     const { error: uploadError } = await supabase.storage
       .from('uploads')
       .upload(storagePath, buffer, { contentType: file.type, upsert: true })
-
     if (uploadError) {
-      // Fallback to images bucket
-      const { error: fallbackError } = await supabase.storage
+      await supabase.storage
         .from('images')
         .upload(storagePath, buffer, { contentType: file.type, upsert: true })
-      if (fallbackError) throw new Error('Failed to upload file')
     }
 
     // Record usage (atomic increment)
     const { allowed } = await recordUsage(userId, 'dot_to_dot', email)
     if (!allowed) {
-      return NextResponse.json({
-        error: 'Usage limit reached',
-        isPro: usage.isPro,
-      }, { status: 429 })
+      return NextResponse.json({ error: 'Usage limit reached', isPro: usage.isPro }, { status: 429 })
+    }
+
+    const settings: DotJobSettings = {
+      dotCount,
+      showGuideLines,
+      difficulty: (['easy', 'medium', 'hard'].includes(difficulty) ? difficulty : 'medium') as DotJobSettings['difficulty'],
     }
 
     // Create the job
@@ -72,12 +92,12 @@ export async function POST(request: NextRequest) {
       .insert({
         user_id: userId,
         email: email?.toLowerCase() || null,
-        status: 'queued',
+        status: 'processing',
         input_storage_path: storagePath,
         original_filename: file.name,
-        settings: { dotCount, showGuideLines, difficulty },
+        settings,
         is_pro: usage.isPro,
-        progress: 0,
+        progress: 10,
       })
       .select('id')
       .single()
@@ -86,25 +106,47 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to create job')
     }
 
-    // Trigger background processing
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
-    fetch(`${appUrl}/api/dot-jobs/process`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId: job.id }),
-    }).catch((err) => {
-      console.error('Failed to trigger dot-jobs/process:', err)
-      supabase.from('dot_jobs').update({
-        status: 'failed',
-        error: 'Processing failed to start. Please try again.',
-        updated_at: new Date().toISOString(),
-      }).eq('id', job.id)
-    })
+    // Process inline so the result is guaranteed to exist.
+    try {
+      const { png, pdf } = await generateDotToDot(buffer, settings)
+
+      const pdfPath = `dot-jobs/${job.id}/output.pdf`
+      const pngPath = `dot-jobs/${job.id}/output.png`
+
+      await Promise.all([
+        uploadOutput(pdfPath, pdf, 'application/pdf'),
+        uploadOutput(pngPath, png, 'image/png'),
+      ])
+
+      await supabase
+        .from('dot_jobs')
+        .update({
+          status: 'done',
+          progress: 100,
+          output_pdf_path: pdfPath,
+          output_png_path: pngPath,
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id)
+    } catch (procErr) {
+      console.error('Dot job inline processing failed:', procErr)
+      await supabase
+        .from('dot_jobs')
+        .update({
+          status: 'failed',
+          error: 'Failed to generate puzzle. Please try another photo.',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id)
+      return NextResponse.json({ error: 'Failed to generate puzzle. Please try another photo.' }, { status: 500 })
+    }
 
     return NextResponse.json({
       jobId: job.id,
       remaining: usage.remaining - 1,
       isPro: usage.isPro,
+      status: 'done',
     })
   } catch (error) {
     console.error('Dot job create error:', error)
