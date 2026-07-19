@@ -18,6 +18,7 @@ import {
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 import { useSessionId } from '@/hooks/useSessionId'
+import { prepareImageForUpload, readJsonSafe, friendlyError } from '@/lib/client-image'
 import { DOT_COUNT_OPTIONS, DEFAULT_DOT_SETTINGS } from '@/types/dot-job'
 
 type Stage = 'upload' | 'settings' | 'processing' | 'preview'
@@ -50,15 +51,16 @@ export default function DotToDotPage() {
       .catch(() => {})
   }, [sessionId])
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     if (!f) return
-    setFile(f)
-    const reader = new FileReader()
-    reader.onloadend = () => setPreviewSrc(reader.result as string)
-    reader.readAsDataURL(f)
     setError('')
     setStage('settings')
+    const prepared = await prepareImageForUpload(f)
+    setFile(prepared)
+    const reader = new FileReader()
+    reader.onloadend = () => setPreviewSrc(reader.result as string)
+    reader.readAsDataURL(prepared)
   }
 
   const handleGenerate = async () => {
@@ -83,21 +85,21 @@ export default function DotToDotPage() {
         body: formData,
       })
 
-      const data = await res.json()
+      const data = await readJsonSafe(res)
 
       if (!res.ok) {
         if (res.status === 429) {
           setLimitReached(true)
-          setError(data.error)
+          setError(friendlyError(res.status, data))
           setStage('upload')
           return
         }
-        throw new Error(data.error || 'Failed to create job')
+        throw new Error(friendlyError(res.status, data))
       }
 
-      setJobId(data.jobId)
-      if (data.remaining !== undefined) setRemaining(data.remaining)
-      setIsPro(data.isPro || false)
+      setJobId(data.jobId as string)
+      if (data.remaining !== undefined) setRemaining(data.remaining as number)
+      setIsPro((data.isPro as boolean) || false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setStage('settings')
