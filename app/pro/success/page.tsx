@@ -29,7 +29,9 @@ function SuccessContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black flex items-center justify-center p-6">
+    <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black flex flex-col">
+      <div className="h-1.5 w-full bg-gradient-to-r from-rose-400 via-amber-400 via-emerald-400 via-sky-400 to-violet-500" />
+      <div className="flex-1 flex items-center justify-center p-6">
       <div className="max-w-md w-full text-center">
         {/* Logo */}
         <Link href="/" className="inline-block mb-8">
@@ -44,12 +46,13 @@ function SuccessContent() {
         </div>
 
         {/* Message */}
+        <div className="text-4xl mb-3" aria-hidden>🎉🖍️🌈</div>
         <h1 className="text-3xl font-bold text-white mb-4">
-          Welcome to Pro! 🎉
+          Welcome to Pro!
         </h1>
-        
+
         <p className="text-gray-400 mb-8">
-          Thank you for subscribing! You now have unlimited access to all colouring page features.
+          Thank you for subscribing! You now have unlimited colouring pages, dot-to-dot puzzles, and watermark-free downloads.
         </p>
 
         {/* Benefits */}
@@ -96,6 +99,7 @@ function SuccessContent() {
         <p className="text-gray-500 text-sm mt-6">
           A confirmation email has been sent to your inbox.
         </p>
+      </div>
       </div>
     </div>
   )

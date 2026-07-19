@@ -1,34 +1,66 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Crown, ArrowRight, Loader2 } from 'lucide-react'
+import Link from 'next/link'
+import {
+  Check,
+  Crown,
+  Loader2,
+  Sparkles,
+  Infinity as InfinityIcon,
+  Stamp,
+  Zap,
+  Palette,
+  ShieldCheck,
+  Lock,
+  X,
+} from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 
+// An annual plan is only offered when a separate annual price is configured,
+// so the customer is always charged the amount they see.
+const ANNUAL_ENABLED = Boolean(process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL)
+
+const PLANS = {
+  monthly: { label: 'Monthly', price: '£2.99', per: '/month', note: 'Billed monthly · cancel anytime' },
+  annual: { label: 'Yearly', price: '£24.99', per: '/year', note: 'Just £2.08/month · save 30%' },
+} as const
+
+const FEATURES = [
+  { icon: InfinityIcon, color: 'text-emerald-500', bg: 'bg-emerald-50', title: 'Unlimited pages', desc: 'Make as many colouring pages as you like' },
+  { icon: Stamp, color: 'text-rose-500', bg: 'bg-rose-50', title: 'No watermark', desc: 'Clean, print-ready pages every time' },
+  { icon: Palette, color: 'text-violet-500', bg: 'bg-violet-50', title: 'Unlimited dot-to-dot', desc: 'Turn photos into number puzzles too' },
+  { icon: Zap, color: 'text-amber-500', bg: 'bg-amber-50', title: 'Priority speed', desc: 'Your pages jump to the front of the queue' },
+  { icon: Sparkles, color: 'text-sky-500', bg: 'bg-sky-50', title: 'HD A4 quality', desc: 'Sharp lines that print beautifully' },
+  { icon: Crown, color: 'text-orange-500', bg: 'bg-orange-50', title: 'Full gallery', desc: 'Every ready-made colouring sheet unlocked' },
+]
+
 export default function ProPage() {
   const [email, setEmail] = useState('')
+  const [plan, setPlan] = useState<'monthly' | 'annual'>('monthly')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const handleCheckout = async (plan: string) => {
-    if (!email) { setError('Please enter your email'); return }
-    if (!email.includes('@')) { setError('Please enter a valid email'); return }
-    
+  const handleCheckout = async () => {
+    if (!email.trim()) { setError('Please enter your email to continue'); return }
+    if (!email.includes('@')) { setError('Please enter a valid email address'); return }
+
     setLoading(true)
     setError('')
-    
+
     try {
       const res = await fetch('/api/stripe/checkout-subscription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, plan })
+        body: JSON.stringify({ email: email.trim(), plan }),
       })
       const data = await res.json()
-      
+
       if (data.url) {
         window.location.href = data.url
       } else {
-        setError(data.error || 'Failed to start checkout')
+        setError(data.error || 'Something went wrong. Please try again.')
       }
     } catch {
       setError('Something went wrong. Please try again.')
@@ -37,86 +69,164 @@ export default function ProPage() {
     }
   }
 
+  const active = PLANS[plan]
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
       <NavHeader active="pro" />
 
-      <section className="container mx-auto px-6 py-16">
-        <div className="text-center max-w-3xl mx-auto mb-12">
-          <div className="inline-flex items-center gap-2 bg-brand-primary/20 border border-brand-primary/30 rounded-full px-4 py-2 mb-6">
-            <Crown className="w-4 h-4 text-brand-primary" />
-            <span className="text-sm font-semibold text-brand-primary">Upgrade to Pro</span>
+      {/* Rainbow accent bar */}
+      <div className="h-1.5 w-full bg-gradient-to-r from-rose-400 via-amber-400 via-emerald-400 via-sky-400 to-violet-500" />
+
+      <main className="container mx-auto px-4 sm:px-6 py-10 sm:py-14">
+        <div className="max-w-lg mx-auto">
+          {/* Hero */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center gap-2 bg-brand-primary/15 border border-brand-primary/30 rounded-full px-4 py-1.5 mb-5">
+              <Crown className="w-4 h-4 text-brand-primary" />
+              <span className="text-sm font-semibold text-brand-primary">colour.page Pro</span>
+            </div>
+            <div className="text-4xl mb-3" aria-hidden>🎨🖍️🌈</div>
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-3 leading-tight">
+              Unlock the whole crayon box
+            </h1>
+            <p className="text-gray-400 text-base sm:text-lg">
+              Unlimited colouring pages and puzzles for the little artists at home.
+            </p>
           </div>
-          <h1 className="text-5xl font-bold text-white mb-6">Unlimited Colouring Pages</h1>
-          <p className="text-xl text-gray-400">Create unlimited colouring pages and dot-to-dot puzzles for just £2.99/month</p>
-        </div>
 
-        <div className="max-w-md mx-auto mb-12">
-          <label className="block text-sm font-medium text-gray-300 mb-2">Enter your email to get started</label>
-          <input 
-            type="email" 
-            value={email} 
-            onChange={(e) => setEmail(e.target.value)} 
-            placeholder="you@example.com" 
-            className="w-full h-12 px-4 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-brand-primary"
-          />
-          {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
-        </div>
+          {/* Pricing card */}
+          <div className="bg-white rounded-3xl shadow-2xl overflow-hidden">
+            <div className="p-6 sm:p-8">
+              {/* Billing toggle (only when an annual price is configured) */}
+              {ANNUAL_ENABLED && (
+                <div className="flex p-1 bg-gray-100 rounded-full mb-6">
+                  {(['monthly', 'annual'] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setPlan(p)}
+                      className={`flex-1 py-2.5 rounded-full text-sm font-semibold transition-all ${
+                        plan === p ? 'bg-white text-gray-900 shadow' : 'text-gray-500'
+                      }`}
+                    >
+                      {PLANS[p].label}
+                      {p === 'annual' && <span className="ml-1.5 text-brand-primary text-xs">-30%</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
 
-        <div className="grid md:grid-cols-2 gap-8 max-w-3xl mx-auto">
-          <div className="rounded-2xl p-8 bg-gradient-to-b from-brand-primary/20 to-zinc-800/50 border-2 border-brand-primary">
-            <div className="text-center mb-6">
-              <span className="bg-brand-primary text-white text-xs font-bold px-3 py-1 rounded-full">MOST POPULAR</span>
-              <h3 className="text-xl font-bold text-white mt-4 mb-2">Pro Monthly</h3>
-              <div className="flex items-baseline justify-center gap-1">
-                <span className="text-4xl font-bold text-white">£2.99</span>
-                <span className="text-gray-400">/month</span>
+              {/* Price */}
+              <div className="text-center mb-6">
+                <div className="flex items-end justify-center gap-1">
+                  <span className="text-5xl font-extrabold text-gray-900">{active.price}</span>
+                  <span className="text-gray-400 font-medium mb-1.5">{active.per}</span>
+                </div>
+                <p className="text-sm text-gray-500 mt-1.5">{active.note}</p>
+              </div>
+
+              {/* Email */}
+              <label htmlFor="pro-email" className="block text-sm font-semibold text-gray-700 mb-2">
+                Your email
+              </label>
+              <input
+                id="pro-email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError('') }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleCheckout() }}
+                placeholder="you@example.com"
+                className="w-full h-14 px-4 text-base bg-gray-50 border-2 border-gray-200 rounded-2xl text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-brand-primary focus:bg-white transition-colors"
+              />
+              <p className="text-xs text-gray-400 mt-1.5">
+                We use this to link your subscription — no account needed.
+              </p>
+
+              {error && (
+                <p className="text-sm text-red-500 mt-3 flex items-center gap-1.5">
+                  <X className="w-4 h-4 flex-shrink-0" /> {error}
+                </p>
+              )}
+
+              {/* CTA */}
+              <button
+                onClick={handleCheckout}
+                disabled={loading}
+                className="mt-5 w-full h-14 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 bg-gradient-to-r from-brand-primary to-brand-border text-white shadow-lg shadow-brand-primary/20 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-60 disabled:hover:translate-y-0"
+              >
+                {loading ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : (
+                  <>
+                    <Crown className="w-5 h-5" />
+                    Start Pro — {active.price}{active.per}
+                  </>
+                )}
+              </button>
+
+              {/* Trust row */}
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-gray-500">
+                <span className="flex items-center gap-1.5"><Lock className="w-3.5 h-3.5" /> Secure checkout</span>
+                <span className="flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5" /> Powered by Stripe</span>
+                <span className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5" /> Cancel anytime</span>
               </div>
             </div>
-            <ul className="space-y-3 mb-8">
-              {['Unlimited colouring pages', 'Unlimited dot-to-dot', 'HD quality downloads', 'No watermarks', 'Priority processing'].map((f) => (
-                <li key={f} className="flex items-start gap-3">
-                  <Check className="w-5 h-5 text-brand-primary flex-shrink-0" />
-                  <span className="text-gray-300 text-sm">{f}</span>
-                </li>
-              ))}
-            </ul>
-            <button 
-              onClick={() => handleCheckout('monthly')} 
-              disabled={loading}
-              className="w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-brand-primary to-brand-border text-white disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><span>Subscribe Now</span><ArrowRight className="w-4 h-4" /></>}
-            </button>
-          </div>
 
-          <div className="rounded-2xl p-8 bg-zinc-800/50 border border-zinc-700">
-            <div className="text-center mb-6">
-              <span className="bg-zinc-700 text-gray-300 text-xs font-bold px-3 py-1 rounded-full">SAVE 30%</span>
-              <h3 className="text-xl font-bold text-white mt-4 mb-2">Pro Annual</h3>
-              <div className="flex items-baseline justify-center gap-1">
-                <span className="text-4xl font-bold text-white">£24.99</span>
-                <span className="text-gray-400">/year</span>
+            {/* What's included */}
+            <div className="border-t border-gray-100 bg-gray-50/60 p-6 sm:p-8">
+              <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide mb-4">
+                Everything in Pro
+              </h2>
+              <div className="grid sm:grid-cols-2 gap-4">
+                {FEATURES.map(({ icon: Icon, color, bg, title, desc }) => (
+                  <div key={title} className="flex items-start gap-3">
+                    <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
+                      <Icon className={`w-5 h-5 ${color}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 leading-tight">{title}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-            <ul className="space-y-3 mb-8">
-              {['Everything in Monthly', '2 months free', 'Commercial license'].map((f) => (
-                <li key={f} className="flex items-start gap-3">
-                  <Check className="w-5 h-5 text-brand-primary flex-shrink-0" />
-                  <span className="text-gray-300 text-sm">{f}</span>
-                </li>
+          </div>
+
+          {/* Free vs Pro */}
+          <div className="mt-8 bg-zinc-800/50 border border-zinc-700 rounded-2xl overflow-hidden">
+            <div className="grid grid-cols-3 text-sm">
+              <div className="p-4 font-semibold text-gray-400">What you get</div>
+              <div className="p-4 text-center font-semibold text-gray-400 border-l border-zinc-700">Free</div>
+              <div className="p-4 text-center font-bold text-brand-primary border-l border-zinc-700 bg-brand-primary/5">Pro</div>
+              {[
+                ['Colouring pages', '3 / day', 'Unlimited'],
+                ['Dot-to-dot puzzles', '1 free', 'Unlimited'],
+                ['Watermark', 'Yes', 'None'],
+                ['Processing speed', 'Standard', 'Priority'],
+              ].map(([label, free, pro], i) => (
+                <div key={label} className="contents">
+                  <div className={`p-4 text-gray-300 ${i > 0 ? 'border-t border-zinc-700/60' : ''}`}>{label}</div>
+                  <div className={`p-4 text-center text-gray-500 border-l border-zinc-700 ${i > 0 ? 'border-t border-zinc-700/60' : ''}`}>{free}</div>
+                  <div className={`p-4 text-center text-white font-medium border-l border-zinc-700 bg-brand-primary/5 ${i > 0 ? 'border-t border-zinc-700/60' : ''}`}>{pro}</div>
+                </div>
               ))}
-            </ul>
-            <button 
-              onClick={() => handleCheckout('annual')} 
-              disabled={loading}
-              className="w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 bg-zinc-700 hover:bg-zinc-600 text-white disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><span>Get Annual</span><ArrowRight className="w-4 h-4" /></>}
-            </button>
+            </div>
+          </div>
+
+          {/* Reassurance */}
+          <div className="mt-8 text-center">
+            <p className="text-sm text-gray-400">
+              Change your mind? Cancel in one tap from{' '}
+              <Link href="/account" className="text-brand-primary font-semibold hover:underline">My Account</Link>.
+              Already Pro?{' '}
+              <Link href="/account" className="text-brand-primary font-semibold hover:underline">Manage billing</Link>.
+            </p>
           </div>
         </div>
-      </section>
+      </main>
 
       <PageFooter />
     </div>
