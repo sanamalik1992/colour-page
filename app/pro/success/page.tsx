@@ -19,7 +19,7 @@ function SuccessContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black flex items-center justify-center p-6">
+      <div className="min-h-screen app-bg flex items-center justify-center p-6">
         <div className="text-center">
           <Loader2 className="w-12 h-12 text-brand-primary animate-spin mx-auto mb-4" />
           <p className="text-gray-400">Activating your Pro subscription...</p>
@@ -29,7 +29,7 @@ function SuccessContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black flex flex-col">
+    <div className="min-h-screen app-bg flex flex-col">
       <div className="h-1.5 w-full bg-gradient-to-r from-rose-400 via-amber-400 via-emerald-400 via-sky-400 to-violet-500" />
       <div className="flex-1 flex items-center justify-center p-6">
       <div className="max-w-md w-full text-center">
@@ -108,7 +108,7 @@ function SuccessContent() {
 export default function ProSuccessPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black flex items-center justify-center">
+      <div className="min-h-screen app-bg flex items-center justify-center">
         <Loader2 className="w-12 h-12 text-brand-primary animate-spin" />
       </div>
     }>

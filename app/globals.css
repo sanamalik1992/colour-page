@@ -15,7 +15,30 @@
   }
 
   body {
-    @apply bg-zinc-900 text-gray-900 antialiased;
+    @apply bg-zinc-950 text-gray-900 antialiased;
+  }
+}
+
+@layer utilities {
+  /* Polished app background: near-black base with soft, playful colour glows */
+  .app-bg {
+    background-color: #0a0a0f;
+    background-image:
+      radial-gradient(55rem 55rem at 12% -8%, rgba(16, 185, 129, 0.13), transparent 60%),
+      radial-gradient(45rem 45rem at 88% -6%, rgba(139, 92, 246, 0.12), transparent 55%),
+      radial-gradient(50rem 50rem at 50% 112%, rgba(56, 189, 248, 0.10), transparent 60%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+  }
+
+  /* Rainbow brand accent ribbon */
+  .rainbow-bar {
+    background-image: linear-gradient(90deg, #fb7185, #fbbf24, #34d399, #38bdf8, #a78bfa);
+  }
+
+  /* Shared frosted surface for cards/panels on the dark theme */
+  .surface {
+    @apply bg-zinc-900/60 border border-white/10 rounded-2xl backdrop-blur-sm;
   }
 }
 

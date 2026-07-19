@@ -75,42 +75,32 @@ export async function POST(request: NextRequest) {
     if (!inputRes.ok) throw new Error('Failed to download input image')
     const inputBuffer = Buffer.from(await inputRes.arrayBuffer())
 
-    // Stage A: Preprocessing
     await updateJob(jobId, { progress: 15 })
-    const preprocessed = await preprocessImage(inputBuffer, settings)
 
-    // Upload preprocessed image for Replicate
-    const preprocessedPath = `photo-jobs/${jobId}/preprocessed.png`
-    const { error: upErr } = await supabase.storage
-      .from('uploads')
-      .upload(preprocessedPath, preprocessed, { contentType: 'image/png', upsert: true })
-    if (upErr) {
-      await supabase.storage
-        .from('images')
-        .upload(preprocessedPath, preprocessed, { contentType: 'image/png', upsert: true })
-    }
-
-    const preprocessedUrl = await getSignedUrl(preprocessedPath)
-    if (!preprocessedUrl) throw new Error('Failed to get preprocessed URL')
-
-    // Stage B: Line extraction – Replicate (poll) with CV fallback
+    // Stage B: Line extraction.
+    // Replicate gets the ORIGINAL image URL directly — this is both faster
+    // (no extra preprocess + re-upload round-trip) and higher quality (the
+    // model works best on the full-colour photo). Preprocessing is only done
+    // for the local CV fallback.
     let lineArtBuffer: Buffer
     const hasReplicate = !!process.env.REPLICATE_API_TOKEN
 
     if (hasReplicate) {
       try {
         lineArtBuffer = await processWithReplicate(
-          preprocessedUrl,
+          signedUrl,
           settings,
           async (pct) => { await updateJob(jobId!, { progress: pct }) }
         )
       } catch (replicateError) {
         console.error('Replicate failed, falling back to Sharp CV:', replicateError)
         await updateJob(jobId, { progress: 30 })
+        const preprocessed = await preprocessImage(inputBuffer, settings)
         lineArtBuffer = await sharpCVFallback.generate(preprocessed, settings)
       }
     } else {
       await updateJob(jobId, { progress: 30 })
+      const preprocessed = await preprocessImage(inputBuffer, settings)
       lineArtBuffer = await sharpCVFallback.generate(preprocessed, settings)
     }
 

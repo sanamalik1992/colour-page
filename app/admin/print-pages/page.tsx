@@ -166,7 +166,7 @@ export default function AdminPrintPagesPage() {
 
   if (!authenticated) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
+      <div className="min-h-screen app-bg">
         <NavHeader />
         <div className="container mx-auto px-6 py-20">
           <div className="max-w-md mx-auto">
@@ -208,7 +208,7 @@ export default function AdminPrintPagesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
+    <div className="min-h-screen app-bg">
       <NavHeader />
 
       <main className="container mx-auto px-6 py-8">

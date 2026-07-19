@@ -204,7 +204,7 @@ export default function PrintPagesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
+    <div className="min-h-screen app-bg">
       <NavHeader active="print-pages" />
 
       <main className="container mx-auto px-6 py-10">
@@ -214,7 +214,7 @@ export default function PrintPagesPage() {
             <Printer className="w-4 h-4 text-brand-primary" />
             <span className="text-sm font-medium text-brand-primary">Free to Print</span>
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-white mb-3">Print Pages</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-white mb-3">Colouring Gallery</h1>
           <p className="text-gray-400 max-w-xl mx-auto">
             Browse our library of original colouring sheets. Download, print, and colour!
           </p>

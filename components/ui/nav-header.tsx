@@ -24,11 +24,16 @@ export function NavHeader({ active, isPro }: NavHeaderProps) {
     }`
 
   return (
-    <header className="sticky top-0 z-50 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800">
+    <header className="sticky top-0 z-50 bg-zinc-950/70 backdrop-blur-xl">
       <div className="container mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-14">
-          <Link href="/" className="text-white font-bold text-lg flex-shrink-0 mr-1">
-            colour<span className="text-brand-primary">.</span>page
+          <Link href="/" className="flex items-center gap-1.5 flex-shrink-0 mr-1 group">
+            <span className="w-6 h-6 rounded-lg rainbow-bar flex items-center justify-center shadow-sm" aria-hidden>
+              <span className="w-2 h-2 rounded-full bg-white/90" />
+            </span>
+            <span className="text-white font-extrabold text-lg tracking-tight">
+              colour<span className="text-brand-glow">.</span>page
+            </span>
           </Link>
 
           <nav className="flex items-center gap-0.5">
@@ -63,6 +68,8 @@ export function NavHeader({ active, isPro }: NavHeaderProps) {
           </nav>
         </div>
       </div>
+      {/* Rainbow brand accent */}
+      <div className="h-[3px] w-full rainbow-bar" />
     </header>
   )
 }

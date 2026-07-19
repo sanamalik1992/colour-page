@@ -130,7 +130,7 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
+    <div className="min-h-screen app-bg">
       <NavHeader isPro={subscriptionStatus?.isPro} />
 
       <main className="container mx-auto px-6 py-12 max-w-2xl">

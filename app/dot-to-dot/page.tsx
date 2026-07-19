@@ -159,7 +159,7 @@ export default function DotToDotPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-900 via-zinc-900 to-black">
+    <div className="min-h-screen app-bg">
       <NavHeader active="dot-to-dot" isPro={isPro} />
 
       <main className="container mx-auto px-6 py-10">
