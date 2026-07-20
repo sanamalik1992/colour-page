@@ -53,12 +53,12 @@ export interface TopicPlan {
 // Pins every prompt to the existing colouring-page look. Tuning this affects
 // all categories at once.
 const STYLE_SUFFIX =
-  'Black and white coloring book line art for young children. Bold, clean, ' +
-  'evenly weighted black outlines on a pure white background. Every element is ' +
-  'a simple closed shape with large open areas to colour inside the lines. ' +
-  'Absolutely no shading, no grey tones, no colour, no fill, no cross-hatching, ' +
-  'no photorealism. Friendly, rounded, cartoon style. Flat front-on view, ' +
-  'centred composition, generous white margins.'
+  'Coloring book page for young children: bold, clean black outline drawings of ' +
+  'the subjects, drawn large and filling most of the page. Simple closed shapes ' +
+  'with white space inside each shape to colour in. White background. No shading, ' +
+  'no grey, no colour fill, no cross-hatching, no photorealism. Friendly rounded ' +
+  'cartoon style, clear thick outlines, flat front-on view. The picture must ' +
+  'clearly show the subjects — do not leave the page mostly empty.'
 
 /**
  * Map an optional child age (3-10) to generation + dot-to-dot difficulty.

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { preprocessImage, processWithReplicate, generateFromText, sharpCVFallback } from '@/lib/image-processing'
+import { preprocessImage, processWithReplicate, generateFromText, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
 import { renderNumberSheet, buildLetterSheet } from '@/lib/topic-render'
 import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
 import type { PhotoJobSettings } from '@/types/photo-job'
@@ -99,6 +99,10 @@ export async function POST(request: NextRequest) {
           lineArtBuffer = await buildLetterSheet(generated, glyph.value, settings)
         } else {
           lineArtBuffer = generated
+        }
+        // Guard against a blank generation slipping through as a "done" sheet.
+        if (settings.category !== 'letter' && (await isBlankImage(lineArtBuffer))) {
+          throw new Error('The picture came out blank. Please try rewording the topic.')
         }
       }
     } else {
