@@ -70,18 +70,31 @@ export async function generateDotToDot(
   await onProgress?.(30)
 
   const targetDots = clampDots(settings.dotCount)
+  const sceneMode = settings.style === 'scene'
 
-  // --- Trace the subject outline (in trace-resolution coords) ---
-  const traced = traceSubjectOutline(data, tW, tH)
+  // --- Trace the outline (in trace-resolution coords) ---
+  // Scene mode: outer perimeter of the WHOLE drawing (keep the full scene).
+  // Outline mode: isolate the main subject and trace just its silhouette.
   let ordered: Point[]
-  let mask: Uint8Array | null = traced.mask
-  if (traced.contour.length >= 8 && !isFrameContour(traced.contour, tW, tH)) {
-    ordered = smoothClosed(traced.contour, 2, 2)
+  let mask: Uint8Array | null = null
+  if (sceneMode) {
+    const traced = traceSceneOutline(data, tW, tH)
+    if (traced.contour.length >= 8 && !isFrameContour(traced.contour, tW, tH)) {
+      ordered = smoothClosed(traced.contour, 2, 2)
+    } else {
+      ordered = fallbackContour(data, tW, tH)
+    }
   } else {
-    // Fallback: edge-cloud nearest-neighbour path (never fails). No clean
-    // subject mask in this case, so we skip the drawn-in features.
-    ordered = fallbackContour(data, tW, tH)
-    mask = null
+    const traced = traceSubjectOutline(data, tW, tH)
+    mask = traced.mask
+    if (traced.contour.length >= 8 && !isFrameContour(traced.contour, tW, tH)) {
+      ordered = smoothClosed(traced.contour, 2, 2)
+    } else {
+      // Fallback: edge-cloud nearest-neighbour path (never fails). No clean
+      // subject mask in this case, so we skip the drawn-in features.
+      ordered = fallbackContour(data, tW, tH)
+      mask = null
+    }
   }
 
   await onProgress?.(50)
@@ -111,31 +124,37 @@ export async function generateDotToDot(
 
   await onProgress?.(60)
 
-  // Build the "features" layer: the subject's own line art, masked to the
-  // subject (background removed) and faded to grey, placed at the same spot as
-  // the outline. Kids get the details drawn in and connect the dots for the
-  // outline. Skipped (plain dots) when there's no clean mask.
+  // Build the "features" layer — the drawing that sits under the dots.
+  //  • scene mode: the WHOLE drawing kept crisp (background/context intact),
+  //    with the dots tracing its outer perimeter. Matches a classic
+  //    "colour it in + join the dots around the edge" page.
+  //  • outline mode: the isolated subject, faded to grey, dots on its outline.
+  // Skipped (plain dots) when there's nothing clean to draw.
+  const bbox = {
+    minX: Math.max(0, Math.floor(minX)),
+    minY: Math.max(0, Math.floor(minY)),
+    w: Math.min(tW, Math.ceil(bw)),
+    h: Math.min(tH, Math.ceil(bh)),
+  }
+  if (bbox.minX + bbox.w > tW) bbox.w = tW - bbox.minX
+  if (bbox.minY + bbox.h > tH) bbox.h = tH - bbox.minY
+  const target = {
+    x: Math.round(tx),
+    y: Math.round(ty),
+    w: Math.max(1, Math.round(drawnW)),
+    h: Math.max(1, Math.round(drawnH)),
+  }
+
   let features: Buffer | null = null
-  if (mask) {
-    const bbox = {
-      minX: Math.max(0, Math.floor(minX)),
-      minY: Math.max(0, Math.floor(minY)),
-      w: Math.min(tW, Math.ceil(bw)),
-      h: Math.min(tH, Math.ceil(bh)),
+  try {
+    if (sceneMode) {
+      features = await buildSceneFeaturesLayer(imageBuffer, tW, tH, bbox, target)
+    } else if (mask) {
+      features = await buildFeaturesLayer(imageBuffer, mask, tW, tH, bbox, target)
     }
-    if (bbox.minX + bbox.w > tW) bbox.w = tW - bbox.minX
-    if (bbox.minY + bbox.h > tH) bbox.h = tH - bbox.minY
-    try {
-      features = await buildFeaturesLayer(imageBuffer, mask, tW, tH, bbox, {
-        x: Math.round(tx),
-        y: Math.round(ty),
-        w: Math.max(1, Math.round(drawnW)),
-        h: Math.max(1, Math.round(drawnH)),
-      })
-    } catch (err) {
-      console.error('Dot-to-dot features layer failed, using plain dots:', err)
-      features = null
-    }
+  } catch (err) {
+    console.error('Dot-to-dot features layer failed, using plain dots:', err)
+    features = null
   }
 
   await onProgress?.(72)
@@ -201,6 +220,44 @@ async function buildFeaturesLayer(
 
   return sharp({ create: { width: A4_W, height: A4_H, channels: 3, background: 'white' } })
     .composite([{ input: tilePng, left: target.x, top: target.y }])
+    .png()
+    .toBuffer()
+}
+
+// Scene mode: keep the WHOLE drawing (no background removal). Crop to the
+// drawing's ink bounds, scale into `target`, and render it as crisp medium-grey
+// line art so the bold black dots/numbers still read clearly on top. Kids can
+// colour the whole picture in and join the dots around the outside.
+async function buildSceneFeaturesLayer(
+  imageBuffer: Buffer,
+  tW: number,
+  tH: number,
+  bbox: { minX: number; minY: number; w: number; h: number },
+  target: { x: number; y: number; w: number; h: number }
+): Promise<Buffer | null> {
+  if (bbox.w < 2 || bbox.h < 2) return null
+
+  const meta = await sharp(imageBuffer).metadata()
+  const sw = meta.width || tW
+  const sh = meta.height || tH
+  const scaleX = sw / tW
+  const scaleY = sh / tH
+
+  const cx = Math.max(0, Math.floor(bbox.minX * scaleX))
+  const cy = Math.max(0, Math.floor(bbox.minY * scaleY))
+  const cw = Math.max(1, Math.min(sw - cx, Math.round(bbox.w * scaleX)))
+  const ch = Math.max(1, Math.min(sh - cy, Math.round(bbox.h * scaleY)))
+
+  const tile = await sharp(imageBuffer)
+    .extract({ left: cx, top: cy, width: cw, height: ch })
+    .resize(target.w, target.h, { fit: 'fill' })
+    .greyscale()
+    .linear(0.72, 64) // black lines -> ~medium grey, white paper stays white
+    .png()
+    .toBuffer()
+
+  return sharp({ create: { width: A4_W, height: A4_H, channels: 3, background: 'white' } })
+    .composite([{ input: tile, left: target.x, top: target.y }])
     .png()
     .toBuffer()
 }
@@ -271,6 +328,28 @@ function traceSubjectOutline(
   const mask = largestComponentMask(pick, w, h)
   if (!mask) return { contour: [], mask: null }
   return { contour: mooreTrace(mask, w, h), mask }
+}
+
+// Scene outline: the outer perimeter of the WHOLE drawing. Merge every dark
+// stroke into one blob (generous dilation bridges gaps between elements), fill
+// enclosed gaps, erode back, take the largest blob and trace its outer edge.
+// Unlike traceSubjectOutline this keeps the entire composition, not just the
+// dominant object — so the dots wrap the whole picture.
+function traceSceneOutline(
+  grey: Uint8Array | Buffer,
+  w: number,
+  h: number
+): { contour: Point[] } {
+  const thr = otsuThreshold(grey, w * h)
+  const ink = new Uint8Array(w * h)
+  for (let i = 0; i < w * h; i++) ink[i] = grey[i] < thr ? 1 : 0
+  const r = Math.max(4, Math.round(w * 0.03))
+  let blob = morphSep(ink, w, h, r, true) // dilate — bridge gaps between parts
+  blob = fillHolesMask(blob, w, h)
+  blob = morphSep(blob, w, h, r, false) // erode back to size
+  const mask = largestComponentMask(blob, w, h)
+  if (!mask) return { contour: [] }
+  return { contour: mooreTrace(mask, w, h) }
 }
 
 // Build a solid subject blob from ink: dilate to merge strokes/features into

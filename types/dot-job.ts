@@ -5,6 +5,10 @@ export interface DotJobSettings {
   dotCount: number        // 50 | 100 | 150 | 200
   showGuideLines: boolean // faint connecting lines
   difficulty: DotDifficulty
+  // 'outline' (default): isolate the main subject, draw it faded, dots on the
+  // subject outline. 'scene': keep the whole drawing crisp and place the dots
+  // around the outer perimeter of the entire composition.
+  style?: 'outline' | 'scene'
 }
 
 export const DEFAULT_DOT_SETTINGS: DotJobSettings = {

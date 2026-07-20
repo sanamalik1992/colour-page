@@ -186,7 +186,7 @@ export default function Home() {
       const res = await fetch('/api/photo-jobs/to-dot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, sessionId, dotCount: 110 }),
+        body: JSON.stringify({ jobId, sessionId, dotCount: 50 }),
       })
       const data = await readJsonSafe(res)
       if (!res.ok) throw new Error(friendlyError(res.status, data))
