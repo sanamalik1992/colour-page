@@ -153,35 +153,76 @@ function smoothClosed(points: Point[], iterations: number, window: number): Poin
 function traceSubjectOutline(grey: Uint8Array | Buffer, w: number, h: number): Point[] {
   const thr = otsuThreshold(grey, w * h)
 
-  // Decide which polarity is the background by sampling the border.
-  let darkBorder = 0
-  let borderN = 0
-  for (let x = 0; x < w; x++) {
-    darkBorder += grey[x] < thr ? 1 : 0
-    darkBorder += grey[(h - 1) * w + x] < thr ? 1 : 0
-    borderN += 2
-  }
-  for (let y = 0; y < h; y++) {
-    darkBorder += grey[y * w] < thr ? 1 : 0
-    darkBorder += grey[y * w + w - 1] < thr ? 1 : 0
-    borderN += 2
-  }
-  const borderIsDark = darkBorder > borderN / 2
+  // Flood the background inward from the borders. Whatever the flood can't
+  // reach is the subject (its interior gets filled even when the input is a
+  // hollow line drawing), giving one solid blob to trace. Works for both
+  // clean AI line art and high-contrast photo silhouettes.
+  //
+  // We try both "ink = dark" and "ink = light" polarities and keep whichever
+  // yields the more subject-like blob (sensible size, not the whole frame).
+  const darkSubj = floodSubject(grey, w, h, thr, true)
+  const lightSubj = floodSubject(grey, w, h, thr, false)
 
-  // Foreground = the polarity that is NOT the background
-  const fg = new Uint8Array(w * h)
-  for (let i = 0; i < w * h; i++) {
-    const isDark = grey[i] < thr
-    fg[i] = isDark !== borderIsDark ? 1 : 0
-  }
+  const pick = betterSubject(darkSubj, lightSubj, w, h)
+  if (!pick) return []
 
-  // Morphological close (dilate then erode) to fill holes and merge nearby
-  // regions into one solid subject blob — gives a cleaner single outline.
-  const cleaned = morphClose(fg, w, h, 2)
-
+  const cleaned = morphClose(pick, w, h, 2)
   const mask = largestComponentMask(cleaned, w, h)
   if (!mask) return []
   return mooreTrace(mask, w, h)
+}
+
+// Flood non-ink pixels from the borders; subject = everything not reached.
+function floodSubject(
+  grey: Uint8Array | Buffer,
+  w: number,
+  h: number,
+  thr: number,
+  inkIsDark: boolean
+): Uint8Array {
+  const isInk = (i: number) => (inkIsDark ? grey[i] < thr : grey[i] >= thr)
+  const reached = new Uint8Array(w * h)
+  const stack = new Int32Array(w * h)
+  let sp = 0
+  const push = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return
+    const i = y * w + x
+    if (!reached[i] && !isInk(i)) {
+      reached[i] = 1
+      stack[sp++] = i
+    }
+  }
+  for (let x = 0; x < w; x++) { push(x, 0); push(x, h - 1) }
+  for (let y = 0; y < h; y++) { push(0, y); push(w - 1, y) }
+  while (sp > 0) {
+    const p = stack[--sp]
+    const px = p % w
+    const py = (p / w) | 0
+    push(px + 1, py); push(px - 1, py); push(px, py + 1); push(px, py - 1)
+  }
+  const subj = new Uint8Array(w * h)
+  for (let i = 0; i < w * h; i++) subj[i] = reached[i] ? 0 : 1
+  return subj
+}
+
+// Choose the polarity whose subject fill is a plausible object (5%–92% of
+// the frame). Prefer the smaller sensible one; reject frame-filling blobs.
+function betterSubject(a: Uint8Array, b: Uint8Array, w: number, h: number): Uint8Array | null {
+  const total = w * h
+  const frac = (m: Uint8Array) => {
+    let c = 0
+    for (let i = 0; i < total; i++) c += m[i]
+    return c / total
+  }
+  const fa = frac(a)
+  const fb = frac(b)
+  const ok = (f: number) => f >= 0.03 && f <= 0.92
+  const aOk = ok(fa)
+  const bOk = ok(fb)
+  if (aOk && bOk) return fa <= fb ? a : b
+  if (aOk) return a
+  if (bOk) return b
+  return null
 }
 
 // Square-kernel dilate/erode; close = dilate then erode.

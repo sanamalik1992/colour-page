@@ -214,7 +214,7 @@ export default function DotToDotPage() {
                   <Upload className="w-10 h-10 text-white" />
                 </div>
                 <span className="text-lg font-semibold text-white mb-2">Upload a Photo</span>
-                <span className="text-sm text-gray-400">JPG, PNG, HEIC up to 20MB</span>
+                <span className="text-sm text-gray-400">JPG, PNG, HEIC</span>
                 <input
                   type="file"
                   accept="image/*,.heic,.heif"
@@ -222,6 +222,13 @@ export default function DotToDotPage() {
                   className="hidden"
                 />
               </label>
+
+              <div className="mt-4 flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
+                <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-200/90">
+                  Best results: a clear photo of <strong>one subject</strong> (a person, pet, or toy) on a plain background. Busy scenes don&apos;t trace into a single outline.
+                </p>
+              </div>
 
               {!isPro && remaining !== null && (
                 <p className="text-center text-sm text-gray-500 mt-4">

@@ -2,19 +2,28 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkUsage, recordUsage } from '@/lib/pro-gating'
 import { generateDotToDot } from '@/lib/dot-to-dot-engine'
+import { processWithReplicate } from '@/lib/image-processing'
 import { isHeic, convertHeicToPng } from '@/lib/heic-convert'
 import type { DotJobSettings } from '@/types/dot-job'
 
-// Dot-to-dot generation is fast (a few seconds) and CPU-only, so we run it
-// inline here instead of relying on a fire-and-forget background trigger
-// (which Vercel routinely drops once the response is sent, leaving jobs
-// stuck with no output — i.e. a blank result). This makes it reliable.
+// Dot-to-dot generation runs inline here instead of relying on a
+// fire-and-forget background trigger (which Vercel routinely drops once the
+// response is sent, leaving jobs stuck with no output). When Replicate is
+// configured we first turn the photo into clean line art (far better
+// outlines), then trace it; otherwise we trace the photo directly.
 export const maxDuration = 60
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+async function getSignedUrl(path: string): Promise<string | null> {
+  const { data: s1 } = await supabase.storage.from('uploads').createSignedUrl(path, 3600)
+  if (s1?.signedUrl) return s1.signedUrl
+  const { data: s2 } = await supabase.storage.from('images').createSignedUrl(path, 3600)
+  return s2?.signedUrl || null
+}
 
 async function uploadOutput(path: string, buf: Buffer, ct: string) {
   const { error } = await supabase.storage
@@ -25,6 +34,13 @@ async function uploadOutput(path: string, buf: Buffer, ct: string) {
       .from('images')
       .upload(path, buf, { contentType: ct, upsert: true })
   }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ])
 }
 
 export async function POST(request: NextRequest) {
@@ -127,7 +143,31 @@ export async function POST(request: NextRequest) {
 
     // Process inline so the result is guaranteed to exist.
     try {
-      const { png, pdf } = await generateDotToDot(buffer, settings)
+      // For premium outlines, turn the photo into clean line art with the
+      // same AI that powers the colouring page, then trace that. If Replicate
+      // isn't configured, is slow, or fails, we trace the photo directly.
+      let sourceBuffer: Buffer = buffer
+      if (process.env.REPLICATE_API_TOKEN) {
+        try {
+          const signedUrl = await getSignedUrl(storagePath)
+          if (signedUrl) {
+            const detailLevel = dotCount <= 60 ? 'low' : dotCount >= 150 ? 'high' : 'medium'
+            const lineArt = await withTimeout(
+              processWithReplicate(signedUrl, {
+                orientation: 'portrait',
+                lineThickness: 'medium',
+                detailLevel,
+              }),
+              45000
+            )
+            if (lineArt && lineArt.length > 0) sourceBuffer = lineArt as Buffer
+          }
+        } catch (aiErr) {
+          console.error('Line-art step failed for dot-to-dot, using photo:', aiErr)
+        }
+      }
+
+      const { png, pdf } = await generateDotToDot(sourceBuffer, settings)
 
       const pdfPath = `dot-jobs/${job.id}/output.pdf`
       const pngPath = `dot-jobs/${job.id}/output.png`
