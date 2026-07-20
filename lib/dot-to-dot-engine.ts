@@ -120,7 +120,12 @@ export async function generateDotToDot(
   const ty = MARGIN + (CONTENT_H - drawnH) / 2
 
   const pageContour = ordered.map((p) => ({ x: (p.x - minX) * fit + tx, y: (p.y - minY) * fit + ty }))
-  const dots = distributeDots(pageContour, targetDots)
+  // Scene mode traces one big smooth perimeter, so space the dots evenly by
+  // arc length — that keeps numbers from bunching up/overlapping. Outline mode
+  // keeps the corner-preserving distribution (better for pointy shapes).
+  const dots = sceneMode
+    ? resampleEven(pageContour, targetDots)
+    : distributeDots(pageContour, targetDots)
 
   await onProgress?.(60)
 
@@ -583,6 +588,46 @@ function mooreTrace(mask: Uint8Array, w: number, h: number): Point[] {
 // ---------------------------------------------------------------------------
 // Dot distribution (exactly N dots, corners preserved)
 // ---------------------------------------------------------------------------
+// Evenly space n dots around a closed contour by arc length. Guarantees a
+// uniform gap between consecutive dots (perimeter / n), so numbers never
+// collide the way corner-preserving simplification can let them.
+function resampleEven(contour: Point[], n: number): Point[] {
+  const N = contour.length
+  if (N < 2 || n < 2) return contour.slice(0, Math.max(1, n))
+
+  const seg: number[] = new Array(N)
+  let total = 0
+  for (let i = 0; i < N; i++) {
+    const a = contour[i]
+    const b = contour[(i + 1) % N]
+    const d = Math.hypot(b.x - a.x, b.y - a.y)
+    seg[i] = d
+    total += d
+  }
+  if (total === 0) return [contour[0]]
+
+  const step = total / n
+  const out: Point[] = []
+  let i = 0
+  let acc = 0
+  for (let k = 0; k < n; k++) {
+    const dist = k * step
+    while (i < N && acc + seg[i] < dist) {
+      acc += seg[i]
+      i++
+    }
+    if (i >= N) {
+      out.push({ ...contour[N - 1] })
+      continue
+    }
+    const a = contour[i]
+    const b = contour[(i + 1) % N]
+    const t = seg[i] > 0 ? (dist - acc) / seg[i] : 0
+    out.push({ x: Math.round(a.x + (b.x - a.x) * t), y: Math.round(a.y + (b.y - a.y) * t) })
+  }
+  return out
+}
+
 function distributeDots(contour: Point[], n: number): Point[] {
   let pts = rdpSimplify(contour, 1.6)
   if (pts.length < 3) pts = contour.slice()
