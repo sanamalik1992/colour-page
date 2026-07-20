@@ -188,8 +188,11 @@ export async function generateFromText(
 
   await onProgress?.(20)
 
+  // flux-schnell: a fast (few seconds), cheap text-to-image model — line art
+  // for kids doesn't need flux-dev's slower, pricier quality, and the speed
+  // avoids the long "stuck at 80%" waits caused by cold starts / queueing.
   const res = await fetch(
-    'https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions',
+    'https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions',
     {
       method: 'POST',
       headers: {
@@ -203,9 +206,8 @@ export async function generateFromText(
           aspect_ratio: aspectRatio,
           num_outputs: 1,
           output_format: 'png',
-          // Nudges Flux toward the flat, high-contrast line-art we want.
-          guidance: 3.5,
-          num_inference_steps: 28,
+          num_inference_steps: 4, // schnell is distilled for 1-4 steps
+          go_fast: true,
           disable_safety_checker: false,
         },
       }),
