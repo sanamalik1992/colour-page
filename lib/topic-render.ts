@@ -98,25 +98,55 @@ export async function buildLetterSheet(
   letter: string,
   settings: PhotoJobSettings
 ): Promise<Buffer> {
-  const headerH = Math.round(A4_H * 0.3)
-  const stroke = detail(settings) === 'low' ? 34 : detail(settings) === 'high' ? 20 : 27
-
-  // Header: the grapheme (one letter like "B", or a digraph like "SH") centred
-  // in the top band.
+  const d = detail(settings)
   const chars = letter.toUpperCase().slice(0, 3)
-  const glyphH = Math.round(headerH * 0.7)
-  const glyphW = numberWidth(chars, glyphH)
-  const gLeft = (A4_W - glyphW) / 2
-  const gTop = (headerH - glyphH) / 2
-  const headerSvg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${headerH}" viewBox="0 0 ${A4_W} ${headerH}">` +
-    numberSvg(chars, gLeft, gTop, glyphH, stroke) +
-    `</svg>`
-  const headerPng = await sharp(Buffer.from(headerSvg)).png().toBuffer()
 
-  // Body: the objects, greyscale + high-contrast to keep them clean line art,
-  // fitted into the area below the header.
-  const bodyH = A4_H - headerH - MARGIN
+  // Three sections: (1) the grapheme big to see, (2) a handwriting row to trace
+  // over dotted copies, (3) related pictures to colour. Sizes scale with age.
+  const headerH = Math.round(A4_H * 0.16)
+  const traceH = Math.round(A4_H * 0.2)
+  const bodyTop = headerH + traceH
+
+  // (1) Header: solid grapheme, centred.
+  const hStroke = d === 'low' ? 30 : d === 'high' ? 18 : 24
+  const hGlyphH = Math.round(headerH * 0.72)
+  const hGlyphW = numberWidth(chars, hGlyphH)
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${bodyTop}" viewBox="0 0 ${A4_W} ${bodyTop}">`
+  svg += `<rect width="${A4_W}" height="${bodyTop}" fill="#ffffff"/>`
+  svg += numberSvg(chars, (A4_W - hGlyphW) / 2, (headerH - hGlyphH) / 2, hGlyphH, hStroke)
+
+  // (2) Handwriting trace row: first copy solid (the example), the rest dotted
+  // to trace over, sitting on a light baseline. Fewer/bigger for younger. The
+  // glyph size is derived so the whole row fits the content width (a 2-letter
+  // digraph like "SH" is wider, so it shrinks to fit).
+  const reps = d === 'low' ? 3 : d === 'high' ? 5 : 4
+  const tStroke = d === 'low' ? 20 : d === 'high' ? 12 : 16
+  const contentW = A4_W - MARGIN * 2
+  const gapFrac = 0.4
+  // width available per glyph if gap = gapFrac * glyphWidth
+  let tGlyphW = contentW / (reps + gapFrac * (reps - 1))
+  let tGlyphH = tGlyphW / (0.6 * chars.length + 0.18 * (chars.length - 1))
+  const maxH = traceH * 0.66
+  if (tGlyphH > maxH) {
+    tGlyphH = maxH
+    tGlyphW = numberWidth(chars, tGlyphH)
+  }
+  const gap = tGlyphW * gapFrac
+  const rowW = reps * tGlyphW + (reps - 1) * gap
+  const startX = (A4_W - rowW) / 2
+  const tTop = headerH + (traceH - tGlyphH) / 2
+  const baseY = tTop + tGlyphH + Math.round(tGlyphH * 0.06)
+  // Baseline + midline guides
+  svg += `<line x1="${startX - 30}" y1="${baseY}" x2="${startX + rowW + 30}" y2="${baseY}" stroke="#d8d8d8" stroke-width="3"/>`
+  for (let i = 0; i < reps; i++) {
+    const gx = startX + i * (tGlyphW + gap)
+    svg += numberSvg(chars, gx, tTop, tGlyphH, tStroke, i === 0 ? undefined : { dashed: true, color: '#9aa0a6' })
+  }
+  svg += `</svg>`
+  const topPng = await sharp(Buffer.from(svg)).png().toBuffer()
+
+  // (3) Related pictures to colour.
+  const bodyH = A4_H - bodyTop - MARGIN
   const bodyW = A4_W - MARGIN * 2
   const bodyPng = await sharp(objectsPng)
     .greyscale()
@@ -125,11 +155,10 @@ export async function buildLetterSheet(
     .toBuffer()
   const bodyMeta = await sharp(bodyPng).metadata()
   const bodyLeft = Math.round((A4_W - (bodyMeta.width || bodyW)) / 2)
-  const bodyTop = headerH
 
   return sharp({ create: { width: A4_W, height: A4_H, channels: 3, background: '#ffffff' } })
     .composite([
-      { input: headerPng, left: 0, top: 0 },
+      { input: topPng, left: 0, top: 0 },
       { input: bodyPng, left: bodyLeft, top: bodyTop },
     ])
     .png()
