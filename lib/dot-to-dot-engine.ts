@@ -157,12 +157,18 @@ export async function generateDotToDot(
     features = null
   }
 
+  // In scene mode the whole drawing is kept, so its own perimeter line is
+  // already there. Wipe that line along the dot path (a white stroke following
+  // the contour) so joining the dots actually draws the edge instead of
+  // retracing one that's already joined up.
+  const erasePath = sceneMode && features ? pageContour : null
+
   await onProgress?.(72)
 
-  const pngBuffer = await renderDotToDotPng(dots, settings, features)
+  const pngBuffer = await renderDotToDotPng(dots, settings, features, erasePath)
   await onProgress?.(85)
 
-  const pdfBuffer = await renderDotToDotPdf(dots, settings, features)
+  const pdfBuffer = await renderDotToDotPdf(dots, settings, features, erasePath)
   await onProgress?.(95)
 
   return { png: pngBuffer, pdf: pdfBuffer }
@@ -248,6 +254,9 @@ async function buildSceneFeaturesLayer(
   const cw = Math.max(1, Math.min(sw - cx, Math.round(bbox.w * scaleX)))
   const ch = Math.max(1, Math.min(sh - cy, Math.round(bbox.h * scaleY)))
 
+  // Crisp medium-grey line art for the whole scene. The outline the dots trace
+  // is wiped separately at render time (a white stroke along the contour), so
+  // the tile itself stays a plain, artefact-free drawing.
   const tile = await sharp(imageBuffer)
     .extract({ left: cx, top: cy, width: cw, height: ch })
     .resize(target.w, target.h, { fit: 'fill' })
@@ -339,7 +348,7 @@ function traceSceneOutline(
   grey: Uint8Array | Buffer,
   w: number,
   h: number
-): { contour: Point[] } {
+): { contour: Point[]; mask: Uint8Array | null } {
   const thr = otsuThreshold(grey, w * h)
   const ink = new Uint8Array(w * h)
   for (let i = 0; i < w * h; i++) ink[i] = grey[i] < thr ? 1 : 0
@@ -348,8 +357,8 @@ function traceSceneOutline(
   blob = fillHolesMask(blob, w, h)
   blob = morphSep(blob, w, h, r, false) // erode back to size
   const mask = largestComponentMask(blob, w, h)
-  if (!mask) return { contour: [] }
-  return { contour: mooreTrace(mask, w, h) }
+  if (!mask) return { contour: [], mask: null }
+  return { contour: mooreTrace(mask, w, h), mask }
 }
 
 // Build a solid subject blob from ink: dilate to merge strokes/features into
@@ -773,12 +782,20 @@ function numberSvg(n: number, left: number, top: number, fs: number): string {
 async function renderDotToDotPng(
   dots: Point[],
   settings: DotJobSettings,
-  features?: Buffer | null
+  features?: Buffer | null,
+  erasePath?: Point[] | null
 ): Promise<Buffer> {
   const dotRadius = 11
   const fontSize = 30
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
+
+  // Wipe the drawing's own perimeter line along the dot path (scene mode), so
+  // the outline is a gap the child fills in by joining the dots.
+  if (erasePath && erasePath.length > 1) {
+    const pts = erasePath.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
+    svg += `<polyline points="${pts}" fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>`
+  }
 
   if (settings.showGuideLines) {
     svg += `<g stroke="#e2e2e2" stroke-width="1.5" fill="none">`
@@ -824,7 +841,8 @@ async function renderDotToDotPng(
 async function renderDotToDotPdf(
   dots: Point[],
   settings: DotJobSettings,
-  features?: Buffer | null
+  features?: Buffer | null,
+  erasePath?: Point[] | null
 ): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create()
   const page = pdfDoc.addPage([A4_W_PT, A4_H_PT])
@@ -841,6 +859,21 @@ async function renderDotToDotPdf(
   // dots are in A4 pixel coordinates; map straight to PDF points.
   const toPdfX = (px: number) => px * (A4_W_PT / A4_W)
   const toPdfY = (px: number) => A4_H_PT - px * (A4_H_PT / A4_H)
+
+  // Wipe the drawing's perimeter line along the dot path (scene mode).
+  if (erasePath && erasePath.length > 1) {
+    const wPt = 34 * (A4_W_PT / A4_W)
+    for (let i = 0; i < erasePath.length - 1; i++) {
+      const a = erasePath[i]
+      const b = erasePath[i + 1]
+      page.drawLine({
+        start: { x: toPdfX(a.x), y: toPdfY(a.y) },
+        end: { x: toPdfX(b.x), y: toPdfY(b.y) },
+        thickness: wPt,
+        color: rgb(1, 1, 1),
+      })
+    }
+  }
 
   const dotRadius = 3.4
   const fontSize = 8
