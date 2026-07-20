@@ -135,7 +135,9 @@ function isFrameContour(contour: Point[], w: number, h: number): boolean {
   for (const p of contour) {
     if (p.x <= 1 || p.y <= 1 || p.x >= w - 2 || p.y >= h - 2) onBorder++
   }
-  return onBorder / contour.length > 0.5
+  // Only reject a near-complete frame rectangle. A subject that merely touches
+  // one edge (e.g. a portrait's shoulders reaching the bottom) is still fine.
+  return onBorder / contour.length > 0.85
 }
 
 // Moving-average smoothing around a closed loop for a flowing outline.
