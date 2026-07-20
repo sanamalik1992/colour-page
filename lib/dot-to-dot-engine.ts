@@ -19,7 +19,6 @@
 import sharp from 'sharp'
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import type { DotJobSettings } from '@/types/dot-job'
-import { DOT_FONT_B64 } from './dot-font-data'
 
 interface Point {
   x: number
@@ -73,43 +72,27 @@ export async function generateDotToDot(
   const targetDots = clampDots(settings.dotCount)
 
   // --- Trace the subject outline (in trace-resolution coords) ---
-  const raw = traceSubjectOutline(data, tW, tH)
+  const traced = traceSubjectOutline(data, tW, tH)
   let ordered: Point[]
-  if (raw.length >= 8 && !isFrameContour(raw, tW, tH)) {
-    ordered = smoothClosed(raw, 2, 2)
+  let mask: Uint8Array | null = traced.mask
+  if (traced.contour.length >= 8 && !isFrameContour(traced.contour, tW, tH)) {
+    ordered = smoothClosed(traced.contour, 2, 2)
   } else {
-    // Fallback: edge-cloud nearest-neighbour path (never fails)
+    // Fallback: edge-cloud nearest-neighbour path (never fails). No clean
+    // subject mask in this case, so we skip the drawn-in features.
     ordered = fallbackContour(data, tW, tH)
+    mask = null
   }
 
-  await onProgress?.(55)
+  await onProgress?.(50)
 
-  // Scale the traced shape to fill the A4 content area, so the subject is
-  // big and the dots spread out — independent of any margins in the source
-  // (e.g. a colouring page with white borders).
-  const pageContour = scaleContourToPage(ordered)
-  const dots = distributeDots(pageContour, targetDots)
-
-  await onProgress?.(65)
-
-  const pngBuffer = await renderDotToDotPng(dots, settings)
-  await onProgress?.(80)
-
-  const pdfBuffer = await renderDotToDotPdf(dots, settings)
-  await onProgress?.(95)
-
-  return { png: pngBuffer, pdf: pdfBuffer }
-}
-
-// Scale/translate a contour so its bounding box fills the A4 content area
-// (with a little breathing room), centred on the page. Returns A4 pixel coords.
-function scaleContourToPage(pts: Point[]): Point[] {
-  if (pts.length === 0) return pts
+  // Fit the traced shape into the A4 content area (big, centred), so the dots
+  // spread out regardless of margins in the source.
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
   let maxY = -Infinity
-  for (const p of pts) {
+  for (const p of ordered) {
     if (p.x < minX) minX = p.x
     if (p.y < minY) minY = p.y
     if (p.x > maxX) maxX = p.x
@@ -117,10 +100,109 @@ function scaleContourToPage(pts: Point[]): Point[] {
   }
   const bw = Math.max(1, maxX - minX)
   const bh = Math.max(1, maxY - minY)
-  const s = Math.min((CONTENT_W * 0.9) / bw, (CONTENT_H * 0.9) / bh)
-  const offX = MARGIN + (CONTENT_W - bw * s) / 2 - minX * s
-  const offY = MARGIN + (CONTENT_H - bh * s) / 2 - minY * s
-  return pts.map((p) => ({ x: p.x * s + offX, y: p.y * s + offY }))
+  const fit = Math.min((CONTENT_W * 0.9) / bw, (CONTENT_H * 0.9) / bh)
+  const drawnW = bw * fit
+  const drawnH = bh * fit
+  const tx = MARGIN + (CONTENT_W - drawnW) / 2
+  const ty = MARGIN + (CONTENT_H - drawnH) / 2
+
+  const pageContour = ordered.map((p) => ({ x: (p.x - minX) * fit + tx, y: (p.y - minY) * fit + ty }))
+  const dots = distributeDots(pageContour, targetDots)
+
+  await onProgress?.(60)
+
+  // Build the "features" layer: the subject's own line art, masked to the
+  // subject (background removed) and faded to grey, placed at the same spot as
+  // the outline. Kids get the details drawn in and connect the dots for the
+  // outline. Skipped (plain dots) when there's no clean mask.
+  let features: Buffer | null = null
+  if (mask) {
+    const bbox = {
+      minX: Math.max(0, Math.floor(minX)),
+      minY: Math.max(0, Math.floor(minY)),
+      w: Math.min(tW, Math.ceil(bw)),
+      h: Math.min(tH, Math.ceil(bh)),
+    }
+    if (bbox.minX + bbox.w > tW) bbox.w = tW - bbox.minX
+    if (bbox.minY + bbox.h > tH) bbox.h = tH - bbox.minY
+    try {
+      features = await buildFeaturesLayer(imageBuffer, mask, tW, tH, bbox, {
+        x: Math.round(tx),
+        y: Math.round(ty),
+        w: Math.max(1, Math.round(drawnW)),
+        h: Math.max(1, Math.round(drawnH)),
+      })
+    } catch (err) {
+      console.error('Dot-to-dot features layer failed, using plain dots:', err)
+      features = null
+    }
+  }
+
+  await onProgress?.(72)
+
+  const pngBuffer = await renderDotToDotPng(dots, settings, features)
+  await onProgress?.(85)
+
+  const pdfBuffer = await renderDotToDotPdf(dots, settings, features)
+  await onProgress?.(95)
+
+  return { png: pngBuffer, pdf: pdfBuffer }
+}
+
+// Produce an A4-size PNG: white page with the subject's line art (masked to
+// the subject, faded to light grey) placed at `target`. This is the "drawn-in
+// features" layer that sits under the connect-the-dots outline.
+async function buildFeaturesLayer(
+  imageBuffer: Buffer,
+  mask: Uint8Array,
+  tW: number,
+  tH: number,
+  bbox: { minX: number; minY: number; w: number; h: number },
+  target: { x: number; y: number; w: number; h: number }
+): Promise<Buffer | null> {
+  if (bbox.w < 2 || bbox.h < 2) return null
+
+  const meta = await sharp(imageBuffer).metadata()
+  const sw = meta.width || tW
+  const sh = meta.height || tH
+  const scaleX = sw / tW
+  const scaleY = sh / tH
+
+  const cx = Math.max(0, Math.floor(bbox.minX * scaleX))
+  const cy = Math.max(0, Math.floor(bbox.minY * scaleY))
+  const cw = Math.max(1, Math.min(sw - cx, Math.round(bbox.w * scaleX)))
+  const ch = Math.max(1, Math.min(sh - cy, Math.round(bbox.h * scaleY)))
+
+  // Faded grey line art tile (single greyscale channel)
+  const artRaw = await sharp(imageBuffer)
+    .extract({ left: cx, top: cy, width: cw, height: ch })
+    .resize(target.w, target.h, { fit: 'fill' })
+    .greyscale()
+    .linear(0.42, 150) // black -> ~150 grey, white stays white
+    .raw()
+    .toBuffer()
+
+  // Subject mask tile (single channel) aligned to the same crop
+  const maskFull = Buffer.alloc(tW * tH)
+  for (let i = 0; i < tW * tH; i++) maskFull[i] = mask[i] ? 255 : 0
+  const maskRaw = await sharp(maskFull, { raw: { width: tW, height: tH, channels: 1 } })
+    .extract({ left: bbox.minX, top: bbox.minY, width: bbox.w, height: bbox.h })
+    .resize(target.w, target.h, { fit: 'fill' })
+    .blur(0.8)
+    .raw()
+    .toBuffer()
+
+  // Combine: grey art + alpha=mask (grey+alpha), flatten onto white -> tile
+  const tilePng = await sharp(artRaw, { raw: { width: target.w, height: target.h, channels: 1 } })
+    .joinChannel(maskRaw, { raw: { width: target.w, height: target.h, channels: 1 } })
+    .flatten({ background: 'white' })
+    .png()
+    .toBuffer()
+
+  return sharp({ create: { width: A4_W, height: A4_H, channels: 3, background: 'white' } })
+    .composite([{ input: tilePng, left: target.x, top: target.y }])
+    .png()
+    .toBuffer()
 }
 
 function clampDots(n: number): number {
@@ -167,7 +249,11 @@ function smoothClosed(points: Point[], iterations: number, window: number): Poin
 // ---------------------------------------------------------------------------
 // Silhouette outline tracing
 // ---------------------------------------------------------------------------
-function traceSubjectOutline(grey: Uint8Array | Buffer, w: number, h: number): Point[] {
+function traceSubjectOutline(
+  grey: Uint8Array | Buffer,
+  w: number,
+  h: number
+): { contour: Point[]; mask: Uint8Array | null } {
   const thr = otsuThreshold(grey, w * h)
 
   // Merge the ink (line-art strokes / dark subject) into one solid blob with a
@@ -180,11 +266,11 @@ function traceSubjectOutline(grey: Uint8Array | Buffer, w: number, h: number): P
   const lightBlob = inkBlob(grey, w, h, thr, false)
 
   const pick = betterSubject(darkBlob, lightBlob, w, h)
-  if (!pick) return []
+  if (!pick) return { contour: [], mask: null }
 
   const mask = largestComponentMask(pick, w, h)
-  if (!mask) return []
-  return mooreTrace(mask, w, h)
+  if (!mask) return { contour: [], mask: null }
+  return { contour: mooreTrace(mask, w, h), mask }
 }
 
 // Build a solid subject blob from ink: dilate to merge strokes/features into
@@ -565,73 +651,113 @@ function nearestNeighbourPath(points: Point[], maxPoints: number): Point[] {
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
+
+// Digit glyphs as stroked SVG paths on a 6x10 grid — font-free so numbers
+// render identically on any server (Vercel's SVG renderer has no fonts, which
+// turned <text> into empty boxes).
+const DIGIT_GLYPHS: Record<string, string> = {
+  '0': 'M3,0.6 C1.4,0.6 0.7,2.4 0.7,5 C0.7,7.6 1.4,9.4 3,9.4 C4.6,9.4 5.3,7.6 5.3,5 C5.3,2.4 4.6,0.6 3,0.6 Z',
+  '1': 'M1.5,2.9 L3.2,1.1 L3.2,9.4',
+  '2': 'M1,2.5 C1,1.2 2.2,0.6 3.2,0.7 C5,0.85 5.5,2.7 4.3,4.1 C3.4,5.1 1,6.9 1,9.4 L5.3,9.4',
+  '3': 'M1.2,1.5 C2.7,0.4 5.2,0.8 5.1,3 C5.05,4.3 3.9,4.9 2.8,4.9 C4,4.9 5.4,5.5 5.4,7.3 C5.4,9.8 2.3,10 1,8.3',
+  '4': 'M4.5,0.9 L1,6.9 L5.6,6.9 M4.5,0.9 L4.5,9.4',
+  '5': 'M5,1 L1.8,1 L1.35,4.9 C2.7,4 5.4,4.3 5.4,7 C5.4,9.8 2.3,9.9 1.1,8.2',
+  '6': 'M5.2,1.5 C3.5,0.3 0.9,1 0.9,5.1 C0.9,10 5.4,9.7 5.4,6.9 C5.4,4.3 2.1,4 1.15,6.4',
+  '7': 'M1,1 L5.4,1 L2.4,9.4',
+  '8': 'M3,4.7 C1.5,4.7 1,3.4 1,2.6 C1,1.1 2.1,0.6 3,0.6 C3.9,0.6 5,1.1 5,2.6 C5,3.4 4.5,4.7 3,4.7 C1.3,4.7 0.8,6.2 0.8,7.3 C0.8,9 2.1,9.4 3,9.4 C3.9,9.4 5.2,9 5.2,7.3 C5.2,6.2 4.7,4.7 3,4.7 Z',
+  '9': 'M1.1,8.5 C2.7,9.7 5.1,9 5.1,5 C5.1,0.2 0.6,0.3 0.6,3.3 C0.6,5.8 3.9,6.1 4.85,3.6',
+}
+
+// SVG for a number, drawn as vector strokes with a white halo. `left`/`top`
+// are the top-left of the number box; height is `fs`.
+function numberSvg(n: number, left: number, top: number, fs: number): string {
+  const s = fs / 10
+  const gw = 6 * s
+  const sp = 1.2 * s
+  const sw = Math.max(1.6, fs * 0.14)
+  const digits = String(n).split('')
+  let halo = ''
+  let ink = ''
+  let cx = left
+  for (const d of digits) {
+    const path = DIGIT_GLYPHS[d]
+    if (path) {
+      const t = `translate(${cx.toFixed(1)},${top.toFixed(1)}) scale(${s.toFixed(3)})`
+      halo += `<path d="${path}" transform="${t}" fill="none" stroke="#ffffff" stroke-width="${((sw + 6) / s).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`
+      ink += `<path d="${path}" transform="${t}" fill="none" stroke="#111111" stroke-width="${(sw / s).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`
+    }
+    cx += gw + sp
+  }
+  return halo + ink
+}
+
 async function renderDotToDotPng(
   dots: Point[],
-  settings: DotJobSettings
+  settings: DotJobSettings,
+  features?: Buffer | null
 ): Promise<Buffer> {
-  // dots are already in A4 pixel coordinates
-  const offsetX = 0
-  const offsetY = 0
-
   const dotRadius = 11
   const fontSize = 30
 
-  // Embed the font directly so numbers render on servers with no system
-  // fonts (e.g. Vercel), where SVG <text> otherwise shows as empty boxes.
-  const fontFace = `@font-face{font-family:'DotFont';src:url('data:font/ttf;base64,${DOT_FONT_B64}') format('truetype');font-weight:700;}`
-
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
-  svg += `<defs><style>${fontFace}</style></defs>`
-  svg += `<rect width="100%" height="100%" fill="white"/>`
 
   if (settings.showGuideLines) {
     svg += `<g stroke="#e2e2e2" stroke-width="1.5" fill="none">`
     for (let i = 0; i < dots.length; i++) {
       const a = dots[i]
       const b = dots[(i + 1) % dots.length]
-      svg += `<line x1="${a.x + offsetX}" y1="${a.y + offsetY}" x2="${b.x + offsetX}" y2="${b.y + offsetY}"/>`
+      svg += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`
     }
     svg += `</g>`
   }
 
-  // Numbers with a white halo for legibility
-  svg += `<g font-family="DotFont" font-size="${fontSize}" font-weight="bold">`
+  // Numbers (vector; white halo then black ink)
   for (let i = 0; i < dots.length; i++) {
-    const cx = dots[i].x + offsetX
-    const cy = dots[i].y + offsetY
-    const nx = cx + dotRadius + 5
-    const ny = cy - dotRadius - 3
-    svg += `<text x="${nx}" y="${ny}" stroke="white" stroke-width="5" fill="white">${i + 1}</text>`
-    svg += `<text x="${nx}" y="${ny}" fill="#111">${i + 1}</text>`
+    svg += numberSvg(i + 1, dots[i].x + dotRadius + 4, dots[i].y - dotRadius - fontSize, fontSize)
   }
-  svg += `</g>`
 
   // Dots (mark #1 with a ring)
   svg += `<g fill="#111">`
   for (let i = 0; i < dots.length; i++) {
-    svg += `<circle cx="${dots[i].x + offsetX}" cy="${dots[i].y + offsetY}" r="${dotRadius}"/>`
+    svg += `<circle cx="${dots[i].x}" cy="${dots[i].y}" r="${dotRadius}"/>`
   }
   svg += `</g>`
   if (dots.length > 0) {
     const s = dots[0]
-    svg += `<circle cx="${s.x + offsetX}" cy="${s.y + offsetY}" r="${dotRadius + 9}" fill="none" stroke="#111" stroke-width="3"/>`
-    svg += `<text x="${s.x + offsetX}" y="${s.y + offsetY - dotRadius - 20}" text-anchor="middle" font-family="DotFont" font-size="26" font-weight="bold" fill="#111">START</text>`
+    svg += `<circle cx="${s.x}" cy="${s.y}" r="${dotRadius + 9}" fill="none" stroke="#111" stroke-width="3"/>`
   }
-
-  // Footer branding
-  svg += `<text x="${A4_W / 2}" y="${A4_H - 46}" text-anchor="middle" font-family="DotFont" font-size="24" fill="#c9c9c9">colour.page</text>`
   svg += `</svg>`
 
-  return sharp(Buffer.from(svg)).png().toBuffer()
+  // Base = white page, with the faint "features" line art composited under the
+  // dots when provided (features drawn in, outline connect-the-dots).
+  const layers: sharp.OverlayOptions[] = []
+  if (features) layers.push({ input: features })
+  layers.push({ input: Buffer.from(svg) })
+
+  return sharp({
+    create: { width: A4_W, height: A4_H, channels: 3, background: 'white' },
+  })
+    .composite(layers)
+    .png()
+    .toBuffer()
 }
 
 async function renderDotToDotPdf(
   dots: Point[],
-  settings: DotJobSettings
+  settings: DotJobSettings,
+  features?: Buffer | null
 ): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create()
   const page = pdfDoc.addPage([A4_W_PT, A4_H_PT])
   const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+
+  // Drawn-in features behind the dots
+  if (features) {
+    try {
+      const img = await pdfDoc.embedPng(features)
+      page.drawImage(img, { x: 0, y: 0, width: A4_W_PT, height: A4_H_PT })
+    } catch { /* ignore */ }
+  }
 
   // dots are in A4 pixel coordinates; map straight to PDF points.
   const toPdfX = (px: number) => px * (A4_W_PT / A4_W)
