@@ -168,6 +168,91 @@ export async function processWithReplicate(
   return Buffer.from(await imgRes.arrayBuffer())
 }
 
+/**
+ * Text-to-image generation for the "learning topic" path. Unlike
+ * processWithReplicate() (which edits an uploaded photo with flux-kontext-pro),
+ * this produces line art from a prompt alone using a Flux text-to-image model,
+ * so no input image is required. Output style is pinned to the same clean
+ * colouring-book look by the prompt, so it flows through the same PDF +
+ * dot-to-dot steps.
+ */
+export async function generateFromText(
+  prompt: string,
+  settings: PhotoJobSettings,
+  onProgress?: (pct: number) => Promise<void>
+): Promise<Buffer> {
+  const token = process.env.REPLICATE_API_TOKEN
+  if (!token) throw new Error('REPLICATE_API_TOKEN not configured')
+
+  const aspectRatio = settings.orientation === 'landscape' ? '4:3' : '3:4'
+
+  await onProgress?.(20)
+
+  const res = await fetch(
+    'https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Prefer: 'wait=55',
+      },
+      body: JSON.stringify({
+        input: {
+          prompt,
+          aspect_ratio: aspectRatio,
+          num_outputs: 1,
+          output_format: 'png',
+          // Nudges Flux toward the flat, high-contrast line-art we want.
+          guidance: 3.5,
+          num_inference_steps: 28,
+          disable_safety_checker: false,
+        },
+      }),
+    }
+  )
+
+  if (!res.ok) {
+    const errorText = await res.text()
+    throw new Error(`Replicate API error: ${errorText}`)
+  }
+
+  const prediction = await res.json()
+  await onProgress?.(60)
+
+  let result = prediction
+  let attempts = 0
+  const maxAttempts = 120
+
+  while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
+    await new Promise((r) => setTimeout(r, 1500))
+    attempts++
+    const pollRes = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    result = await pollRes.json()
+    await onProgress?.(Math.min(60 + Math.floor(attempts * 0.6), 80))
+  }
+
+  if (result.status === 'failed') throw new Error(result.error || 'Generation failed')
+  if (result.status !== 'succeeded') throw new Error('Generation timed out')
+
+  const outputUrl =
+    typeof result.output === 'string'
+      ? result.output
+      : Array.isArray(result.output)
+        ? result.output[0]
+        : result.output?.url
+
+  if (!outputUrl) throw new Error('No output URL from provider')
+
+  await onProgress?.(85)
+
+  const imgRes = await fetch(outputUrl)
+  if (!imgRes.ok) throw new Error('Failed to download generated image')
+  return Buffer.from(await imgRes.arrayBuffer())
+}
+
 // ---------------------------------------------------------------------------
 // Stage B Option 2 – Sharp CV fallback (no external API needed)
 // ---------------------------------------------------------------------------

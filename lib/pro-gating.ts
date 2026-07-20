@@ -65,6 +65,7 @@ export interface UsageLimits {
 
 export const FEATURE_LIMITS: UsageLimits = {
   photo_coloring: { free: 3, pro: 50, period: 'daily' },
+  topic_sheet:    { free: 3, pro: 50, period: 'daily' },
   dot_to_dot:     { free: 1, pro: 50, period: 'lifetime' },
 }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { preprocessImage, processWithReplicate, sharpCVFallback } from '@/lib/image-processing'
+import { preprocessImage, processWithReplicate, generateFromText, sharpCVFallback } from '@/lib/image-processing'
 import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
@@ -67,41 +67,55 @@ export async function POST(request: NextRequest) {
       detailLevel: 'medium',
     }
 
-    // Get the input image
-    const signedUrl = await getSignedUrl(job.input_storage_path)
-    if (!signedUrl) throw new Error('Failed to get signed URL for input image')
-
-    const inputRes = await fetch(signedUrl)
-    if (!inputRes.ok) throw new Error('Failed to download input image')
-    const inputBuffer = Buffer.from(await inputRes.arrayBuffer())
-
-    await updateJob(jobId, { progress: 15 })
-
-    // Stage B: Line extraction.
-    // Replicate gets the ORIGINAL image URL directly — this is both faster
-    // (no extra preprocess + re-upload round-trip) and higher quality (the
-    // model works best on the full-colour photo). Preprocessing is only done
-    // for the local CV fallback.
-    let lineArtBuffer: Buffer
+    const isTopic = job.source === 'topic'
     const hasReplicate = !!process.env.REPLICATE_API_TOKEN
+    let lineArtBuffer: Buffer
 
-    if (hasReplicate) {
-      try {
-        lineArtBuffer = await processWithReplicate(
-          signedUrl,
-          settings,
-          async (pct) => { await updateJob(jobId!, { progress: pct }) }
-        )
-      } catch (replicateError) {
-        console.error('Replicate failed, falling back to Sharp CV:', replicateError)
+    if (isTopic) {
+      // Topic path: generate line art from the prompt alone — no input image.
+      // There's no CV fallback here (nothing to trace without a photo), so a
+      // missing token is a hard failure.
+      if (!hasReplicate) throw new Error('Text-to-image generation is not configured')
+      const prompt = settings.prompt || job.topic
+      if (!prompt) throw new Error('Topic job has no prompt')
+      await updateJob(jobId, { progress: 15 })
+      lineArtBuffer = await generateFromText(
+        prompt,
+        settings,
+        async (pct) => { await updateJob(jobId!, { progress: pct }) }
+      )
+    } else {
+      // Photo path (existing): edit the uploaded image into line art.
+      const signedUrl = await getSignedUrl(job.input_storage_path)
+      if (!signedUrl) throw new Error('Failed to get signed URL for input image')
+
+      const inputRes = await fetch(signedUrl)
+      if (!inputRes.ok) throw new Error('Failed to download input image')
+      const inputBuffer = Buffer.from(await inputRes.arrayBuffer())
+
+      await updateJob(jobId, { progress: 15 })
+
+      // Replicate gets the ORIGINAL image URL directly — faster (no extra
+      // preprocess + re-upload) and higher quality (the model works best on the
+      // full-colour photo). Preprocessing is only done for the local CV fallback.
+      if (hasReplicate) {
+        try {
+          lineArtBuffer = await processWithReplicate(
+            signedUrl,
+            settings,
+            async (pct) => { await updateJob(jobId!, { progress: pct }) }
+          )
+        } catch (replicateError) {
+          console.error('Replicate failed, falling back to Sharp CV:', replicateError)
+          await updateJob(jobId, { progress: 30 })
+          const preprocessed = await preprocessImage(inputBuffer, settings)
+          lineArtBuffer = await sharpCVFallback.generate(preprocessed, settings)
+        }
+      } else {
         await updateJob(jobId, { progress: 30 })
         const preprocessed = await preprocessImage(inputBuffer, settings)
         lineArtBuffer = await sharpCVFallback.generate(preprocessed, settings)
       }
-    } else {
-      await updateJob(jobId, { progress: 30 })
-      const preprocessed = await preprocessImage(inputBuffer, settings)
-      lineArtBuffer = await sharpCVFallback.generate(preprocessed, settings)
     }
 
     // Stage C: Render A4 outputs
