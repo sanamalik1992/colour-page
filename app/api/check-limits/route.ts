@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { USAGE_LIMITS_DISABLED } from '@/lib/pro-gating'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,7 +12,12 @@ const FREE_LIMIT = 3
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get('sessionId')
   const email = request.nextUrl.searchParams.get('email')?.toLowerCase()
-  
+
+  // Limits disabled for testing → report effectively unlimited.
+  if (USAGE_LIMITS_DISABLED) {
+    return NextResponse.json({ canCreate: true, remaining: 9999, used: 0, limit: 9999, isPro: false })
+  }
+
   // Check if Pro user by email
   if (email) {
     const { data: customer } = await supabase

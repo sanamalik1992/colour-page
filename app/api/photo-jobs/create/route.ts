@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isHeic, convertHeicToPng } from '@/lib/heic-convert'
+import { USAGE_LIMITS_DISABLED } from '@/lib/pro-gating'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
 export const maxDuration = 60
@@ -34,8 +35,8 @@ export async function POST(request: NextRequest) {
       isPro = customer?.is_pro === true
     }
 
-    // Rate limit for free users
-    if (!isPro) {
+    // Rate limit for free users (skipped while usage limits are disabled)
+    if (!isPro && !USAGE_LIMITS_DISABLED) {
       const { count } = await supabase
         .from('photo_jobs')
         .select('*', { count: 'exact', head: true })
