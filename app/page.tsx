@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import {
   Upload,
@@ -60,6 +60,13 @@ export default function Home() {
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Smoothed progress: the server only reports a few coarse milestones and sits
+  // still during the (long) AI generation, so we ease a display value forward
+  // continuously — it never stalls, never goes backwards, and snaps to real
+  // milestones and to 100% when done.
+  const [displayPct, setDisplayPct] = useState(0)
+  const genStartRef = useRef<number | null>(null)
+
   // Results
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [pngUrl, setPngUrl] = useState<string | null>(null)
@@ -111,6 +118,8 @@ export default function Home() {
     if (!file || !sessionId) return
     setIsSubmitting(true)
     setError('')
+    genStartRef.current = Date.now()
+    setDisplayPct(0)
 
     try {
       const formData = new FormData()
@@ -142,6 +151,8 @@ export default function Home() {
     if (!topic.trim() || !sessionId) return
     setIsSubmitting(true)
     setError('')
+    genStartRef.current = Date.now()
+    setDisplayPct(0)
 
     try {
       const res = await fetch('/api/topic-jobs/create', {
@@ -198,10 +209,35 @@ export default function Home() {
     return () => clearInterval(interval)
   }, [jobId, sessionId, jobStatus])
 
+  // Ease the display progress forward while processing.
+  useEffect(() => {
+    const processing = jobStatus && jobStatus !== 'done' && jobStatus !== 'failed'
+    if (!processing) return
+    if (genStartRef.current == null) genStartRef.current = Date.now()
+    const id = setInterval(() => {
+      const elapsed = (Date.now() - (genStartRef.current ?? Date.now())) / 1000
+      // Asymptotic creep toward ~93% (never reaches it on its own).
+      const target = 93 * (1 - Math.exp(-elapsed / 14))
+      setDisplayPct((prev) => {
+        const floor = Math.max(prev, progress) // respect real server milestones
+        const next = Math.max(floor, Math.min(93, target), prev + 0.25) // always inch up
+        return Math.min(next, 99)
+      })
+    }, 200)
+    return () => clearInterval(id)
+  }, [jobStatus, progress])
+
+  // Snap to 100% when finished.
+  useEffect(() => {
+    if (jobStatus === 'done') setDisplayPct(100)
+  }, [jobStatus])
+
   const handleReset = () => {
     setFile(null)
     setPreview(null)
     setTopic('')
+    genStartRef.current = null
+    setDisplayPct(0)
     setJobId(null)
     setJobStatus(null)
     setProgress(0)
@@ -252,6 +288,14 @@ export default function Home() {
   const isProcessing = jobStatus && jobStatus !== 'done' && jobStatus !== 'failed'
   const isDone = jobStatus === 'done'
   const limitReached = !isPro && remaining <= 0
+
+  const pct = Math.round(displayPct)
+  const stageLabel =
+    pct < 12 ? (genMode === 'topic' ? 'Planning the activity…' : 'Getting your photo ready…')
+      : pct < 45 ? (genMode === 'topic' ? 'Designing the sheet…' : 'Reading your photo…')
+      : pct < 75 ? 'Drawing the outlines…'
+      : pct < 95 ? 'Adding the finishing touches…'
+      : 'Almost ready…'
 
   return (
     <div className="min-h-screen app-bg">
@@ -528,16 +572,16 @@ export default function Home() {
                         strokeWidth="6"
                         strokeLinecap="round"
                         strokeDasharray={`${2 * Math.PI * 35}`}
-                        strokeDashoffset={`${2 * Math.PI * 35 * (1 - progress / 100)}`}
-                        style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+                        strokeDashoffset={`${2 * Math.PI * 35 * (1 - pct / 100)}`}
+                        style={{ transition: 'stroke-dashoffset 0.35s linear' }}
                       />
                     </svg>
                     <span className="absolute inset-0 flex items-center justify-center text-lg font-bold text-gray-800">
-                      {progress}%
+                      {pct}%
                     </span>
                   </div>
-                  <p className="font-semibold text-gray-700">{STATUS_LABELS[jobStatus!]}</p>
-                  <p className="text-sm text-gray-400 mt-1">This usually takes 10-30 seconds</p>
+                  <p className="font-semibold text-gray-700">{stageLabel}</p>
+                  <p className="text-sm text-gray-400 mt-1">This usually takes 10–30 seconds</p>
                 </div>
               )}
 

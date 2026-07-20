@@ -186,11 +186,33 @@ export async function generateFromText(
 
   const aspectRatio = settings.orientation === 'landscape' ? '4:3' : '3:4'
 
-  await onProgress?.(20)
+  // Replicate occasionally returns transient failures (e.g. "Director:
+  // unexpected error handling prediction"). Retry a couple of times — schnell
+  // is fast, so a retry costs little and rescues most of these.
+  const maxTries = 3
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= maxTries; attempt++) {
+    try {
+      await onProgress?.(attempt === 1 ? 20 : 25)
+      return await runFluxSchnell(token, prompt, aspectRatio, onProgress)
+    } catch (err) {
+      lastErr = err
+      console.error(`generateFromText attempt ${attempt}/${maxTries} failed:`, err)
+      if (attempt < maxTries) await new Promise((r) => setTimeout(r, 1500 * attempt))
+    }
+  }
+  console.error('generateFromText: all attempts failed:', lastErr)
+  throw new Error("Sorry — the picture didn't come out. Please try again in a moment.")
+}
 
-  // flux-schnell: a fast (few seconds), cheap text-to-image model — line art
-  // for kids doesn't need flux-dev's slower, pricier quality, and the speed
-  // avoids the long "stuck at 80%" waits caused by cold starts / queueing.
+// One flux-schnell generation attempt.
+async function runFluxSchnell(
+  token: string,
+  prompt: string,
+  aspectRatio: string,
+  onProgress?: (pct: number) => Promise<void>
+): Promise<Buffer> {
+  // flux-schnell: a fast (few seconds), cheap text-to-image model.
   const res = await fetch(
     'https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions',
     {
@@ -253,7 +275,6 @@ export async function generateFromText(
   const imgRes = await fetch(outputUrl)
   if (!imgRes.ok) throw new Error('Failed to download generated image')
   const buf = Buffer.from(await imgRes.arrayBuffer())
-  console.log(`generateFromText: got ${buf.length} bytes from ${outputUrl}`)
   if (buf.length < 1000) throw new Error('Generated image was empty')
   return buf
 }
