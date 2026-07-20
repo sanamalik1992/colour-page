@@ -250,7 +250,25 @@ export async function generateFromText(
 
   const imgRes = await fetch(outputUrl)
   if (!imgRes.ok) throw new Error('Failed to download generated image')
-  return Buffer.from(await imgRes.arrayBuffer())
+  const buf = Buffer.from(await imgRes.arrayBuffer())
+  console.log(`generateFromText: got ${buf.length} bytes from ${outputUrl}`)
+  if (buf.length < 1000) throw new Error('Generated image was empty')
+  return buf
+}
+
+/**
+ * True if an image is effectively blank (a near-white page with almost no ink).
+ * Used to catch generations that came back empty so we fail clearly instead of
+ * shipping a blank sheet.
+ */
+export async function isBlankImage(buffer: Buffer): Promise<boolean> {
+  try {
+    const stats = await sharp(buffer).stats()
+    // Blank => every channel is bright with almost no variation (no lines).
+    return stats.channels.every((c) => c.mean > 250 && c.stdev < 4)
+  } catch {
+    return false
+  }
 }
 
 // ---------------------------------------------------------------------------
