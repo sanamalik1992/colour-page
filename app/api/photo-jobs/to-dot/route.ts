@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const jobId = String(body?.jobId || '')
     const sessionId = body?.sessionId ? String(body.sessionId) : null
-    const dotCount = Math.max(60, Math.min(200, parseInt(String(body?.dotCount)) || 120))
+    const dotCount = Math.max(30, Math.min(120, parseInt(String(body?.dotCount)) || 50))
 
     if (!jobId) {
       return NextResponse.json({ error: 'Missing job id' }, { status: 400 })
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Could not read the colouring page' }, { status: 500 })
     }
 
-    const settings: DotJobSettings = { dotCount, showGuideLines: false, difficulty: 'medium' }
+    const settings: DotJobSettings = { dotCount, showGuideLines: false, difficulty: 'medium', style: 'scene' }
     const { png, pdf } = await generateDotToDot(lineArt, settings)
 
     const pngPath = `dot-from-photo/${jobId}/output.png`
