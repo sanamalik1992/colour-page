@@ -514,7 +514,7 @@ export default function Home() {
                           )}
                         </button>
                         <p className="text-xs text-gray-400 text-center mt-2">
-                          Turns the main subject of this page into a numbered connect-the-dots.
+                          Works best when the page shows one clear subject with a bit of space around it (a person, pet, or toy). Very busy scenes or tight close-ups won&apos;t trace into a single outline.
                         </p>
                         {dotState === 'error' && (
                           <p className="text-xs text-red-500 text-center mt-2">{dotError}</p>
