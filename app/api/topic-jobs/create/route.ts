@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkUsage, recordUsage } from '@/lib/pro-gating'
 import { buildTopicPrompt } from '@/lib/topic-prompt'
+import { findBlockedTerm } from '@/lib/blocklist'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
 // Text-topic generation ("What are they learning today?"). Reuses the
@@ -34,6 +35,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Session ID required' }, { status: 400 })
     }
 
+    // Copyright / brand safety: reject blocked terms (Disney, Pokémon, etc.)
+    // before spending a generation.
+    const blocked = await findBlockedTerm(topic)
+    if (blocked) {
+      return NextResponse.json(
+        { error: `We can't make character pages for "${blocked}". Try a theme like space, animals or dinosaurs!` },
+        { status: 400 }
+      )
+    }
+
     // Usage / Pro gating — topic sheets have their own daily allowance.
     const userId = email || sessionId
     const usage = await checkUsage(userId, 'topic_sheet', email)
@@ -57,6 +68,7 @@ export async function POST(request: NextRequest) {
       age,
       category: plan.category,
       prompt: plan.prompt,
+      glyph: plan.glyph,
     }
 
     const isPro = usage.isPro

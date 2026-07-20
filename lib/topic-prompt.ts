@@ -150,12 +150,13 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
     const objs = (LETTER_OBJECTS[letter] || []).slice(0, Math.max(3, n))
     const upper = letter.toUpperCase()
     const objList = objs.join(', ')
+    // The letter itself is stamped deterministically by us (models render text
+    // unreliably), so ask the model for the OBJECTS ONLY and no lettering.
     const prompt =
-      `A children's alphabet learning worksheet for the letter "${upper}". ` +
-      `Show a very large outlined capital letter ${upper} and lowercase letter ${letter} ` +
-      `to trace and colour, and around them ${objs.length} simple separate pictures of ` +
-      `things that start with ${upper}: ${objList}. Each picture clearly separated with ` +
-      `space around it. ${STYLE_SUFFIX}`
+      `A children's colouring worksheet showing ${objs.length} simple, separate pictures ` +
+      `of things that start with the letter ${upper}: ${objList}. Arrange them in a row or ` +
+      `grid with clear space around each. Do NOT draw any letters, numbers, words or text ` +
+      `anywhere in the image — pictures only. ${STYLE_SUFFIX}`
     return {
       category: 'letter',
       subject: `Letter ${upper}`,

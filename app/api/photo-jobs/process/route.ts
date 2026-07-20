@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { preprocessImage, processWithReplicate, generateFromText, sharpCVFallback } from '@/lib/image-processing'
+import { renderNumberSheet, buildLetterSheet } from '@/lib/topic-render'
 import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
@@ -72,18 +73,32 @@ export async function POST(request: NextRequest) {
     let lineArtBuffer: Buffer
 
     if (isTopic) {
-      // Topic path: generate line art from the prompt alone — no input image.
-      // There's no CV fallback here (nothing to trace without a photo), so a
-      // missing token is a hard failure.
-      if (!hasReplicate) throw new Error('Text-to-image generation is not configured')
-      const prompt = settings.prompt || job.topic
-      if (!prompt) throw new Error('Topic job has no prompt')
+      const glyph = settings.glyph
       await updateJob(jobId, { progress: 15 })
-      lineArtBuffer = await generateFromText(
-        prompt,
-        settings,
-        async (pct) => { await updateJob(jobId!, { progress: pct }) }
-      )
+
+      if (settings.category === 'number' && glyph?.kind === 'numberRange') {
+        // Counting sheet drawn deterministically — no model call, 100% accurate.
+        const maxN = parseInt(glyph.value.split('-')[1] || '10', 10)
+        lineArtBuffer = await renderNumberSheet(maxN, settings)
+        await updateJob(jobId, { progress: 80 })
+      } else {
+        // Everything else needs the text-to-image model. There's no CV fallback
+        // (nothing to trace without a photo), so a missing token is fatal.
+        if (!hasReplicate) throw new Error('Text-to-image generation is not configured')
+        const prompt = settings.prompt || job.topic
+        if (!prompt) throw new Error('Topic job has no prompt')
+        const generated = await generateFromText(
+          prompt,
+          settings,
+          async (pct) => { await updateJob(jobId!, { progress: pct }) }
+        )
+        if (settings.category === 'letter' && glyph?.kind === 'letter') {
+          // Stamp the correct, traceable capital over the generated objects.
+          lineArtBuffer = await buildLetterSheet(generated, glyph.value, settings)
+        } else {
+          lineArtBuffer = generated
+        }
+      }
     } else {
       // Photo path (existing): edit the uploaded image into line art.
       const signedUrl = await getSignedUrl(job.input_storage_path)
