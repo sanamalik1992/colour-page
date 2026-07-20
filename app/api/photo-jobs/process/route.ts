@@ -68,7 +68,9 @@ export async function POST(request: NextRequest) {
       detailLevel: 'medium',
     }
 
-    const isTopic = job.source === 'topic'
+    // Topic jobs are flagged in settings (kept schema-free); fall back to the
+    // column if a migration added one.
+    const isTopic = settings.source === 'topic' || job.source === 'topic'
     const hasReplicate = !!process.env.REPLICATE_API_TOKEN
     let lineArtBuffer: Buffer
 
@@ -85,7 +87,7 @@ export async function POST(request: NextRequest) {
         // Everything else needs the text-to-image model. There's no CV fallback
         // (nothing to trace without a photo), so a missing token is fatal.
         if (!hasReplicate) throw new Error('Text-to-image generation is not configured')
-        const prompt = settings.prompt || job.topic
+        const prompt = settings.prompt || settings.topic || job.topic
         if (!prompt) throw new Error('Topic job has no prompt')
         const generated = await generateFromText(
           prompt,
