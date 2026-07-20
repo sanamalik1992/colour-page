@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { preprocessImage, processWithReplicate, generateFromText, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
-import { renderNumberSheet, buildLetterSheet } from '@/lib/topic-render'
+import { renderNumberSheet, renderSequenceSheet, buildLetterSheet } from '@/lib/topic-render'
 import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
@@ -78,7 +78,11 @@ export async function POST(request: NextRequest) {
       const glyph = settings.glyph
       await updateJob(jobId, { progress: 15 })
 
-      if (settings.category === 'number' && glyph?.kind === 'numberRange') {
+      if (settings.category === 'sequence' && settings.numbers?.length) {
+        // Maths sequence (multiples / times tables) drawn deterministically.
+        lineArtBuffer = await renderSequenceSheet(settings.numbers, settings)
+        await updateJob(jobId, { progress: 80 })
+      } else if (settings.category === 'number' && glyph?.kind === 'numberRange') {
         // Counting sheet drawn deterministically — no model call, 100% accurate.
         const maxN = parseInt(glyph.value.split('-')[1] || '10', 10)
         lineArtBuffer = await renderNumberSheet(maxN, settings)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkUsage, recordUsage } from '@/lib/pro-gating'
 import { buildTopicPrompt } from '@/lib/topic-prompt'
+import { aiPlanTopic } from '@/lib/topic-ai'
 import { findBlockedTerm } from '@/lib/blocklist'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
@@ -58,8 +59,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Build the prompt (the tunable core of the feature).
-    const plan = buildTopicPrompt(topic, age)
+    // Interpret the topic with AI when available (handles the long tail like
+    // "multiples of 10" or "life cycle of a frog"); fall back to the
+    // deterministic keyword builder otherwise.
+    const plan = (await aiPlanTopic(topic, age)) || buildTopicPrompt(topic, age)
 
     // Topic metadata lives in the settings JSON (no schema migration needed).
     const settings: PhotoJobSettings = {
@@ -72,6 +75,7 @@ export async function POST(request: NextRequest) {
       category: plan.category,
       prompt: plan.prompt,
       glyph: plan.glyph,
+      numbers: plan.numbers,
     }
 
     const isPro = usage.isPro

@@ -90,6 +90,49 @@ export async function renderNumberSheet(maxN: number, settings: PhotoJobSettings
 }
 
 /**
+ * A maths-sequence sheet (multiples, counting in Ns, times tables): the exact
+ * numbers laid out large to read, trace and colour. The first number in each
+ * row is solid (the example); the rest are dotted to write over. Fully
+ * deterministic, so the numbers are always correct.
+ */
+export async function renderSequenceSheet(numbers: number[], settings: PhotoJobSettings): Promise<Buffer> {
+  const nums = numbers.slice(0, 12)
+  const d = detail(settings)
+  const x0 = MARGIN
+  const y0 = MARGIN
+  const contentW = A4_W - MARGIN * 2
+  const contentH = A4_H - MARGIN * 2
+
+  const cols = nums.length <= 5 ? 1 : 2
+  const rows = Math.ceil(nums.length / cols)
+  const cellW = contentW / cols
+  const cellH = contentH / rows
+
+  const stroke = d === 'low' ? 22 : d === 'high' ? 12 : 17
+  // Widest number sets the glyph height so nothing overflows its cell.
+  const widest = nums.reduce((w, n) => Math.max(w, String(n).length), 1)
+  let glyphH = Math.min(cellH * 0.6, 300)
+  while (numberWidth('0'.repeat(widest), glyphH) > cellW * 0.72 && glyphH > 40) glyphH -= 8
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
+  svg += `<rect width="${A4_W}" height="${A4_H}" fill="#ffffff"/>`
+
+  for (let i = 0; i < nums.length; i++) {
+    const col = cols === 1 ? 0 : i % cols
+    const row = cols === 1 ? i : Math.floor(i / cols)
+    const s = String(nums[i])
+    const gW = numberWidth(s, glyphH)
+    const cx = x0 + col * cellW + (cellW - gW) / 2
+    const cy = y0 + row * cellH + (cellH - glyphH) / 2
+    // First column solid (read it), others dotted (trace it).
+    const dashed = col !== 0
+    svg += numberSvg(s, cx, cy, glyphH, stroke, dashed ? { dashed: true, color: '#9aa0a6' } : undefined)
+  }
+  svg += `</svg>`
+  return sharp(Buffer.from(svg)).png().toBuffer()
+}
+
+/**
  * A letter sheet: a big correct capital letter to trace in a header band, with
  * the model-generated objects (things starting with that letter) placed below.
  */
