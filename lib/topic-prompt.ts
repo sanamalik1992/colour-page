@@ -136,7 +136,8 @@ const DIGRAPH_OBJECTS: Record<string, string[]> = {
   wh: ['whale', 'wheel', 'whisk'],
 }
 
-const clean = (s: string) => s.trim().replace(/\s+/g, ' ')
+const clean = (s: string) =>
+  s.replace(/[‘’“”]/g, "'").trim().replace(/\s+/g, ' ')
 
 function titleCase(s: string): string {
   return s.replace(/\b\w/g, (c) => c.toUpperCase())
@@ -152,16 +153,23 @@ function detectLetter(topic: string): string | null {
 
 // Phonics / letter-sound topics: "phonics h", "sh sound", "the 'ch' sound",
 // "phoneme s", "digraph sh". Returns the grapheme (1-3 letters) or null.
+// Parses by stripping keywords/punctuation (robust to straight and curly
+// quotes) and taking the remaining short letter token — so "phonics 'sh'"
+// yields "sh", not the trailing "s" of "phonics".
+const PHONICS_STOP = new Set([
+  'phonics', 'phonic', 'phoneme', 'phonemes', 'digraph', 'digraphs', 'grapheme',
+  'sound', 'sounds', 'the', 'of', 'for', 'and', 'a', 'letter', 'letters',
+  'practice', 'practise', 'writing', 'handwriting', 'today', 'learning', 'learn',
+])
 function detectPhonics(topic: string): string | null {
   if (!/\b(phonic|phonics|phoneme|digraph|grapheme|sound)\b/i.test(topic)) return null
-  const m =
-    topic.match(/\b(?:phonics?|phoneme|digraph|grapheme)\s*(?:of\s+|for\s+|sound\s+)?['"]?([a-z]{1,3})['"]?/i) ||
-    topic.match(/['"]?([a-z]{1,3})['"]?\s+sound\b/i) ||
-    topic.match(/\bsound\s+(?:of\s+)?['"]?([a-z]{1,3})['"]?/i)
-  if (!m) return null
-  const g = m[1].toLowerCase()
-  const stop = new Set(['the', 'of', 'for', 'and', 'sound', 'is', 'it'])
-  return stop.has(g) ? null : g
+  const words = topic
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ') // drop quotes/punctuation (incl. curly ')
+    .split(/\s+/)
+    .filter(Boolean)
+  const grapheme = words.find((w) => !PHONICS_STOP.has(w) && w.length >= 1 && w.length <= 3)
+  return grapheme || null
 }
 
 // Objects that begin with (or use) a grapheme.

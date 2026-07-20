@@ -63,14 +63,24 @@ export function glyphPath(ch: string): string | null {
  * stroked at ~`stroke` px. Width works out to height * 0.6. Top-left anchored
  * at (left, top).
  */
-export function glyphSvg(ch: string, left: number, top: number, height: number, stroke: number): string {
+export function glyphSvg(
+  ch: string,
+  left: number,
+  top: number,
+  height: number,
+  stroke: number,
+  opts?: { dashed?: boolean; color?: string }
+): string {
   const d = glyphPath(ch)
   if (!d) return ''
   const scale = height / 10
-  const sw = (stroke / scale).toFixed(2)
+  const sw = stroke / scale
+  const color = opts?.color || '#111111'
+  // Dashed = a dotted "trace me" outline (dash lengths scaled to glyph units).
+  const dash = opts?.dashed ? ` stroke-dasharray="${(sw * 0.1).toFixed(2)} ${(sw * 1.5).toFixed(2)}"` : ''
   return (
     `<path d="${d}" transform="translate(${left.toFixed(1)},${top.toFixed(1)}) scale(${scale.toFixed(4)})" ` +
-    `fill="none" stroke="#111111" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`
+    `fill="none" stroke="${color}" stroke-width="${sw.toFixed(2)}"${dash} stroke-linecap="round" stroke-linejoin="round"/>`
   )
 }
 
@@ -88,13 +98,20 @@ export function numberWidth(str: string, height: number): number {
   return n * glyphWidth(height) + Math.max(0, n - 1) * DIGIT_GAP * height
 }
 
-// SVG for a multi-character number, laying each glyph out left to right.
-export function numberSvg(str: string, left: number, top: number, height: number, stroke: number): string {
+// SVG for a multi-character number/word, laying each glyph out left to right.
+export function numberSvg(
+  str: string,
+  left: number,
+  top: number,
+  height: number,
+  stroke: number,
+  opts?: { dashed?: boolean; color?: string }
+): string {
   let out = ''
   let x = left
   const step = glyphWidth(height) + DIGIT_GAP * height
   for (const ch of str) {
-    out += glyphSvg(ch, x, top, height, stroke)
+    out += glyphSvg(ch, x, top, height, stroke, opts)
     x += step
   }
   return out
