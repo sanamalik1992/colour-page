@@ -10,7 +10,7 @@
  * steps as every other sheet.
  */
 import sharp from 'sharp'
-import { glyphSvg, glyphWidth, numberSvg, numberWidth } from '@/lib/glyph-font'
+import { numberSvg, numberWidth } from '@/lib/glyph-font'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
 const A4_W = 2480
@@ -101,14 +101,16 @@ export async function buildLetterSheet(
   const headerH = Math.round(A4_H * 0.3)
   const stroke = detail(settings) === 'low' ? 34 : detail(settings) === 'high' ? 20 : 27
 
-  // Header: one large capital centred in the top band.
+  // Header: the grapheme (one letter like "B", or a digraph like "SH") centred
+  // in the top band.
+  const chars = letter.toUpperCase().slice(0, 3)
   const glyphH = Math.round(headerH * 0.7)
-  const glyphW = glyphWidth(glyphH)
+  const glyphW = numberWidth(chars, glyphH)
   const gLeft = (A4_W - glyphW) / 2
   const gTop = (headerH - glyphH) / 2
   const headerSvg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${headerH}" viewBox="0 0 ${A4_W} ${headerH}">` +
-    glyphSvg(letter, gLeft, gTop, glyphH, stroke) +
+    numberSvg(chars, gLeft, gTop, glyphH, stroke) +
     `</svg>`
   const headerPng = await sharp(Buffer.from(headerSvg)).png().toBuffer()
 

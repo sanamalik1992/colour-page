@@ -51,14 +51,24 @@ export interface TopicPlan {
 }
 
 // Pins every prompt to the existing colouring-page look. Tuning this affects
-// all categories at once.
+// all categories at once. Deliberately avoids instruction-like wording
+// ("worksheet", "show 3…") because diffusion models render those words as
+// garbled text in the picture — hence the explicit no-text ban.
 const STYLE_SUFFIX =
-  'Coloring book page for young children: bold, clean black outline drawings of ' +
-  'the subjects, drawn large and filling most of the page. Simple closed shapes ' +
-  'with white space inside each shape to colour in. White background. No shading, ' +
-  'no grey, no colour fill, no cross-hatching, no photorealism. Friendly rounded ' +
-  'cartoon style, clear thick outlines, flat front-on view. The picture must ' +
-  'clearly show the subjects — do not leave the page mostly empty.'
+  'Simple bold black and white coloring book line art for young children. ' +
+  'Thick clean outlines, large friendly cartoon shapes filling the page, plenty ' +
+  'of white space inside each shape to colour. Pure white background. No shading, ' +
+  'no grey, no colour, no photorealism. IMPORTANT: absolutely no text, no words, ' +
+  'no letters, no numbers, no captions, no title, no labels, no writing and no ' +
+  'border frame anywhere in the image — pictures only.'
+
+// A clean, instruction-free prompt for a set of objects (used by letter and
+// phonics sheets, where we stamp the letter ourselves and only need the model
+// to draw the objects).
+function objectsPrompt(objs: string[]): string {
+  return `Coloring book line art of ${objs.length} separate simple objects, each ` +
+    `drawn large with space around it: ${objs.join(', ')}. ${STYLE_SUFFIX}`
+}
 
 /**
  * Map an optional child age (3-10) to generation + dot-to-dot difficulty.
@@ -110,6 +120,22 @@ const LETTER_OBJECTS: Record<string, string[]> = {
   z: ['zebra', 'zip', 'zigzag'],
 }
 
+// Common phonics digraphs → objects that use that sound.
+const DIGRAPH_OBJECTS: Record<string, string[]> = {
+  sh: ['sheep', 'shell', 'ship', 'shark'],
+  ch: ['chair', 'cheese', 'cherry', 'chick'],
+  th: ['thumb', 'thread', 'throne', 'thermometer'],
+  ng: ['ring', 'king', 'swing', 'wing'],
+  oo: ['moon', 'boot', 'spoon', 'balloon'],
+  ee: ['bee', 'tree', 'sheep', 'feet'],
+  ai: ['rain', 'train', 'snail', 'tail'],
+  oa: ['boat', 'goat', 'coat', 'soap'],
+  ck: ['duck', 'sock', 'clock', 'rock'],
+  qu: ['queen', 'quilt', 'quill'],
+  ph: ['phone', 'photo', 'dolphin'],
+  wh: ['whale', 'wheel', 'whisk'],
+}
+
 const clean = (s: string) => s.trim().replace(/\s+/g, ' ')
 
 function titleCase(s: string): string {
@@ -122,6 +148,26 @@ function detectLetter(topic: string): string | null {
   const m = topic.match(/\bletter\s+([a-z])\b/i) || topic.match(/^\s*([a-z])\s*$/i)
   if (m) return m[1].toLowerCase()
   return null
+}
+
+// Phonics / letter-sound topics: "phonics h", "sh sound", "the 'ch' sound",
+// "phoneme s", "digraph sh". Returns the grapheme (1-3 letters) or null.
+function detectPhonics(topic: string): string | null {
+  if (!/\b(phonic|phonics|phoneme|digraph|grapheme|sound)\b/i.test(topic)) return null
+  const m =
+    topic.match(/\b(?:phonics?|phoneme|digraph|grapheme)\s*(?:of\s+|for\s+|sound\s+)?['"]?([a-z]{1,3})['"]?/i) ||
+    topic.match(/['"]?([a-z]{1,3})['"]?\s+sound\b/i) ||
+    topic.match(/\bsound\s+(?:of\s+)?['"]?([a-z]{1,3})['"]?/i)
+  if (!m) return null
+  const g = m[1].toLowerCase()
+  const stop = new Set(['the', 'of', 'for', 'and', 'sound', 'is', 'it'])
+  return stop.has(g) ? null : g
+}
+
+// Objects that begin with (or use) a grapheme.
+function objectsForGrapheme(g: string): string[] {
+  if (g.length === 1) return LETTER_OBJECTS[g] || []
+  return DIGRAPH_OBJECTS[g] || LETTER_OBJECTS[g[0]] || []
 }
 
 function detectNumberMax(topic: string): number | null {
@@ -144,41 +190,29 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   const difficulty = difficultyForAge(age)
   const n = elementCount(difficulty)
 
-  // --- letters ---
+  // --- letters & phonics (we stamp the grapheme; model draws objects only) ---
   const letter = detectLetter(topic)
-  if (letter) {
-    const objs = (LETTER_OBJECTS[letter] || []).slice(0, Math.max(3, n))
-    const upper = letter.toUpperCase()
-    const objList = objs.join(', ')
-    // The letter itself is stamped deterministically by us (models render text
-    // unreliably), so ask the model for the OBJECTS ONLY and no lettering.
-    const prompt =
-      `A children's colouring worksheet showing ${objs.length} simple, separate pictures ` +
-      `of things that start with the letter ${upper}: ${objList}. Arrange them in a row or ` +
-      `grid with clear space around each. Do NOT draw any letters, numbers, words or text ` +
-      `anywhere in the image — pictures only. ${STYLE_SUFFIX}`
+  const phonics = letter ? null : detectPhonics(topic)
+  const grapheme = letter || phonics
+  if (grapheme) {
+    const objs = objectsForGrapheme(grapheme).slice(0, Math.max(3, n))
+    const value = grapheme.toUpperCase()
     return {
       category: 'letter',
-      subject: `Letter ${upper}`,
-      prompt,
-      glyph: { kind: 'letter', value: upper },
+      subject: phonics ? `Sound "${grapheme}"` : `Letter ${value}`,
+      prompt: objectsPrompt(objs.length ? objs : ['a ball', 'a cat', 'a star']),
+      glyph: { kind: 'letter', value },
       difficulty,
     }
   }
 
-  // --- numbers / counting ---
+  // --- numbers / counting (drawn deterministically; prompt unused) ---
   const maxN = detectNumberMax(topic)
   if (maxN) {
-    const prompt =
-      `A children's counting worksheet for numbers 1 to ${maxN}. ` +
-      `Show ${maxN} clearly separated groups, each group containing that many identical ` +
-      `simple objects (for example ${Math.min(3, maxN)} apples, ${Math.min(4, maxN)} stars), ` +
-      `arranged in a neat grid with a large outlined numeral beside each group to trace. ` +
-      `${STYLE_SUFFIX}`
     return {
       category: 'number',
       subject: `Numbers 1–${maxN}`,
-      prompt,
+      prompt: '',
       glyph: { kind: 'numberRange', value: `1-${maxN}` },
       difficulty,
     }
@@ -187,39 +221,33 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   // --- shapes ---
   if (/\bshapes?\b/i.test(topic) || /\b(circle|square|triangle|rectangle|star|oval|diamond)\b/i.test(topic)) {
     const prompt =
-      `A children's learning worksheet about basic 2D shapes. Show large, clearly ` +
-      `separated outlined shapes — circle, square, triangle, rectangle, star and oval — ` +
-      `each a simple bold outline to colour, arranged neatly with space around each. ` +
-      `${STYLE_SUFFIX}`
+      `Coloring book line art of large separate basic shapes: a circle, a square, a ` +
+      `triangle, a rectangle, a star and an oval. ${STYLE_SUFFIX}`
     return { category: 'shapes', subject: 'Shapes', prompt, difficulty }
   }
 
   // --- space ---
   if (/\b(space|planet|planets|rocket|solar system|astronaut|galaxy|stars?)\b/i.test(topic)) {
     const prompt =
-      `A children's outer-space scene to colour: a friendly cartoon rocket, a big planet ` +
-      `with rings, ${n} stars, a smiling crescent moon and a little astronaut. ` +
-      `Large simple shapes, clearly separated. ${STYLE_SUFFIX}`
+      `Coloring book line art of a friendly rocket, a planet with rings, ${n} stars, a ` +
+      `smiling crescent moon and a little astronaut, each large and separate. ${STYLE_SUFFIX}`
     return { category: 'space', subject: 'Space', prompt, difficulty }
   }
 
   // --- minibeasts / bugs ---
   if (/\b(minibeast|minibeasts|bug|bugs|insect|insects|creepy crawl)/i.test(topic)) {
     const beasts = ['a ladybird', 'a snail', 'a bumblebee', 'a caterpillar', 'a butterfly', 'a spider']
-    const list = beasts.slice(0, n).join(', ')
     const prompt =
-      `A children's minibeasts learning sheet. Show ${n} large, clearly identifiable and ` +
-      `separated minibeasts to colour: ${list}. Each a simple bold cartoon outline with ` +
-      `space around it. ${STYLE_SUFFIX}`
+      `Coloring book line art of ${n} large separate minibeasts: ${beasts.slice(0, n).join(', ')}. ` +
+      `${STYLE_SUFFIX}`
     return { category: 'minibeasts', subject: 'Minibeasts', prompt, difficulty }
   }
 
   // --- colours (rainbow) ---
   if (/\bcolou?rs?\b/i.test(topic) || /\brainbow\b/i.test(topic)) {
     const prompt =
-      `A children's colours learning sheet featuring a large rainbow with clearly ` +
-      `separated bands to colour, plus a few simple objects to colour in (a red apple, ` +
-      `a yellow sun, a green leaf, a blue raindrop). Bold simple outlines. ${STYLE_SUFFIX}`
+      `Coloring book line art of a large rainbow with an apple, a sun, a leaf and a ` +
+      `raindrop, each large and separate. ${STYLE_SUFFIX}`
     return { category: 'colours', subject: 'Colours', prompt, difficulty }
   }
 
@@ -227,17 +255,15 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   if (/\b(animal|animals|farm|jungle|zoo|pets?|dinosaur|dinosaurs|sea creatures|ocean)\b/i.test(topic)) {
     const subject = titleCase(topic)
     const prompt =
-      `A children's animal learning sheet about "${subject}". Show ${n} large, clearly ` +
-      `identifiable and separated ${subject.toLowerCase()} as simple bold cartoon outlines ` +
-      `to colour, each with space around it. ${STYLE_SUFFIX}`
+      `Coloring book line art of ${n} large separate ${subject.toLowerCase()}, friendly ` +
+      `cartoon outlines. ${STYLE_SUFFIX}`
     return { category: 'animals', subject, prompt, difficulty }
   }
 
   // --- generic fallback ---
   const subject = titleCase(topic)
   const prompt =
-    `A children's colouring page about "${subject}". Show ${n} large, simple, clearly ` +
-    `separated pictures that a child would recognise for the topic "${subject}", each a ` +
-    `bold cartoon outline to colour with space around it. ${STYLE_SUFFIX}`
+    `Coloring book line art of ${n} large separate simple pictures of ${subject.toLowerCase()}. ` +
+    `${STYLE_SUFFIX}`
   return { category: 'generic', subject, prompt, difficulty }
 }
