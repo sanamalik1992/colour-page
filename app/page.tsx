@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Lock,
   BookOpen,
+  Loader2,
 } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { Footer } from '@/components/sections/footer'
@@ -56,6 +57,12 @@ export default function Home() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [pngUrl, setPngUrl] = useState<string | null>(null)
   const [isWatermarked, setIsWatermarked] = useState(true)
+
+  // Dot-to-dot conversion (from the generated colouring page)
+  const [dotState, setDotState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [dotPngUrl, setDotPngUrl] = useState<string | null>(null)
+  const [dotPdfUrl, setDotPdfUrl] = useState<string | null>(null)
+  const [dotError, setDotError] = useState('')
 
   // Limits
   const [remaining, setRemaining] = useState(3)
@@ -165,6 +172,42 @@ export default function Home() {
     setPdfUrl(null)
     setPngUrl(null)
     setIsSubmitting(false)
+    setDotState('idle')
+    setDotPngUrl(null)
+    setDotPdfUrl(null)
+    setDotError('')
+  }
+
+  const handleMakeDotToDot = async () => {
+    if (!jobId) return
+    setDotState('loading')
+    setDotError('')
+    try {
+      const res = await fetch('/api/photo-jobs/to-dot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId, sessionId, dotCount: 110 }),
+      })
+      const data = await readJsonSafe(res)
+      if (!res.ok) throw new Error(friendlyError(res.status, data))
+      setDotPngUrl((data.pngUrl as string) || null)
+      setDotPdfUrl((data.pdfUrl as string) || null)
+      setDotState('done')
+    } catch (err) {
+      setDotError(err instanceof Error ? err.message : 'Could not create the dot-to-dot.')
+      setDotState('error')
+    }
+  }
+
+  const handlePrintDot = () => {
+    if (!dotPngUrl) return
+    const w = window.open('', '_blank')
+    if (w) {
+      w.document.write(
+        `<!DOCTYPE html><html><head><title>Dot-to-Dot</title><style>@page{size:A4;margin:0.5in}body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:white}img{max-width:100%;max-height:95vh}</style></head><body><img src="${dotPngUrl}" onload="setTimeout(function(){window.print()},400)"/></body></html>`
+      )
+      w.document.close()
+    }
   }
 
   if (!mounted) return null
@@ -426,6 +469,58 @@ export default function Home() {
                     <Link href="/library" className="btn-secondary flex-1">
                       <BookOpen className="w-4 h-4" /> My Pages
                     </Link>
+                  </div>
+
+                  {/* Turn into a dot-to-dot (uses the clean line art we just made) */}
+                  <div className="border-t border-gray-100 pt-5">
+                    {dotState === 'done' && dotPngUrl ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-amber-600">
+                          <CheckCircle2 className="w-5 h-5" />
+                          <span className="font-semibold">Dot-to-dot ready!</span>
+                        </div>
+                        <div className="rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={dotPngUrl} alt="Dot-to-dot puzzle" className="w-full object-contain max-h-[360px]" />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {dotPdfUrl && (
+                            <a href={dotPdfUrl} download="dot-to-dot.pdf" className="flex flex-col items-center gap-1 p-3 rounded-xl border border-gray-200 hover:border-amber-400 transition-colors">
+                              <FileText className="w-5 h-5 text-amber-500" />
+                              <span className="text-xs font-semibold text-gray-700">PDF</span>
+                            </a>
+                          )}
+                          <a href={dotPngUrl} download="dot-to-dot.png" className="flex flex-col items-center gap-1 p-3 rounded-xl border border-gray-200 hover:border-amber-400 transition-colors">
+                            <ImageIcon className="w-5 h-5 text-amber-500" />
+                            <span className="text-xs font-semibold text-gray-700">PNG</span>
+                          </a>
+                          <button onClick={handlePrintDot} className="flex flex-col items-center gap-1 p-3 rounded-xl border border-gray-200 hover:border-amber-400 transition-colors">
+                            <Printer className="w-5 h-5 text-amber-500" />
+                            <span className="text-xs font-semibold text-gray-700">Print</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          onClick={handleMakeDotToDot}
+                          disabled={dotState === 'loading'}
+                          className="w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:opacity-90 transition-opacity disabled:opacity-60"
+                        >
+                          {dotState === 'loading' ? (
+                            <><Loader2 className="w-5 h-5 animate-spin" /> Making dot-to-dot…</>
+                          ) : (
+                            <><CircleDot className="w-5 h-5" /> Turn into a Dot-to-Dot</>
+                          )}
+                        </button>
+                        <p className="text-xs text-gray-400 text-center mt-2">
+                          Turns the main subject of this page into a numbered connect-the-dots.
+                        </p>
+                        {dotState === 'error' && (
+                          <p className="text-xs text-red-500 text-center mt-2">{dotError}</p>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               )}
