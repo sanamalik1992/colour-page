@@ -13,6 +13,9 @@ export interface PhotoJobSettings {
   age?: number
   category?: string
   prompt?: string
+  // Deterministic glyph to draw ourselves for letter/number sheets:
+  //  { kind: 'letter', value: 'B' } | { kind: 'numberRange', value: '1-10' }
+  glyph?: { kind: 'letter' | 'numberRange'; value: string }
 }
 
 export const DEFAULT_SETTINGS: PhotoJobSettings = {
