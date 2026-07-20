@@ -10,6 +10,8 @@ export interface PhotoJobSettings {
   lineThickness: LineThickness
   detailLevel: DetailLevel
   // Topic-generation extras (only present when source === 'topic')
+  source?: JobSource
+  topic?: string
   age?: number
   category?: string
   prompt?: string

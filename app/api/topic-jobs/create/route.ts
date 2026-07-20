@@ -61,10 +61,13 @@ export async function POST(request: NextRequest) {
     // Build the prompt (the tunable core of the feature).
     const plan = buildTopicPrompt(topic, age)
 
+    // Topic metadata lives in the settings JSON (no schema migration needed).
     const settings: PhotoJobSettings = {
       orientation: 'portrait',
       lineThickness: plan.difficulty.lineThickness,
       detailLevel: plan.difficulty.detailLevel,
+      source: 'topic',
+      topic,
       age,
       category: plan.category,
       prompt: plan.prompt,
@@ -80,19 +83,23 @@ export async function POST(request: NextRequest) {
     }
 
     const jobId = crypto.randomUUID()
+    // Sentinel input path (topic jobs have no upload); the `topic/` prefix also
+    // lets the photo daily-limit query exclude these rows.
     const { error: insertError } = await supabase.from('photo_jobs').insert({
       id: jobId,
       user_id: sessionId,
       email,
-      source: 'topic',
-      topic,
       status: 'queued',
+      input_storage_path: `topic/${jobId}`,
       settings,
       progress: 0,
       is_pro: isPro,
       is_watermarked: !isPro,
     })
-    if (insertError) throw insertError
+    if (insertError) {
+      console.error('Topic job insert failed:', insertError)
+      throw new Error(insertError.message || 'Database insert failed')
+    }
 
     // Reliable background trigger (a plain fire-and-forget fetch is dropped by
     // the platform once the response returns; after() keeps us alive to send it).
