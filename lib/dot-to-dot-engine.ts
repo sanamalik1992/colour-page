@@ -168,48 +168,47 @@ function smoothClosed(points: Point[], iterations: number, window: number): Poin
 function traceSubjectOutline(grey: Uint8Array | Buffer, w: number, h: number): Point[] {
   const thr = otsuThreshold(grey, w * h)
 
-  // Flood the background inward from the borders. Whatever the flood can't
-  // reach is the subject (its interior gets filled even when the input is a
-  // hollow line drawing), giving one solid blob to trace. Works for both
-  // clean AI line art and high-contrast photo silhouettes.
-  //
-  // We try both "ink = dark" and "ink = light" polarities and keep whichever
-  // yields the more subject-like blob (sensible size, not the whole frame).
-  const darkSubj = floodSubject(grey, w, h, thr, true)
-  const lightSubj = floodSubject(grey, w, h, thr, false)
+  // Merge the ink (line-art strokes / dark subject) into one solid blob with a
+  // morphological close sized to the image, fill any enclosed gaps, then take
+  // the largest blob as the subject and trace its outer outline. This keeps
+  // the main object and drops the background and internal detail, and copes
+  // with subjects that run off the frame edge (e.g. a portrait's shoulders).
+  // Try both ink polarities and keep the more subject-like blob.
+  const darkBlob = inkBlob(grey, w, h, thr, true)
+  const lightBlob = inkBlob(grey, w, h, thr, false)
 
-  const pick = betterSubject(darkSubj, lightSubj, w, h)
+  const pick = betterSubject(darkBlob, lightBlob, w, h)
   if (!pick) return []
 
-  const cleaned = morphClose(pick, w, h, 2)
-  const mask = largestComponentMask(cleaned, w, h)
+  const mask = largestComponentMask(pick, w, h)
   if (!mask) return []
   return mooreTrace(mask, w, h)
 }
 
-// Flood non-ink pixels from the borders; subject = everything not reached.
-function floodSubject(
-  grey: Uint8Array | Buffer,
-  w: number,
-  h: number,
-  thr: number,
-  inkIsDark: boolean
-): Uint8Array {
-  // Dilate the ink first so thin line-art strokes form an unbroken barrier —
-  // otherwise the background flood leaks through gaps into the subject.
-  const rawInk = new Uint8Array(w * h)
+// Build a solid subject blob from ink: dilate to merge strokes/features into
+// one shape, fill enclosed holes, erode back to roughly the original size.
+function inkBlob(grey: Uint8Array | Buffer, w: number, h: number, thr: number, inkIsDark: boolean): Uint8Array {
+  const ink = new Uint8Array(w * h)
   for (let i = 0; i < w * h; i++) {
-    rawInk[i] = (inkIsDark ? grey[i] < thr : grey[i] >= thr) ? 1 : 0
+    ink[i] = (inkIsDark ? grey[i] < thr : grey[i] >= thr) ? 1 : 0
   }
-  const ink = dilateErode(rawInk, w, h, 2, true)
-  const isInk = (i: number) => ink[i] === 1
+  const r = Math.max(3, Math.round(w * 0.018))
+  let blob = morphSep(ink, w, h, r, true) // dilate
+  blob = fillHolesMask(blob, w, h)
+  blob = morphSep(blob, w, h, r, false) // erode
+  return blob
+}
+
+// Fill holes: flood the background from the borders; any 0 not reached is an
+// enclosed hole and becomes part of the mask.
+function fillHolesMask(mask: Uint8Array, w: number, h: number): Uint8Array {
   const reached = new Uint8Array(w * h)
   const stack = new Int32Array(w * h)
   let sp = 0
   const push = (x: number, y: number) => {
     if (x < 0 || y < 0 || x >= w || y >= h) return
     const i = y * w + x
-    if (!reached[i] && !isInk(i)) {
+    if (!reached[i] && mask[i] === 0) {
       reached[i] = 1
       stack[sp++] = i
     }
@@ -222,9 +221,43 @@ function floodSubject(
     const py = (p / w) | 0
     push(px + 1, py); push(px - 1, py); push(px, py + 1); push(px, py - 1)
   }
-  const subj = new Uint8Array(w * h)
-  for (let i = 0; i < w * h; i++) subj[i] = reached[i] ? 0 : 1
-  return subj
+  const out = new Uint8Array(w * h)
+  for (let i = 0; i < w * h; i++) out[i] = mask[i] === 1 || reached[i] === 0 ? 1 : 0
+  return out
+}
+
+// Separable binary dilate/erode with a square structuring element (O(w*h*r)).
+function morphSep(src: Uint8Array, w: number, h: number, r: number, dilate: boolean): Uint8Array {
+  const tmp = new Uint8Array(w * h)
+  for (let y = 0; y < h; y++) {
+    const row = y * w
+    for (let x = 0; x < w; x++) {
+      if (!dilate && (x - r < 0 || x + r >= w)) { tmp[row + x] = 0; continue }
+      const lo = x - r < 0 ? 0 : x - r
+      const hi = x + r >= w ? w - 1 : x + r
+      let v = dilate ? 0 : 1
+      for (let nx = lo; nx <= hi; nx++) {
+        const s = src[row + nx]
+        if (dilate) { if (s) { v = 1; break } } else if (!s) { v = 0; break }
+      }
+      tmp[row + x] = v
+    }
+  }
+  const out = new Uint8Array(w * h)
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      if (!dilate && (y - r < 0 || y + r >= h)) { out[y * w + x] = 0; continue }
+      const lo = y - r < 0 ? 0 : y - r
+      const hi = y + r >= h ? h - 1 : y + r
+      let v = dilate ? 0 : 1
+      for (let ny = lo; ny <= hi; ny++) {
+        const s = tmp[ny * w + x]
+        if (dilate) { if (s) { v = 1; break } } else if (!s) { v = 0; break }
+      }
+      out[y * w + x] = v
+    }
+  }
+  return out
 }
 
 // Choose the polarity whose subject fill is a plausible object (5%–92% of
@@ -245,34 +278,6 @@ function betterSubject(a: Uint8Array, b: Uint8Array, w: number, h: number): Uint
   if (aOk) return a
   if (bOk) return b
   return null
-}
-
-// Square-kernel dilate/erode; close = dilate then erode.
-function dilateErode(src: Uint8Array, w: number, h: number, r: number, dilate: boolean): Uint8Array {
-  const out = new Uint8Array(w * h)
-  const hit = dilate ? 1 : 0 // dilate: any neighbour set -> set; erode: any neighbour clear -> clear
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let val = dilate ? 0 : 1
-      for (let dy = -r; dy <= r && val !== hit; dy++) {
-        const ny = y + dy
-        if (ny < 0 || ny >= h) { if (!dilate) { val = 0 } continue }
-        for (let dx = -r; dx <= r; dx++) {
-          const nx = x + dx
-          if (nx < 0 || nx >= w) { if (!dilate) { val = 0; break } continue }
-          const s = src[ny * w + nx]
-          if (dilate && s === 1) { val = 1; break }
-          if (!dilate && s === 0) { val = 0; break }
-        }
-      }
-      out[y * w + x] = val
-    }
-  }
-  return out
-}
-
-function morphClose(src: Uint8Array, w: number, h: number, r: number): Uint8Array {
-  return dilateErode(dilateErode(src, w, h, r, true), w, h, r, false)
 }
 
 function otsuThreshold(data: Uint8Array | Buffer, len: number): number {
