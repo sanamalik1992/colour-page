@@ -36,10 +36,9 @@ const CONTENT_H = A4_H - MARGIN * 2
 // PDF A4 in points
 const A4_W_PT = 595.28
 const A4_H_PT = 841.89
-const MARGIN_PT = 28.35
 
 // Resolution used for silhouette tracing (keeps it fast + smooth)
-const TRACE_MAX = 640
+const TRACE_MAX = 960
 
 /**
  * Full pipeline: photo buffer -> dot-to-dot PNG + PDF buffers.
@@ -54,11 +53,6 @@ export async function generateDotToDot(
   const metadata = await sharp(imageBuffer).metadata()
   const srcW = metadata.width || 800
   const srcH = metadata.height || 600
-
-  // Final placement space (fits within the A4 content area, keeps aspect)
-  const scale = Math.min(CONTENT_W / srcW, CONTENT_H / srcH)
-  const fitW = Math.max(2, Math.round(srcW * scale))
-  const fitH = Math.max(2, Math.round(srcH * scale))
 
   // Low-res working image for tracing
   const tScale = Math.min(1, TRACE_MAX / Math.max(srcW, srcH))
@@ -78,34 +72,55 @@ export async function generateDotToDot(
 
   const targetDots = clampDots(settings.dotCount)
 
-  // --- Trace the subject outline ---
-  let contour = traceSubjectOutline(data, tW, tH)
-
-  await onProgress?.(50)
-
-  let dots: Point[]
-  if (contour.length >= 8 && !isFrameContour(contour, tW, tH)) {
-    // Smooth the pixel-jagged boundary into a flowing outline
-    contour = smoothClosed(contour, 2, 2)
-    // Map trace coords -> fit coords
-    const sx = fitW / tW
-    const sy = fitH / tH
-    contour = contour.map((p) => ({ x: p.x * sx, y: p.y * sy }))
-    dots = distributeDots(contour, targetDots)
+  // --- Trace the subject outline (in trace-resolution coords) ---
+  const raw = traceSubjectOutline(data, tW, tH)
+  let ordered: Point[]
+  if (raw.length >= 8 && !isFrameContour(raw, tW, tH)) {
+    ordered = smoothClosed(raw, 2, 2)
   } else {
     // Fallback: edge-cloud nearest-neighbour path (never fails)
-    dots = fallbackDots(data, tW, tH, fitW, fitH, targetDots)
+    ordered = fallbackContour(data, tW, tH)
   }
+
+  await onProgress?.(55)
+
+  // Scale the traced shape to fill the A4 content area, so the subject is
+  // big and the dots spread out — independent of any margins in the source
+  // (e.g. a colouring page with white borders).
+  const pageContour = scaleContourToPage(ordered)
+  const dots = distributeDots(pageContour, targetDots)
 
   await onProgress?.(65)
 
-  const pngBuffer = await renderDotToDotPng(dots, fitW, fitH, settings)
+  const pngBuffer = await renderDotToDotPng(dots, settings)
   await onProgress?.(80)
 
-  const pdfBuffer = await renderDotToDotPdf(dots, fitW, fitH, settings)
+  const pdfBuffer = await renderDotToDotPdf(dots, settings)
   await onProgress?.(95)
 
   return { png: pngBuffer, pdf: pdfBuffer }
+}
+
+// Scale/translate a contour so its bounding box fills the A4 content area
+// (with a little breathing room), centred on the page. Returns A4 pixel coords.
+function scaleContourToPage(pts: Point[]): Point[] {
+  if (pts.length === 0) return pts
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.x > maxX) maxX = p.x
+    if (p.y > maxY) maxY = p.y
+  }
+  const bw = Math.max(1, maxX - minX)
+  const bh = Math.max(1, maxY - minY)
+  const s = Math.min((CONTENT_W * 0.9) / bw, (CONTENT_H * 0.9) / bh)
+  const offX = MARGIN + (CONTENT_W - bw * s) / 2 - minX * s
+  const offY = MARGIN + (CONTENT_H - bh * s) / 2 - minY * s
+  return pts.map((p) => ({ x: p.x * s + offX, y: p.y * s + offY }))
 }
 
 function clampDots(n: number): number {
@@ -180,7 +195,14 @@ function floodSubject(
   thr: number,
   inkIsDark: boolean
 ): Uint8Array {
-  const isInk = (i: number) => (inkIsDark ? grey[i] < thr : grey[i] >= thr)
+  // Dilate the ink first so thin line-art strokes form an unbroken barrier —
+  // otherwise the background flood leaks through gaps into the subject.
+  const rawInk = new Uint8Array(w * h)
+  for (let i = 0; i < w * h; i++) {
+    rawInk[i] = (inkIsDark ? grey[i] < thr : grey[i] >= thr) ? 1 : 0
+  }
+  const ink = dilateErode(rawInk, w, h, 2, true)
+  const isInk = (i: number) => ink[i] === 1
   const reached = new Uint8Array(w * h)
   const stack = new Int32Array(w * h)
   let sp = 0
@@ -216,7 +238,7 @@ function betterSubject(a: Uint8Array, b: Uint8Array, w: number, h: number): Uint
   }
   const fa = frac(a)
   const fb = frac(b)
-  const ok = (f: number) => f >= 0.03 && f <= 0.92
+  const ok = (f: number) => f >= 0.01 && f <= 0.92
   const aOk = ok(fa)
   const bOk = ok(fb)
   if (aOk && bOk) return fa <= fb ? a : b
@@ -464,16 +486,10 @@ function perpendicularDistance(point: Point, lineStart: Point, lineEnd: Point): 
 }
 
 // ---------------------------------------------------------------------------
-// Fallback: edge-cloud nearest-neighbour path (used only if no subject found)
+// Fallback: edge-cloud nearest-neighbour path (used only if no subject found).
+// Returns an ordered contour in trace-resolution coords.
 // ---------------------------------------------------------------------------
-function fallbackDots(
-  grey: Uint8Array | Buffer,
-  w: number,
-  h: number,
-  fitW: number,
-  fitH: number,
-  n: number
-): Point[] {
+function fallbackContour(grey: Uint8Array | Buffer, w: number, h: number): Point[] {
   const edges: Point[] = []
   // Sobel-ish gradient magnitude via neighbour differences
   const step = Math.max(1, Math.floor(Math.sqrt((w * h) / 40000)))
@@ -485,27 +501,18 @@ function fallbackDots(
     }
   }
   if (edges.length < 3) {
-    // Last resort: a friendly circle of dots
+    // Last resort: a friendly circle
     const cx = w / 2
     const cy = h / 2
     const r = Math.min(w, h) * 0.4
     const out: Point[] = []
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2
+    for (let i = 0; i < 64; i++) {
+      const a = (i / 64) * Math.PI * 2
       out.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r })
     }
-    return scalePoints(out, w, h, fitW, fitH)
+    return out
   }
-
-  const ordered = nearestNeighbourPath(edges, n * 3)
-  const dots = distributeDots(ordered, n)
-  return scalePoints(dots, w, h, fitW, fitH)
-}
-
-function scalePoints(pts: Point[], w: number, h: number, fitW: number, fitH: number): Point[] {
-  const sx = fitW / w
-  const sy = fitH / h
-  return pts.map((p) => ({ x: Math.round(p.x * sx), y: Math.round(p.y * sy) }))
+  return nearestNeighbourPath(edges, 400)
 }
 
 function nearestNeighbourPath(points: Point[], maxPoints: number): Point[] {
@@ -553,12 +560,11 @@ function nearestNeighbourPath(points: Point[], maxPoints: number): Point[] {
 // ---------------------------------------------------------------------------
 async function renderDotToDotPng(
   dots: Point[],
-  imageW: number,
-  imageH: number,
   settings: DotJobSettings
 ): Promise<Buffer> {
-  const offsetX = MARGIN + Math.round((CONTENT_W - imageW) / 2)
-  const offsetY = MARGIN + Math.round((CONTENT_H - imageH) / 2)
+  // dots are already in A4 pixel coordinates
+  const offsetX = 0
+  const offsetY = 0
 
   const dotRadius = 11
   const fontSize = 30
@@ -614,21 +620,15 @@ async function renderDotToDotPng(
 
 async function renderDotToDotPdf(
   dots: Point[],
-  imageW: number,
-  imageH: number,
   settings: DotJobSettings
 ): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create()
   const page = pdfDoc.addPage([A4_W_PT, A4_H_PT])
   const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
 
-  const scaleX = (A4_W_PT - MARGIN_PT * 2) / CONTENT_W
-  const scaleY = (A4_H_PT - MARGIN_PT * 2) / CONTENT_H
-  const offsetX = (CONTENT_W - imageW) / 2
-  const offsetY = (CONTENT_H - imageH) / 2
-
-  const toPdfX = (px: number) => MARGIN_PT + (px + offsetX) * scaleX
-  const toPdfY = (px: number) => A4_H_PT - MARGIN_PT - (px + offsetY) * scaleY
+  // dots are in A4 pixel coordinates; map straight to PDF points.
+  const toPdfX = (px: number) => px * (A4_W_PT / A4_W)
+  const toPdfY = (px: number) => A4_H_PT - px * (A4_H_PT / A4_H)
 
   const dotRadius = 3.4
   const fontSize = 8
