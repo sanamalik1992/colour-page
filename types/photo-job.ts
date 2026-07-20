@@ -3,10 +3,16 @@ export type Orientation = 'portrait' | 'landscape'
 export type LineThickness = 'thin' | 'medium' | 'thick'
 export type DetailLevel = 'low' | 'medium' | 'high'
 
+export type JobSource = 'photo' | 'topic'
+
 export interface PhotoJobSettings {
   orientation: Orientation
   lineThickness: LineThickness
   detailLevel: DetailLevel
+  // Topic-generation extras (only present when source === 'topic')
+  age?: number
+  category?: string
+  prompt?: string
 }
 
 export const DEFAULT_SETTINGS: PhotoJobSettings = {
@@ -20,7 +26,9 @@ export interface PhotoJob {
   user_id: string
   email?: string
   status: PhotoJobStatus
-  input_storage_path: string
+  source?: JobSource
+  topic?: string
+  input_storage_path?: string
   original_filename?: string
   output_pdf_path?: string
   output_png_path?: string

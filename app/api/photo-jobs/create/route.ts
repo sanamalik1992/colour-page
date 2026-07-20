@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
         .from('photo_jobs')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', sessionId)
+        .eq('source', 'photo') // topic sheets have their own separate allowance
         .gte('created_at', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
         .in('status', ['queued', 'processing', 'rendering', 'done'])
 

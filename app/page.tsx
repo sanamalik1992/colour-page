@@ -36,10 +36,17 @@ export default function Home() {
   const sessionId = useSessionId()
   const [mounted, setMounted] = useState(false)
 
+  // Which way in: upload a photo, or type what they're learning today.
+  const [genMode, setGenMode] = useState<'photo' | 'topic'>('photo')
+
   // Upload state
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+
+  // Topic state ("What are they learning today?")
+  const [topic, setTopic] = useState('')
+  const [childAge, setChildAge] = useState<number | ''>('')
 
   // Settings
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait')
@@ -131,6 +138,35 @@ export default function Home() {
     }
   }
 
+  const handleGenerateTopic = async () => {
+    if (!topic.trim() || !sessionId) return
+    setIsSubmitting(true)
+    setError('')
+
+    try {
+      const res = await fetch('/api/topic-jobs/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: topic.trim(),
+          sessionId,
+          age: childAge === '' ? undefined : childAge,
+        }),
+      })
+
+      const data = await readJsonSafe(res)
+      if (!res.ok) throw new Error(friendlyError(res.status, data))
+
+      setJobId(data.jobId as string)
+      setJobStatus('queued')
+      setProgress(0)
+      setIsPro((data.isPro as boolean) ?? false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start generation')
+      setIsSubmitting(false)
+    }
+  }
+
   // Poll for status
   useEffect(() => {
     if (!jobId || !sessionId) return
@@ -165,6 +201,7 @@ export default function Home() {
   const handleReset = () => {
     setFile(null)
     setPreview(null)
+    setTopic('')
     setJobId(null)
     setJobStatus(null)
     setProgress(0)
@@ -241,6 +278,28 @@ export default function Home() {
           <div className="bg-white rounded-3xl shadow-2xl ring-1 ring-black/5 overflow-hidden">
             <div className="p-5 sm:p-8">
 
+              {/* Mode tabs: photo upload vs learning topic */}
+              {!jobId && !isSubmitting && (
+                <div className="grid grid-cols-2 gap-2 mb-5 p-1 bg-gray-100 rounded-xl">
+                  <button
+                    onClick={() => { setGenMode('photo'); setError('') }}
+                    className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                      genMode === 'photo' ? 'bg-white text-brand-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Upload className="w-4 h-4" /> From a photo
+                  </button>
+                  <button
+                    onClick={() => { setGenMode('topic'); setError('') }}
+                    className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                      genMode === 'topic' ? 'bg-white text-brand-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4" /> Learning topic
+                  </button>
+                </div>
+              )}
+
               {/* Limit indicator */}
               {!isPro && !jobId && !isSubmitting && (
                 <div className="flex items-center justify-between mb-5 pb-4 border-b border-gray-100">
@@ -257,8 +316,8 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Upload State */}
-              {!jobId && !isSubmitting && (
+              {/* Upload State (photo mode) */}
+              {genMode === 'photo' && !jobId && !isSubmitting && (
                 <>
                   {!preview ? (
                     <div
@@ -381,6 +440,80 @@ export default function Home() {
                     </div>
                   )}
                 </>
+              )}
+
+              {/* Topic State ("What are they learning today?") */}
+              {genMode === 'topic' && !jobId && !isSubmitting && (
+                <div className="space-y-5">
+                  <div>
+                    <label className="text-sm font-medium text-gray-600 mb-2 block">
+                      What&apos;s your child learning today?
+                    </label>
+                    <input
+                      type="text"
+                      value={topic}
+                      onChange={(e) => setTopic(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && topic.trim() && !limitReached) handleGenerateTopic() }}
+                      maxLength={80}
+                      placeholder="e.g. letter B, numbers to 10, space…"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 text-gray-800 placeholder-gray-400 focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 outline-none transition-all"
+                    />
+                    {/* Quick-pick suggestions */}
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {['letters', 'numbers to 10', 'shapes', 'animals', 'space', 'colours', 'minibeasts'].map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => setTopic(s)}
+                          className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                            topic === s
+                              ? 'border-brand-primary bg-brand-primary/10 text-brand-primary'
+                              : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Optional age */}
+                  <div>
+                    <label className="text-sm font-medium text-gray-600 mb-2 block">
+                      Child&apos;s age <span className="text-gray-400 font-normal">(optional — sets the difficulty)</span>
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {[3, 4, 5, 6, 7, 8, 9, 10].map((a) => (
+                        <button
+                          key={a}
+                          onClick={() => setChildAge(childAge === a ? '' : a)}
+                          className={`w-10 h-10 rounded-lg text-sm font-semibold border transition-all ${
+                            childAge === a
+                              ? 'border-brand-primary bg-brand-primary/10 text-brand-primary'
+                              : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                          }`}
+                        >
+                          {a}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleGenerateTopic}
+                    disabled={limitReached || !topic.trim()}
+                    className="btn-primary w-full"
+                  >
+                    <Sparkles className="w-5 h-5" />
+                    Make a learning sheet
+                  </button>
+
+                  {limitReached && (
+                    <p className="text-xs text-gray-400 text-center">
+                      You&apos;ve used your free sheets for today.{' '}
+                      <Link href="/pro" className="text-brand-primary font-semibold hover:underline">Go Pro</Link> for more.
+                    </p>
+                  )}
+                </div>
               )}
 
               {/* Processing State */}
