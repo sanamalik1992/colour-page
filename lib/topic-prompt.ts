@@ -23,6 +23,7 @@
 export type TopicCategory =
   | 'letter'
   | 'number'
+  | 'sequence'
   | 'shapes'
   | 'animals'
   | 'space'
@@ -47,6 +48,7 @@ export interface TopicPlan {
   subject: string // cleaned, human-readable topic
   prompt: string // the text-to-image prompt
   glyph?: GlyphSpec // deterministic overlay for letters/numbers (later stage)
+  numbers?: number[] // for 'sequence' — the exact numbers to render (e.g. multiples)
   difficulty: Difficulty
 }
 
@@ -65,9 +67,15 @@ const STYLE_SUFFIX =
 // A clean, instruction-free prompt for a set of objects (used by letter and
 // phonics sheets, where we stamp the letter ourselves and only need the model
 // to draw the objects).
-function objectsPrompt(objs: string[]): string {
+export function objectsPrompt(objs: string[]): string {
   return `Coloring book line art of ${objs.length} separate simple objects, each ` +
     `drawn large with space around it: ${objs.join(', ')}. ${STYLE_SUFFIX}`
+}
+
+// A pictorial colouring prompt for a set of concrete subjects.
+export function pictorialPrompt(items: string[]): string {
+  return `Coloring book line art of ${items.length} large separate simple pictures: ` +
+    `${items.join(', ')}. ${STYLE_SUFFIX}`
 }
 
 /**
@@ -178,6 +186,21 @@ function objectsForGrapheme(g: string): string[] {
   return DIGRAPH_OBJECTS[g] || LETTER_OBJECTS[g[0]] || []
 }
 
+// Maths sequences: "multiples of 10", "counting in 5s", "count by 2",
+// "2 times table", "times table of 3". Returns the numbers + a title, or null.
+function detectSequence(topic: string): { numbers: number[]; title: string } | null {
+  const m =
+    topic.match(/\bmultiples?\s+of\s+(\d{1,2})\b/i) ||
+    topic.match(/\bcount(?:ing)?\s+(?:in|by)\s+(\d{1,2})s?\b/i) ||
+    topic.match(/\b(\d{1,2})\s*(?:x|times)\s*table\b/i) ||
+    topic.match(/\btimes\s*tables?\s+(?:of\s+|for\s+)?(\d{1,2})\b/i)
+  if (!m) return null
+  const step = parseInt(m[1], 10)
+  if (!step || step < 1 || step > 20) return null
+  const numbers = Array.from({ length: 10 }, (_, i) => step * (i + 1))
+  return { numbers, title: `Counting in ${step}s` }
+}
+
 function detectNumberMax(topic: string): number | null {
   if (!/\b(number|numbers|counting|count)\b/i.test(topic) && !/\bto\s+\d+\b/i.test(topic)) {
     // Also accept a bare "1-10" / "1 to 20"
@@ -210,6 +233,18 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
       subject: phonics ? `Sound "${grapheme}"` : `Letter ${value}`,
       prompt: objectsPrompt(objs.length ? objs : ['a ball', 'a cat', 'a star']),
       glyph: { kind: 'letter', value },
+      difficulty,
+    }
+  }
+
+  // --- maths sequences: multiples / counting in Ns / times tables ---
+  const seq = detectSequence(topic)
+  if (seq) {
+    return {
+      category: 'sequence',
+      subject: seq.title,
+      prompt: '',
+      numbers: seq.numbers,
       difficulty,
     }
   }
