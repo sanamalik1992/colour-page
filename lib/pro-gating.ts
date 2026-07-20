@@ -12,6 +12,12 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// TEMPORARY: when true, all daily/lifetime usage limits are bypassed (for
+// testing). Flip back to false to re-enable limits. Also honours an env
+// override so it can be toggled without a deploy.
+export const USAGE_LIMITS_DISABLED =
+  true || process.env.DISABLE_USAGE_LIMITS === 'true'
+
 export interface UserPlan {
   isPro: boolean
   email: string | null
@@ -86,6 +92,11 @@ export async function checkUsage(
   email?: string | null
 ): Promise<UsageCheckResult> {
   const plan = await getUserPlan(email)
+
+  if (USAGE_LIMITS_DISABLED) {
+    return { allowed: true, used: 0, limit: 9999, remaining: 9999, isPro: plan.isPro }
+  }
+
   const limits = FEATURE_LIMITS[featureKey]
 
   if (!limits) {
@@ -134,6 +145,11 @@ export async function recordUsage(
   email?: string | null
 ): Promise<{ allowed: boolean; newCount: number }> {
   const plan = await getUserPlan(email)
+
+  if (USAGE_LIMITS_DISABLED) {
+    return { allowed: true, newCount: 0 }
+  }
+
   const limits = FEATURE_LIMITS[featureKey]
 
   if (!limits) {
