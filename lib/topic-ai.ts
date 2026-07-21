@@ -12,6 +12,7 @@ import {
   difficultyForAge,
   objectsPrompt,
   pictorialPrompt,
+  sheetTitle,
   type TopicPlan,
 } from './topic-prompt'
 
@@ -24,17 +25,20 @@ interface AiRaw {
   objects?: string[]
 }
 
-const SYSTEM = `You plan ONE printable A4 activity sheet for a child (UK primary school) from a topic a parent typed. Reply with ONLY a compact JSON object, no prose.
+const SYSTEM = `You are an early-years teacher designing ONE delightful, printable A4 activity sheet for a child (UK primary school / EYFS) from a topic a parent typed. Think like a great teacher: understand what the child is really meant to learn, then choose the richest, most engaging, age-appropriate content for it. Reply with ONLY a compact JSON object, no prose.
 
 Pick "kind":
 - "sequence": skip-counting / multiples / times tables (e.g. "multiples of 10", "counting in 5s", "3 times table"). Include "numbers": the exact ordered list (max 12) and a short "title".
-- "counting": learning to count 1..N (e.g. "numbers to 10"). Include "maxCount" (2-20).
-- "letter": a single letter or a phonics sound/digraph (e.g. "letter b", "phonics sh"). Include "grapheme" (1-3 lowercase letters) and "objects": 4-6 concrete, child-recognisable nouns that start with / use that sound.
-- "pictorial": everything else (animals, space, science, seasons, jobs, etc.). Include a short "title" and "objects": 3-6 concrete, drawable, child-recognisable things that represent the topic. Make them age-appropriate: simpler for younger children.
+- "counting": learning to count 1..N (e.g. "numbers to 10", "count to 5"). Include "maxCount" (2-20).
+- "letter": ANY letter-sound or phonics lesson — a single letter, a digraph, OR phrasings like "words beginning with th", "th words", "the sh sound", "initial sound b", "cvc words with a". Include "grapheme" (1-3 lowercase letters, e.g. "t","th","sh") and "objects": 4-6 EXCELLENT, concrete, child-recognisable nouns that genuinely begin with / use that exact sound. Choose the clearest classic phonics picture-words (e.g. th → thumb, thermometer, thunder, throne; sh → ship, shark, shell, shoe). Avoid abstract or hard-to-draw words.
+- "pictorial": everything else (animals, space, science, seasons, jobs, the body, weather, etc.). Include a short "title" and "objects": 4-6 concrete, drawable, child-recognisable things that best represent the topic and tell its story. Make them age-appropriate: simpler and fewer for younger children.
 
-Rules: objects must be concrete nouns that are easy to draw as a colouring picture (no abstract concepts, no text/labels). Never use copyrighted characters or brands. Keep it clean and child-safe.
+Rules: objects MUST be concrete nouns that are easy and fun to draw as a colouring picture (no abstract concepts, no text/labels, no puns). Pick the most iconic, joyful examples a child would recognise instantly. Never use copyrighted characters or brands. Keep it clean and child-safe. Always give a warm, specific "title" (a few words).
 
-Example: {"kind":"sequence","title":"Counting in 10s","numbers":[10,20,30,40,50,60,70,80,90,100]}`
+Examples:
+{"kind":"letter","grapheme":"th","title":"Words beginning with th","objects":["thumb","thermometer","thunder","throne","thread","thorn"]}
+{"kind":"sequence","title":"Counting in 10s","numbers":[10,20,30,40,50,60,70,80,90,100]}
+{"kind":"pictorial","title":"Under the Sea","objects":["fish","octopus","crab","seahorse","starfish","turtle"]}`
 
 function extractJson(text: string): AiRaw | null {
   const start = text.indexOf('{')
@@ -56,8 +60,10 @@ export async function aiPlanTopic(topic: string, age?: number): Promise<TopicPla
   try {
     const client = new Anthropic({ apiKey })
     const res = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 400,
+      // A stronger model plans richer, more pedagogically-sound sheets and
+      // reads intent (e.g. "words beginning with th") far more reliably.
+      model: 'claude-sonnet-5',
+      max_tokens: 500,
       system: SYSTEM,
       messages: [{ role: 'user', content: `Topic: "${topic}"\nChild age: ${age ?? 'unknown'}` }],
     })
@@ -85,9 +91,11 @@ export async function aiPlanTopic(topic: string, age?: number): Promise<TopicPla
         const g = (raw.grapheme || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 3)
         const objs = (raw.objects || []).filter(Boolean).slice(0, 6)
         if (!g || objs.length < 2) return null
+        const isSound = g.length > 1
         return {
           category: 'letter',
-          subject: g.length > 1 ? `Sound "${g}"` : `Letter ${g.toUpperCase()}`,
+          subject: isSound ? `Sound "${g}"` : `Letter ${g.toUpperCase()}`,
+          title: sheetTitle(raw.title || (isSound ? `Words with ${g}` : `The letter ${g}`)),
           objects: objs,
           prompt: objectsPrompt(objs),
           glyph: { kind: 'letter', value: g.toUpperCase() },
@@ -100,6 +108,7 @@ export async function aiPlanTopic(topic: string, age?: number): Promise<TopicPla
         return {
           category: 'generic',
           subject: raw.title || topic,
+          title: sheetTitle(raw.title || topic),
           prompt: pictorialPrompt(objs),
           difficulty,
         }

@@ -213,22 +213,38 @@ export async function buildLetterSheet(
 // ---------------------------------------------------------------------------
 
 // The grapheme header + handwriting trace band, returned as a PNG plus the y
-// where the picture area begins. Shared by the sticker sheet.
-function renderLetterTop(chars: string, d: 'low' | 'medium' | 'high'): { svg: string; bodyTop: number } {
+// where the picture area begins. Shared by the sticker sheet. An optional title
+// (e.g. "WORDS WITH TH") prints across the top so the sheet reads as designed.
+function renderLetterTop(chars: string, d: 'low' | 'medium' | 'high', title?: string): { svg: string; bodyTop: number } {
   const headerH = Math.round(A4_H * 0.16)
   const traceH = Math.round(A4_H * 0.2)
   const bodyTop = headerH + traceH
+  const contentW = A4_W - MARGIN * 2
 
-  const hStroke = d === 'low' ? 30 : d === 'high' ? 18 : 24
-  const hGlyphH = Math.round(headerH * 0.72)
-  const hGlyphW = numberWidth(chars, hGlyphH)
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${bodyTop}" viewBox="0 0 ${A4_W} ${bodyTop}">`
   svg += `<rect width="${A4_W}" height="${bodyTop}" fill="#ffffff"/>`
-  svg += numberSvg(chars, (A4_W - hGlyphW) / 2, (headerH - hGlyphH) / 2, hGlyphH, hStroke)
+
+  // Title band with a gold underline.
+  let gTopOffset = 0
+  if (title) {
+    const titleTop = Math.round(A4_H * 0.012)
+    let th = 56
+    let tw = textWidth(title, th)
+    const maxTW = contentW * 0.92
+    if (tw > maxTW) { th = Math.max(30, Math.floor(th * maxTW / tw)); tw = textWidth(title, th) }
+    svg += textSvg(title, (A4_W - tw) / 2, titleTop, th, 13, { color: '#111' })
+    const uy = titleTop + th + 18
+    svg += `<line x1="${((A4_W - tw) / 2).toFixed(1)}" y1="${uy}" x2="${((A4_W + tw) / 2).toFixed(1)}" y2="${uy}" stroke="#F2A81E" stroke-width="7" stroke-linecap="round"/>`
+    gTopOffset = titleTop + th + 46
+  }
+
+  const hStroke = d === 'low' ? 30 : d === 'high' ? 18 : 24
+  const hGlyphH = Math.round((headerH - gTopOffset) * 0.74)
+  const hGlyphW = numberWidth(chars, hGlyphH)
+  svg += numberSvg(chars, (A4_W - hGlyphW) / 2, gTopOffset + (headerH - gTopOffset - hGlyphH) / 2, hGlyphH, hStroke)
 
   const reps = d === 'low' ? 3 : d === 'high' ? 5 : 4
   const tStroke = d === 'low' ? 20 : d === 'high' ? 12 : 16
-  const contentW = A4_W - MARGIN * 2
   const gapFrac = 0.4
   let tGlyphW = contentW / (reps + gapFrac * (reps - 1))
   let tGlyphH = tGlyphW / (0.6 * chars.length + 0.18 * (chars.length - 1))
@@ -283,7 +299,7 @@ export async function buildLetterStickerSheet(
 ): Promise<Buffer> {
   const d = detail(settings)
   const chars = letter.toUpperCase().slice(0, 3)
-  const { svg: topSvg, bodyTop } = renderLetterTop(chars, d)
+  const { svg: topSvg, bodyTop } = renderLetterTop(chars, d, settings.title)
   const topPng = await sharp(Buffer.from(topSvg)).png().toBuffer()
 
   const pics = objectPngs.slice(0, 6)
@@ -295,9 +311,9 @@ export async function buildLetterStickerSheet(
   const bodyY = bodyTop
   const bodyW = A4_W - MARGIN * 2
   const fullBodyH = A4_H - bodyTop - MARGIN
-  // Pro pages carry a second activity below the picture grid, so the grid takes
-  // ~62% of the body; free pages give the whole body to the pictures.
-  const bodyH = isPro ? Math.round(fullBodyH * 0.62) : fullBodyH
+  // Every sheet gets a colour grid + a "find the sound" activity (so free is
+  // never bare); Pro adds a third "trace it" activity, so the grid shrinks more.
+  const bodyH = Math.round(fullBodyH * (isPro ? 0.46 : 0.56))
   const cellW = bodyW / cols
   const cellH = bodyH / rows
 
@@ -336,12 +352,19 @@ export async function buildLetterStickerSheet(
     composites.push({ input: pic, left, top })
   }
 
-  // Pro-only second activity: colour every letter that makes the sound.
-  if (isPro) {
-    const actTop = bodyTop + bodyH + 40
-    const { svg: hSvg, nextY } = headingSvg(`COLOUR EVERY ${chars}`, bodyX, actTop)
+  // Activity 2 (free + Pro): colour every letter that makes the sound.
+  const gap = 40
+  {
+    const { svg: hSvg, nextY } = headingSvg(`COLOUR EVERY ${chars}`, bodyX, bodyTop + bodyH + gap)
     overlay += hSvg
-    overlay += circleLetterBlock(chars, bodyX, nextY, bodyW, A4_H - MARGIN - nextY)
+    const b1H = isPro ? Math.round(fullBodyH * 0.22) : A4_H - MARGIN - nextY
+    overlay += circleLetterBlock(chars, bodyX, nextY, bodyW, b1H)
+    // Activity 3 (Pro only): trace the sound.
+    if (isPro) {
+      const { svg: hSvg2, nextY: y2 } = headingSvg(`TRACE ${chars}`, bodyX, nextY + b1H + gap)
+      overlay += hSvg2
+      overlay += traceGraphemeRow(chars, bodyX, y2, bodyW, A4_H - MARGIN - y2)
+    }
   }
 
   overlay += `</svg>`
@@ -479,6 +502,69 @@ function traceWordsBlock(words: string[], grapheme: string, x: number, top: numb
   return s
 }
 
+// A row of large dotted graphemes to trace over (handwriting practice).
+function traceGraphemeRow(chars: string, x: number, top: number, w: number, h: number): string {
+  const gh = Math.max(70, Math.min(h * 0.66, 200))
+  const gw = numberWidth(chars, gh)
+  const gap = gh * 0.55
+  const reps = Math.max(3, Math.min(5, Math.floor((w + gap) / (gw + gap))))
+  const rowW = reps * gw + (reps - 1) * gap
+  const startX = x + (w - rowW) / 2
+  const top2 = top + (h - gh) / 2
+  const baseY = top2 + gh + gh * 0.06
+  let s = `<line x1="${(startX - 20).toFixed(1)}" y1="${baseY.toFixed(1)}" x2="${(startX + rowW + 20).toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="#e0dbd0" stroke-width="3"/>`
+  for (let i = 0; i < reps; i++) {
+    s += numberSvg(chars, startX + i * (gw + gap), top2, gh, 16, i === 0 ? undefined : { dashed: true, color: '#9aa0a6' })
+  }
+  return s
+}
+
+// A compact word-search grid (used as a Pro bonus on the 6–8 sheet).
+function miniWordSearchBlock(words: string[], x: number, top: number, w: number, h: number): string {
+  const list = words.map((word) => word.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean).slice(0, 4)
+  if (!list.length) return ''
+  const size = Math.max(7, Math.min(9, ...list.map((word) => word.length + 3), 9))
+  const grid = makeWordSearch(list, size)
+  const gridMax = Math.min(w, h)
+  const cell = Math.floor(gridMax / size)
+  const gs = cell * size
+  const gx = x + (w - gs) / 2
+  const gy = top + (h - gs) / 2
+  let s = `<rect x="${gx.toFixed(1)}" y="${gy.toFixed(1)}" width="${gs}" height="${gs}" fill="none" stroke="#d8d3c9" stroke-width="3" rx="18"/>`
+  const lh = Math.round(cell * 0.6)
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const ch = grid[r][c]
+      s += numberSvg(ch, gx + c * cell + (cell - numberWidth(ch, lh)) / 2, gy + r * cell + (cell - lh) / 2, lh, 8)
+    }
+  }
+  return s
+}
+
+// "Put the words in ABC order": a word bank, then numbered write-in lines.
+function abcOrderBlock(words: string[], x: number, top: number, w: number, h: number): string {
+  const list = words.map((word) => word.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean).slice(0, 4)
+  if (!list.length) return ''
+  let s = ''
+  // Word bank across the top.
+  const bankH = 54
+  const bank = list.join('   ')
+  const bw = textWidth(bank, bankH)
+  s += textSvg(bank, x + Math.max(0, (w - bw) / 2), top, bankH, 11, { color: '#9aa0a6' })
+  // Numbered lines to write them in order.
+  const linesTop = top + bankH + 60
+  const n = list.length
+  const rowH = Math.min(120, (h - bankH - 60) / n)
+  const numH = Math.round(rowH * 0.5)
+  for (let i = 0; i < n; i++) {
+    const y = linesTop + i * rowH
+    s += numberSvg(String(i + 1), x, y, numH, 12)
+    const lx = x + numberWidth(String(i + 1), numH) + 40
+    s += `<line x1="${lx.toFixed(1)}" y1="${(y + numH).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${(y + numH).toFixed(1)}" stroke="#d0cabf" stroke-width="3"/>`
+  }
+  return s
+}
+
 /**
  * 6–8 band: "write the missing sound". Sticker grid where each picture has the
  * word underneath with the target grapheme replaced by a write-in line.
@@ -486,7 +572,7 @@ function traceWordsBlock(words: string[], grapheme: string, x: number, top: numb
 export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string, words: string[], settings: PhotoJobSettings, isPro = false): Promise<Buffer> {
   const d = detail(settings)
   const chars = letter.toUpperCase().slice(0, 3)
-  const { svg: topSvg, bodyTop } = renderLetterTop(chars, d)
+  const { svg: topSvg, bodyTop } = renderLetterTop(chars, d, settings.title)
   const topPng = await sharp(Buffer.from(topSvg)).png().toBuffer()
 
   const pics = objectPngs.slice(0, 6)
@@ -496,8 +582,8 @@ export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string
   const bodyX = MARGIN, bodyY = bodyTop
   const bodyW = A4_W - MARGIN * 2
   const fullBodyH = A4_H - bodyTop - MARGIN
-  // Pro adds a "trace the words" activity below the fill-the-gap grid.
-  const bodyH = isPro ? Math.round(fullBodyH * 0.6) : fullBodyH
+  // Free adds a "trace the words" activity; Pro adds a mini word search too.
+  const bodyH = Math.round(fullBodyH * (isPro ? 0.5 : 0.62))
   const cellW = bodyW / cols
   const cellH = bodyH / rows
 
@@ -523,12 +609,19 @@ export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string
     composites.push({ input: pic, left, top })
   }
 
-  // Pro-only second activity: trace the whole words.
-  if (isPro) {
-    const actTop = bodyTop + bodyH + 40
-    const { svg: hSvg, nextY } = headingSvg('TRACE THE WORDS', bodyX, actTop)
+  // Activity 2 (free + Pro): trace the whole words.
+  const gap = 40
+  {
+    const { svg: hSvg, nextY } = headingSvg('TRACE THE WORDS', bodyX, bodyTop + bodyH + gap)
     overlay += hSvg
-    overlay += traceWordsBlock(words, chars, bodyX, nextY, bodyW, A4_H - MARGIN - nextY)
+    const b1H = isPro ? Math.round(fullBodyH * 0.18) : A4_H - MARGIN - nextY
+    overlay += traceWordsBlock(words, chars, bodyX, nextY, bodyW, b1H)
+    // Activity 3 (Pro only): a mini word search.
+    if (isPro) {
+      const { svg: hSvg2, nextY: y2 } = headingSvg('WORD SEARCH', bodyX, nextY + b1H + gap)
+      overlay += hSvg2
+      overlay += miniWordSearchBlock(words, bodyX, y2, bodyW, A4_H - MARGIN - y2)
+    }
   }
 
   overlay += `</svg>`
@@ -552,14 +645,23 @@ export async function buildLetterPuzzleSheet(letter: string, words: string[], se
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
   svg += `<rect width="${A4_W}" height="${A4_H}" fill="#ffffff"/>`
 
-  // Header grapheme
-  const hH = Math.round(A4_H * 0.09)
+  // Title + header grapheme
+  let headTop = MARGIN * 0.4
+  if (settings.title) {
+    const th = 52
+    const tw = textWidth(settings.title, th)
+    svg += textSvg(settings.title, (A4_W - tw) / 2, headTop, th, 12, { color: '#111' })
+    const uy = headTop + th + 14
+    svg += `<line x1="${((A4_W - tw) / 2).toFixed(1)}" y1="${uy}" x2="${((A4_W + tw) / 2).toFixed(1)}" y2="${uy}" stroke="#F2A81E" stroke-width="6" stroke-linecap="round"/>`
+    headTop = uy + 26
+  }
+  const hH = Math.round(A4_H * 0.08)
   const hGlyphH = Math.round(hH * 0.8)
-  svg += numberSvg(chars, (A4_W - numberWidth(chars, hGlyphH)) / 2, MARGIN * 0.5, hGlyphH, 22)
+  svg += numberSvg(chars, (A4_W - numberWidth(chars, hGlyphH)) / 2, headTop, hGlyphH, 22)
 
-  // Word-search grid
-  const gridTop = MARGIN + hH
-  const gridMax = Math.min(A4_W - MARGIN * 2, Math.round(A4_H * 0.52))
+  // Word-search grid — a little smaller for Pro to leave room for ABC order.
+  const gridTop = headTop + hGlyphH + Math.round(A4_H * 0.02)
+  const gridMax = Math.min(A4_W - MARGIN * 2, Math.round(A4_H * (isPro ? 0.42 : 0.5)))
   const cell = Math.floor(gridMax / size)
   const gridSize = cell * size
   const gridX = Math.round((A4_W - gridSize) / 2)
@@ -585,14 +687,21 @@ export async function buildLetterPuzzleSheet(letter: string, words: string[], se
     if (wx > A4_W - MARGIN - 300) { wx = MARGIN + textWidth('FIND', labelH) + labelH; }
   }
 
-  // Sentence-writing lines (Pro only — the extra activity on this page).
+  // Activity 2 (free + Pro): write a sentence.
+  const sentTop = listY + Math.round(A4_H * 0.05)
+  svg += textSvg('WRITE A SENTENCE', MARGIN, sentTop, 58, 11)
+  const sentLines = isPro ? 2 : 3
+  for (let i = 0; i < sentLines; i++) {
+    const y = sentTop + 140 + i * 130
+    svg += `<line x1="${MARGIN}" y1="${y}" x2="${A4_W - MARGIN}" y2="${y}" stroke="#d0cabf" stroke-width="3"/>`
+  }
+
+  // Activity 3 (Pro only): put the words in ABC order.
   if (isPro) {
-    const sentTop = listY + Math.round(A4_H * 0.06)
-    svg += textSvg('WRITE A SENTENCE', MARGIN, sentTop, 60, 11)
-    for (let i = 0; i < 3; i++) {
-      const y = sentTop + 150 + i * 150
-      svg += `<line x1="${MARGIN}" y1="${y}" x2="${A4_W - MARGIN}" y2="${y}" stroke="#d0cabf" stroke-width="3"/>`
-    }
+    const abcTop = sentTop + 140 + sentLines * 130 + Math.round(A4_H * 0.02)
+    const { svg: hSvg, nextY } = headingSvg('WRITE IN ABC ORDER', MARGIN, abcTop)
+    svg += hSvg
+    svg += abcOrderBlock(list, MARGIN, nextY, A4_W - MARGIN * 2, A4_H - MARGIN - nextY)
   }
 
   svg += `</svg>`
