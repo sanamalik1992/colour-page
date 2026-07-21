@@ -10,6 +10,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import {
   difficultyForAge,
+  numberActivities,
   objectsPrompt,
   pictorialPrompt,
   sheetTitle,
@@ -57,9 +58,21 @@ function normalizeActivities(raw: RawActivity[]): Activity[] {
         out.push({ type: 'sums', instruction: instr, op, maxValue: Math.max(5, Math.min(100, Math.round(a.maxValue || 20))), count: Math.max(4, Math.min(15, Math.round(a.count || 10))), dots: a.dots === true, pro })
         break
       }
+      case 'countObjects':
+        out.push({ type: 'countObjects', instruction: instr, count: Math.max(2, Math.min(8, Math.round(a.count || 4))), maxCount: Math.max(2, Math.min(12, Math.round(a.maxCount || 5))), pro })
+        break
+      case 'traceNumbers':
+        out.push({ type: 'traceNumbers', instruction: instr, upTo: Math.max(3, Math.min(20, Math.round(a.upTo || 10))), pro })
+        break
     }
   }
-  return out
+  // Variety guard: keep the sheet a MIX, never one repeated task. Cap any single
+  // block type at 2 so the planner can't return "all sums" or "all circle".
+  const seen: Record<string, number> = {}
+  return out.filter((a) => {
+    seen[a.type] = (seen[a.type] || 0) + 1
+    return a.type === 'note' || seen[a.type] <= 2
+  })
 }
 
 interface AiRaw {
@@ -86,6 +99,8 @@ interface RawActivity {
   op?: string
   maxValue?: number
   dots?: boolean
+  maxCount?: number
+  upTo?: number
 }
 
 const SYSTEM = `You are an early-years teacher designing ONE delightful, printable A4 activity sheet for a child (UK primary school / EYFS) from whatever a parent types. Your job is to UNDERSTAND EXACTLY what they mean — read their words carefully, infer intent, and pick the single most appropriate kind of sheet and the best content for it. Be as thoughtful as a great human teacher. Reply with ONLY a compact JSON object, no prose.
@@ -111,7 +126,14 @@ Decide "kind" by what the child is really meant to practise:
     • {"type":"wordSearch","instruction":"Find the words","words":[...]}
     • {"type":"writeLines","instruction":"Write 3 nouns","count":3}
     • {"type":"sentence","instruction":"Write a sentence","lines":2}
-    • {"type":"sums","instruction":"Add these","op":"add"|"subtract"|"mixed","maxValue":20,"count":10,"dots":false}  — correct addition/subtraction sums drawn in code; use for maths topics ("adding to 10", "subtraction", "sums to 20"). Set dots:true only for the youngest (maxValue ≤ 10). For a full maths page use TWO sums blocks (e.g. addition then subtraction).
+    • {"type":"sums","instruction":"Add these","op":"add"|"subtract"|"mixed","maxValue":20,"count":10,"dots":false}  — correct addition/subtraction sums drawn in code; use for maths topics ("adding to 10", "subtraction", "sums to 20"). Set dots:true only for the youngest (maxValue ≤ 10).
+    • {"type":"countObjects","instruction":"Count and colour","count":5,"maxCount":10}  — groups of dots to colour in and count, writing how many. A colour+count block for number topics.
+    • {"type":"traceNumbers","instruction":"Trace the numbers","upTo":10}  — dotted numerals 1..N to write over.
+
+  VARIETY IS THE POINT — a single-skill sheet bores a child. Every sheet MUST mix 3-4 DIFFERENT activity FAMILIES; never repeat one task:
+    COLOUR = pictures/countObjects · WRITE = traceWords/traceNumbers/writeLines/sentence · PUZZLE = circleWords/wordSearch/readWords · DO = sums/countObjects
+  ALWAYS include a colour or count-and-colour block for ages 3-5. Age 3-5 → mostly colour/trace/count with ONE easy puzzle, bigger and fewer. Age 6-10 → more write/puzzle/challenge, less colouring.
+  Numbers example: {countObjects} + {traceNumbers} + {sums} (colour+count → write → do). Concept example: {pictures} + {circleWords} + {sentence}.
   DESIGN A FULL, CONNECTED LESSON — not a few disconnected mini-exercises:
   - Use 4 activities (plus a short "note" definition first) so the whole A4 page is full, not sparse.
   - Make them PROGRESS: recognise → apply → create. e.g. first look at/colour examples, then use them, then write your own.
@@ -125,7 +147,8 @@ Rules: age-appropriate and child-safe; no copyrighted characters or brands; "ite
 
 Examples:
 {"kind":"composed","title":"Nouns are naming words","activities":[{"type":"note","text":"A noun is a person, place or thing"},{"type":"pictures","instruction":"Colour and name","items":["dog","house","ball","apple"],"label":true},{"type":"circleWords","instruction":"Circle the nouns","words":["dog","run","house","happy","ball","jump"]},{"type":"sentence","instruction":"Write a sentence","lines":2,"pro":true}]}
-{"kind":"composed","title":"Adding to 20","activities":[{"type":"note","text":"Work out each sum. Write your answer."},{"type":"sums","instruction":"Addition","op":"add","maxValue":20,"count":9},{"type":"sums","instruction":"Subtraction","op":"subtract","maxValue":20,"count":9,"pro":true}]}
+{"kind":"composed","title":"Numbers to 10","activities":[{"type":"note","text":"Count, trace and add."},{"type":"countObjects","instruction":"Count and colour","count":6,"maxCount":10},{"type":"traceNumbers","instruction":"Trace the numbers","upTo":10},{"type":"sums","instruction":"Add them up","op":"add","maxValue":10,"count":6,"dots":true,"pro":true}]}
+{"kind":"composed","title":"Adding to 20","activities":[{"type":"note","text":"Work out each sum."},{"type":"countObjects","instruction":"Count and colour","count":6,"maxCount":20},{"type":"sums","instruction":"Add and subtract","op":"mixed","maxValue":20,"count":10,"pro":true}]}
 {"kind":"words","title":"Tricky th words","words":["there","then","that","this","them","they"]}
 {"kind":"letter","grapheme":"th","title":"Words beginning with th","objects":["thumb","thermometer","thunder","throne"]}
 {"kind":"sequence","title":"Counting in 10s","numbers":[10,20,30,40,50,60,70,80,90,100]}`
@@ -173,12 +196,13 @@ export async function aiPlanTopic(topic: string, age?: number): Promise<TopicPla
         return { category: 'sequence', subject: raw.title || topic, prompt: '', numbers, difficulty }
       }
       case 'counting': {
-        const maxN = Math.max(2, Math.min(20, Math.round(raw.maxCount || 10)))
+        const maxN = Math.max(3, Math.min(20, Math.round(raw.maxCount || 10)))
         return {
-          category: 'number',
+          category: 'composed',
           subject: `Numbers 1–${maxN}`,
+          title: sheetTitle(`Numbers to ${maxN}`),
+          activities: numberActivities(maxN),
           prompt: '',
-          glyph: { kind: 'numberRange', value: `1-${maxN}` },
           difficulty,
         }
       }

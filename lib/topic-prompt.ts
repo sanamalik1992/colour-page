@@ -62,6 +62,8 @@ export type ActivityKind =
   | { type: 'sentence'; instruction: string; lines: number } // ruled sentence lines
   // Deterministic maths: correct sums generated in code (never the image model).
   | { type: 'sums'; instruction: string; op: 'add' | 'subtract' | 'mixed'; maxValue: number; count: number; dots?: boolean }
+  | { type: 'countObjects'; instruction: string; count: number; maxCount: number } // colour & count groups of dots, write how many
+  | { type: 'traceNumbers'; instruction: string; upTo: number } // trace dotted numerals 1..N
 
 // `pro: true` blocks only render on Pro sheets; free sheets show the rest.
 export type Activity = ActivityKind & { pro?: boolean }
@@ -314,18 +316,33 @@ function detectSums(topic: string, d: Difficulty): Activity[] | null {
   const maxValue = mv ? Math.max(5, Math.min(100, parseInt(mv[1], 10))) : defMax
   const wantsAdd = /\b(add|adding|addition|plus|bond)/.test(t)
   const wantsSub = /\b(subtract|minus|take|less)/.test(t)
-  const note: Activity = { type: 'note', text: 'Work out each sum. Write your answer in the box.' }
+  const note: Activity = { type: 'note', text: 'Count, then work out each sum.' }
+  // A count-and-colour warm-up gives the maths page some variety before the sums.
+  const warmUp: Activity = { type: 'countObjects', instruction: 'Count and colour', count: band === 'low' ? 4 : 6, maxCount: Math.min(10, maxValue) }
   if (band === 'low') {
-    return [note, { type: 'sums', instruction: 'Count and add', op: wantsSub && !wantsAdd ? 'subtract' : 'add', maxValue: Math.min(10, maxValue), count: 9, dots: true }]
+    return [note, warmUp, { type: 'sums', instruction: 'Count and add', op: wantsSub && !wantsAdd ? 'subtract' : 'add', maxValue: Math.min(10, maxValue), count: 8, dots: true }]
   }
   const n = band === 'high' ? 10 : 12
-  if (wantsAdd && !wantsSub) {
-    return [note, { type: 'sums', instruction: 'Addition', op: 'add', maxValue, count: n }, { type: 'sums', instruction: 'More addition', op: 'add', maxValue, count: n, pro: true }]
-  }
-  if (wantsSub && !wantsAdd) {
-    return [note, { type: 'sums', instruction: 'Subtraction', op: 'subtract', maxValue, count: n }, { type: 'sums', instruction: 'More subtraction', op: 'subtract', maxValue, count: n, pro: true }]
-  }
-  return [note, { type: 'sums', instruction: 'Addition', op: 'add', maxValue, count: n }, { type: 'sums', instruction: 'Subtraction', op: 'subtract', maxValue, count: n, pro: true }]
+  const main = wantsSub && !wantsAdd ? 'subtract' : 'add'
+  const other = main === 'add' ? 'subtract' : 'add'
+  const mainInstr = main === 'add' ? 'Addition' : 'Subtraction'
+  const otherInstr = other === 'add' ? 'Addition' : 'Subtraction'
+  const second: Activity = wantsAdd !== wantsSub
+    ? { type: 'sums', instruction: `More ${mainInstr.toLowerCase()}`, op: main, maxValue, count: n, pro: true }
+    : { type: 'sums', instruction: otherInstr, op: other, maxValue, count: n, pro: true }
+  return [note, warmUp, { type: 'sums', instruction: mainInstr, op: main, maxValue, count: n }, second]
+}
+
+// A varied counting sheet: count & colour groups → trace the numerals → a few
+// simple sums. Mixes colour/count, write and do families in one page.
+export function numberActivities(maxN: number): Activity[] {
+  const n = Math.max(3, Math.min(20, Math.round(maxN)))
+  return [
+    { type: 'note', text: 'Count, trace and add.' },
+    { type: 'countObjects', instruction: 'Count and colour', count: n <= 5 ? 4 : 6, maxCount: n },
+    { type: 'traceNumbers', instruction: 'Trace the numbers', upTo: n },
+    { type: 'sums', instruction: 'Add them up', op: 'add', maxValue: Math.min(10, n), count: 6, dots: n <= 10, pro: true },
+  ]
 }
 
 function conceptActivities(key: string): Activity[] {
@@ -450,10 +467,11 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   const maxN = detectNumberMax(topic)
   if (maxN) {
     return {
-      category: 'number',
+      category: 'composed',
       subject: `Numbers 1–${maxN}`,
+      title: sheetTitle(`Numbers to ${maxN}`),
+      activities: numberActivities(maxN),
       prompt: '',
-      glyph: { kind: 'numberRange', value: `1-${maxN}` },
       difficulty,
     }
   }

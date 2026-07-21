@@ -1021,9 +1021,70 @@ function sumsBlock(op: 'add' | 'subtract' | 'mixed', maxValue: number, count: nu
   }).join('')
 }
 
+// "Count and colour": groups of hollow (colour-in) dots, each with a box to
+// write how many. Colour + count in one deterministic block.
+function countObjectsBlock(count: number, maxCount: number, x: number, top: number, w: number, h: number, salt = 0): string {
+  const n = Math.max(2, Math.min(8, Math.round(count)))
+  const maxC = Math.max(2, Math.min(12, Math.round(maxCount)))
+  const rng = makeRng(n * 53 + maxC * 131 + salt * 7919)
+  const groups = Array.from({ length: n }, () => 1 + Math.floor(rng() * maxC))
+  const cols = n <= 4 ? n : Math.ceil(n / 2)
+  const rows = Math.ceil(n / cols)
+  const cellW = w / cols
+  const cellH = h / rows
+  let s = ''
+  groups.forEach((g, i) => {
+    const c = i % cols, r = Math.floor(i / cols)
+    const cx = x + c * cellW + cellW / 2
+    const cyTop = top + r * cellH
+    // dots grid (up to 5 per row)
+    const per = Math.min(g, 5)
+    const dRows = Math.ceil(g / per)
+    const dotArea = cellH * 0.62
+    const rad = Math.max(9, Math.min(26, dotArea / (dRows * 2.6), cellW * 0.8 / (per * 2.6)))
+    const step = rad * 2.5
+    const gridTop = cyTop + (dotArea - (dRows * step - (step - rad * 2))) / 2
+    for (let k = 0; k < g; k++) {
+      const rr = Math.floor(k / per), cc = k % per
+      const rowN = Math.min(per, g - rr * per)
+      const dx = cx - (rowN - 1) * step / 2 + cc * step
+      const dy = gridTop + rad + rr * step
+      s += `<circle cx="${dx.toFixed(1)}" cy="${dy.toFixed(1)}" r="${rad.toFixed(1)}" fill="none" stroke="#111" stroke-width="4"/>`
+    }
+    // answer box beneath the group
+    const boxH = Math.min(cellH * 0.24, 90)
+    const boxW = boxH * 1.1
+    s += `<rect x="${(cx - boxW / 2).toFixed(1)}" y="${(cyTop + cellH - boxH - 6).toFixed(1)}" width="${boxW.toFixed(1)}" height="${boxH.toFixed(1)}" rx="10" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+  })
+  return s
+}
+
+// "Trace the numbers": dotted numerals 1..N to write over, on baselines.
+function traceNumbersBlock(upTo: number, x: number, top: number, w: number, h: number): string {
+  const N = Math.max(3, Math.min(20, Math.round(upTo)))
+  const nums = Array.from({ length: N }, (_, i) => String(i + 1))
+  const perRow = N <= 10 ? Math.min(N, 5) : Math.ceil(N / Math.ceil(N / 6))
+  const rows = Math.ceil(N / perRow)
+  const cellW = w / perRow
+  const rowH = h / rows
+  const gh = Math.max(40, Math.min(rowH * 0.6, cellW * 0.5, 150))
+  let s = ''
+  nums.forEach((num, i) => {
+    const c = i % perRow, r = Math.floor(i / perRow)
+    const cx = x + c * cellW
+    const yTop = top + r * rowH + (rowH - gh) / 2
+    const nw = numberWidth(num, gh)
+    const baseY = yTop + gh + gh * 0.06
+    s += `<line x1="${(cx + cellW * 0.1).toFixed(1)}" y1="${baseY.toFixed(1)}" x2="${(cx + cellW * 0.9).toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="#e0dbd0" stroke-width="3"/>`
+    s += numberSvg(num, cx + (cellW - nw) / 2, yTop, gh, Math.max(6, gh * 0.14), { dashed: true, color: '#9aa0a6' })
+  })
+  return s
+}
+
 const ACTIVITY_WEIGHT: Record<string, number> = {
   note: 0.6, pictures: 3, circleWords: 1.8, traceWords: 1.6,
   wordSearch: 2.6, readWords: 1.8, writeLines: 1.4, sentence: 1.4, sums: 3.2,
+  countObjects: 2.6, traceNumbers: 1.8,
 }
 
 /**
@@ -1102,6 +1163,8 @@ export async function buildComposedSheet(
         case 'writeLines': overlay += writeLinesBlock(a.count, bodyX, nextY, bodyW, ch); break
         case 'sentence': overlay += sentenceLinesBlock(a.lines, bodyX, nextY, bodyW, ch); break
         case 'sums': overlay += sumsBlock(a.op, a.maxValue, a.count, !!a.dots, bodyX, nextY, bodyW, ch, blockIndex); break
+        case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex); break
+        case 'traceNumbers': overlay += traceNumbersBlock(a.upTo, bodyX, nextY, bodyW, ch); break
       }
     }
     y += sliceH + gap
