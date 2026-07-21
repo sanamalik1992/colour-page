@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { Sparkles, ImagePlus, Crown, LayoutGrid, FolderHeart } from 'lucide-react'
 
 interface NavHeaderProps {
@@ -21,6 +22,18 @@ const NAV_ITEMS: {
 ]
 
 export function NavHeader({ active, isPro }: NavHeaderProps) {
+  const pathname = usePathname()
+
+  // Clicking the wordmark always returns to a fresh landing page. When we're
+  // already on home, a normal <Link> would only do a soft same-route navigation
+  // that keeps any in-progress upload/result on screen — so force a clean load.
+  const handleHomeClick = (e: React.MouseEvent) => {
+    if (pathname === '/') {
+      e.preventDefault()
+      window.location.assign('/')
+    }
+  }
+
   const linkClass = (key: string) =>
     `px-2.5 sm:px-3 py-2 text-sm font-semibold rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap ${
       active === key
@@ -32,7 +45,7 @@ export function NavHeader({ active, isPro }: NavHeaderProps) {
     <header className="sticky top-0 z-50 bg-zinc-950/70 backdrop-blur-xl">
       <div className="container mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-14">
-          <Link href="/" className="flex items-center gap-1.5 flex-shrink-0 mr-1 group">
+          <Link href="/" onClick={handleHomeClick} className="flex items-center gap-1.5 flex-shrink-0 mr-1 group">
             <span className="w-6 h-6 rounded-lg rainbow-bar flex items-center justify-center shadow-sm" aria-hidden>
               <span className="w-2 h-2 rounded-full bg-white/90" />
             </span>
