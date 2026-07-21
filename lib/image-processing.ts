@@ -294,6 +294,44 @@ export async function isBlankImage(buffer: Buffer): Promise<boolean> {
   }
 }
 
+// Fraction of "ink" (dark pixels) in a line-art image. Clean single-object line
+// art typically sits around 3–30%. Near-zero = blank; very high = a solid blob
+// or a mostly-black failure. Cheap: threshold then read the mean.
+async function inkFraction(buffer: Buffer): Promise<number> {
+  try {
+    const stats = await sharp(buffer).greyscale().threshold(200).stats()
+    const meanWhite = stats.channels[0].mean / 255 // fraction of light pixels
+    return 1 - meanWhite
+  } catch {
+    return -1
+  }
+}
+
+/**
+ * Generate a single-object picture and reject obvious failures (a blank frame,
+ * or a solid black blob), retrying with a fresh seed. flux-schnell is fast and
+ * cheap, so a couple of extra attempts rescue most malformed generations. If
+ * every attempt is imperfect we keep the most reasonable-looking one.
+ */
+export async function generateGoodObject(
+  prompt: string,
+  settings: PhotoJobSettings,
+  extraTries = 2
+): Promise<Buffer> {
+  let best: Buffer | null = null
+  let bestDist = Infinity
+  for (let i = 0; i <= extraTries; i++) {
+    const buf = await generateFromText(prompt, settings) // throws only on hard API failure
+    const ink = await inkFraction(buf)
+    if (ink >= 0.02 && ink <= 0.5) return buf // looks like healthy line art
+    // Otherwise keep the attempt whose ink is closest to a sensible ~12%.
+    const dist = ink < 0 ? Infinity : Math.abs(ink - 0.12)
+    if (dist < bestDist) { bestDist = dist; best = buf }
+    console.warn(`generateGoodObject: attempt ${i + 1} ink=${ink.toFixed(3)} out of range, retrying`)
+  }
+  return best!
+}
+
 // ---------------------------------------------------------------------------
 // Stage B Option 2 – Sharp CV fallback (no external API needed)
 // ---------------------------------------------------------------------------

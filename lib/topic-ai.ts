@@ -12,6 +12,7 @@ import {
   difficultyForAge,
   numberActivities,
   objectsPrompt,
+  pictorialActivities,
   pictorialPrompt,
   sheetTitle,
   type Activity,
@@ -251,10 +252,14 @@ export async function aiPlanTopic(topic: string, age?: number): Promise<TopicPla
       case 'pictorial': {
         const objs = (raw.objects || []).filter(Boolean).slice(0, 6)
         if (objs.length < 1) return null
+        // A theme is a VARIED sheet now, not just a colour page: colour & label
+        // the pictures, then a puzzle / count / write on the same objects.
         return {
-          category: 'generic',
+          category: 'composed',
           subject: raw.title || topic,
           title: sheetTitle(raw.title || topic),
+          objects: objs,
+          activities: pictorialActivities(objs, difficulty),
           prompt: pictorialPrompt(objs),
           difficulty,
         }
