@@ -63,7 +63,10 @@ export type ActivityKind =
   // Deterministic maths: correct sums generated in code (never the image model).
   | { type: 'sums'; instruction: string; op: 'add' | 'subtract' | 'mixed'; maxValue: number; count: number; dots?: boolean }
   | { type: 'countObjects'; instruction: string; count: number; maxCount: number } // colour & count groups of dots, write how many
+  | { type: 'countPictures'; instruction: string; items: string[] } // count & colour groups of the topic's own pictures, write how many
   | { type: 'traceNumbers'; instruction: string; upTo: number } // trace dotted numerals 1..N
+  // Deterministic clocks: correct analogue faces drawn in code (never the image model).
+  | { type: 'clocks'; instruction: string; mode: 'read' | 'draw'; level: 'oclock' | 'half' | 'quarter' | 'five'; count: number }
 
 // `pro: true` blocks only render on Pro sheets; free sheets show the rest.
 export type Activity = ActivityKind & { pro?: boolean }
@@ -333,6 +336,26 @@ function detectSums(topic: string, d: Difficulty): Activity[] | null {
   return [note, warmUp, { type: 'sums', instruction: mainInstr, op: main, maxValue, count: n }, second]
 }
 
+// "Telling the time" topics. The clock level scales with age: o'clock & half
+// past for the youngest, quarter times next, any 5-minute interval for the
+// oldest. Read-the-clock is free for everyone; draw-the-hands is a Pro block
+// for 9–10s. Fully deterministic — the clocks are drawn in code.
+function detectClocks(topic: string): boolean {
+  return /\b(telling|tell|read\w*)\s+the\s+time\b|\bclock\s?faces?\b|\bclocks?\b|\bo'?clock\b|\bhalf\s+past\b|\bquarter\s+(past|to)\b|\bwhat.?s?\s+the\s+time\b/i.test(topic)
+}
+
+export function clockActivities(d: Difficulty): Activity[] {
+  const band = d.detailLevel
+  const level: 'half' | 'quarter' | 'five' = band === 'low' ? 'half' : band === 'medium' ? 'quarter' : 'five'
+  const acts: Activity[] = [
+    { type: 'note', text: 'Look at each clock and write the time it shows.' },
+    { type: 'clocks', instruction: 'What time is it?', mode: 'read', level, count: band === 'low' ? 4 : 6 },
+  ]
+  // Draw-the-hands: a Pro challenge for the oldest band.
+  if (band === 'high') acts.push({ type: 'clocks', instruction: 'Draw the hands on each clock', mode: 'draw', level, count: 6, pro: true })
+  return acts
+}
+
 // Turn a theme's drawable objects into a VARIED sheet rather than a plain
 // colour page: colour & label the pictures → a puzzle/trace → count / write.
 export function pictorialActivities(objects: string[], d: Difficulty): Activity[] {
@@ -340,11 +363,13 @@ export function pictorialActivities(objects: string[], d: Difficulty): Activity[
   const names = [...new Set(objects.map((o) => o.toUpperCase().replace(/[^A-Z]/g, '')).filter((w) => w.length >= 2 && w.length <= 8))].slice(0, 4)
   const acts: Activity[] = [{ type: 'pictures', instruction: 'Colour and label', items: objs, label: true }]
   if (d.detailLevel === 'low') {
-    acts.push({ type: 'countObjects', instruction: 'Count and colour', count: 4, maxCount: 6 })
+    // Count the topic's OWN pictures (moons, lanterns…) — stays on-topic instead
+    // of counting abstract dots.
+    acts.push({ type: 'countPictures', instruction: 'Count and colour', items: objs })
     if (names.length) acts.push({ type: 'traceWords', instruction: 'Trace the words', words: names })
   } else {
     if (names.length >= 2) acts.push({ type: 'wordSearch', instruction: 'Find the words', words: names })
-    else acts.push({ type: 'countObjects', instruction: 'Count and colour', count: 6, maxCount: 10 })
+    else acts.push({ type: 'countPictures', instruction: 'Count and colour', items: objs })
     acts.push({ type: 'sentence', instruction: 'Write a sentence', lines: 2, pro: true })
   }
   return acts
@@ -467,6 +492,11 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   const sums = detectSums(topic, difficulty)
   if (sums) {
     return { category: 'composed', subject: 'Sums', title: sheetTitle('Sums'), activities: sums, prompt: '', difficulty }
+  }
+
+  // --- telling the time (analogue clock faces), drawn deterministically ---
+  if (detectClocks(topic)) {
+    return { category: 'composed', subject: 'Telling the time', title: sheetTitle('Telling the time'), activities: clockActivities(difficulty), prompt: '', difficulty }
   }
 
   // --- sight / tricky / specific words (read-trace-write, no pictures) ---

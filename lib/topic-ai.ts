@@ -62,6 +62,17 @@ function normalizeActivities(raw: RawActivity[]): Activity[] {
       case 'countObjects':
         out.push({ type: 'countObjects', instruction: instr, count: Math.max(2, Math.min(8, Math.round(a.count || 4))), maxCount: Math.max(2, Math.min(12, Math.round(a.maxCount || 5))), pro })
         break
+      case 'countPictures': {
+        const items = (a.items || []).map((s) => String(s)).filter(Boolean).slice(0, 4)
+        if (items.length) out.push({ type: 'countPictures', instruction: instr, items, pro })
+        break
+      }
+      case 'clocks': {
+        const mode = a.mode === 'draw' ? 'draw' : 'read'
+        const level = (['oclock', 'half', 'quarter', 'five'] as const).includes(a.level as 'oclock' | 'half' | 'quarter' | 'five') ? (a.level as 'oclock' | 'half' | 'quarter' | 'five') : 'half'
+        out.push({ type: 'clocks', instruction: instr, mode, level, count: Math.max(2, Math.min(6, Math.round(a.count || 4))), pro })
+        break
+      }
       case 'traceNumbers':
         out.push({ type: 'traceNumbers', instruction: instr, upTo: Math.max(3, Math.min(20, Math.round(a.upTo || 10))), pro })
         break
@@ -102,6 +113,8 @@ interface RawActivity {
   dots?: boolean
   maxCount?: number
   upTo?: number
+  mode?: string
+  level?: string
 }
 
 const SYSTEM = `You are an early-years teacher designing ONE delightful, printable A4 activity sheet for a child (UK primary school / EYFS) from whatever a parent types. Your job is to UNDERSTAND EXACTLY what they mean — read their words carefully, infer intent, and pick the single most appropriate kind of sheet and the best content for it. Be as thoughtful as a great human teacher. Reply with ONLY a compact JSON object, no prose.
@@ -129,10 +142,13 @@ Decide "kind" by what the child is really meant to practise:
     • {"type":"sentence","instruction":"Write a sentence","lines":2}
     • {"type":"sums","instruction":"Add these","op":"add"|"subtract"|"mixed","maxValue":20,"count":10,"dots":false}  — correct addition/subtraction sums drawn in code; use for maths topics ("adding to 10", "subtraction", "sums to 20"). Set dots:true only for the youngest (maxValue ≤ 10).
     • {"type":"countObjects","instruction":"Count and colour","count":5,"maxCount":10}  — groups of dots to colour in and count, writing how many. A colour+count block for number topics.
+    • {"type":"countPictures","instruction":"Count and colour","items":["moon","lantern",...]}  — count-and-colour using the topic's OWN pictures (each group is copies of one object). USE THIS INSTEAD OF countObjects on a picture THEME so the counting stays on-topic. items must be the same drawable nouns used in the pictures block.
     • {"type":"traceNumbers","instruction":"Trace the numbers","upTo":10}  — dotted numerals 1..N to write over.
+    • {"type":"clocks","instruction":"What time is it?","mode":"read"|"draw","level":"half"|"quarter"|"five","count":6}  — correct analogue clock faces drawn in code, for telling-the-time topics. mode:read shows the time to write down (free, all ages); mode:draw prints the time for the child to draw the hands (make it "pro":true, ages 9-10 only). level scales with age: half=o'clock & half past (youngest), quarter=quarter times, five=any 5-minute interval (oldest).
 
   VARIETY IS THE POINT — a single-skill sheet bores a child. Every sheet MUST mix 3-4 DIFFERENT activity FAMILIES; never repeat one task:
-    COLOUR = pictures/countObjects · WRITE = traceWords/traceNumbers/writeLines/sentence · PUZZLE = circleWords/wordSearch/readWords · DO = sums/countObjects
+    COLOUR = pictures/countObjects/countPictures · WRITE = traceWords/traceNumbers/writeLines/sentence · PUZZLE = circleWords/wordSearch/readWords · DO = sums/countObjects/clocks
+  EVERY activity MUST relate to the requested topic — never drop in an off-topic filler (e.g. abstract dot-counting on a Ramadan sheet). On a picture theme, count the theme's OWN pictures with countPictures.
   ALWAYS include a colour or count-and-colour block for ages 3-5. Age 3-5 → mostly colour/trace/count with ONE easy puzzle, bigger and fewer. Age 6-10 → more write/puzzle/challenge, less colouring.
   Numbers example: {countObjects} + {traceNumbers} + {sums} (colour+count → write → do). Concept example: {pictures} + {circleWords} + {sentence}.
   DESIGN A FULL, CONNECTED LESSON — not a few disconnected mini-exercises:

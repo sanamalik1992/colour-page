@@ -1081,10 +1081,175 @@ function traceNumbersBlock(upTo: number, x: number, top: number, w: number, h: n
   return s
 }
 
+// "Count and colour" using the topic's OWN pictures: each cell shows K copies
+// of one object with a box to write how many. Stays on-topic (count the moons,
+// the lanterns…) and reuses thumbnails already generated for the sheet.
+async function countPicturesBlock(
+  entries: { buf: Buffer; count: number }[],
+  x: number,
+  top: number,
+  w: number,
+  h: number
+): Promise<{ svg: string; composites: sharp.OverlayOptions[] }> {
+  const n = entries.length
+  if (!n) return { svg: '', composites: [] }
+  const cols = Math.min(n, 4)
+  const rows = Math.ceil(n / cols)
+  const cellW = w / cols
+  const cellH = h / rows
+  const boxH = Math.min(64, cellH * 0.2)
+  const gapBox = 14
+  let svg = ''
+  const composites: sharp.OverlayOptions[] = []
+  for (let i = 0; i < n; i++) {
+    const c = i % cols, r = Math.floor(i / cols)
+    const cellX = x + c * cellW
+    const cellY = top + r * cellH
+    const K = Math.max(2, Math.min(5, entries[i].count))
+    const gapT = 8
+    // Thumbnails as big as fit across the cell, and within the picture budget.
+    const picBudget = cellH - boxH - gapBox
+    const t = Math.max(24, Math.floor(Math.min(picBudget * 0.96, (cellW * 0.92 - (K - 1) * gapT) / K)))
+    const thumb = await sharp(entries[i].buf).greyscale().resize(t, t, { fit: 'inside', background: '#ffffff' }).flatten({ background: '#ffffff' }).toBuffer()
+    const tm = await sharp(thumb).metadata()
+    const tw = tm.width || t, thh = tm.height || t
+    // Group the K pictures and the answer box as ONE unit, centred in the cell.
+    const unitH = thh + gapBox + boxH
+    const unitTop = cellY + Math.max(0, (cellH - unitH) / 2)
+    const rowW = K * tw + (K - 1) * gapT
+    const startX = cellX + (cellW - rowW) / 2
+    for (let k = 0; k < K; k++) {
+      composites.push({ input: thumb, left: Math.round(startX + k * (tw + gapT)), top: Math.round(unitTop) })
+    }
+    const bw = boxH * 1.3
+    const bx = cellX + (cellW - bw) / 2
+    const by = unitTop + thh + gapBox
+    svg += `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${boxH.toFixed(1)}" rx="10" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+  }
+  return { svg, composites }
+}
+
+// Draw a digital time label "H:MM" centred at (cx, midY) using the glyph font
+// (the font has no colon, so draw it as two dots).
+function timeLabelSvg(hour: number, minute: number, cx: number, midY: number, gh: number): string {
+  const hs = String(hour)
+  const ms = minute < 10 ? `0${minute}` : String(minute)
+  const colonW = gh * 0.34
+  const gap = gh * 0.12
+  const total = numberWidth(hs, gh) + gap + colonW + gap + numberWidth(ms, gh)
+  let px = cx - total / 2
+  const yTop = midY - gh / 2
+  const st = Math.max(5, gh * 0.13)
+  let s = numberSvg(hs, px, yTop, gh, st)
+  px += numberWidth(hs, gh) + gap
+  const dotR = Math.max(2.5, gh * 0.07)
+  const colX = px + colonW / 2
+  s += `<circle cx="${colX.toFixed(1)}" cy="${(yTop + gh * 0.34).toFixed(1)}" r="${dotR.toFixed(1)}" fill="#111"/>`
+  s += `<circle cx="${colX.toFixed(1)}" cy="${(yTop + gh * 0.66).toFixed(1)}" r="${dotR.toFixed(1)}" fill="#111"/>`
+  px += colonW + gap
+  s += numberSvg(ms, px, yTop, gh, st)
+  return s
+}
+
+// One analogue clock face at (cx, cy) radius r. Hands are drawn only when
+// `hands` is true (read-the-clock); otherwise the face is left empty for the
+// child to draw them (draw-the-hands).
+function clockFaceSvg(cx: number, cy: number, r: number, hour: number, minute: number, hands: boolean): string {
+  const P = (n: number) => n.toFixed(1)
+  let s = `<circle cx="${P(cx)}" cy="${P(cy)}" r="${P(r)}" fill="none" stroke="#111" stroke-width="${Math.max(3, r * 0.045)}"/>`
+  // Minute ticks (long every 5).
+  for (let m = 0; m < 60; m++) {
+    const a = (m / 60) * 2 * Math.PI
+    const outer = r * 0.96
+    const inner = m % 5 === 0 ? r * 0.86 : r * 0.92
+    const sw = m % 5 === 0 ? Math.max(2, r * 0.03) : Math.max(1, r * 0.015)
+    s += `<line x1="${P(cx + Math.sin(a) * inner)}" y1="${P(cy - Math.cos(a) * inner)}" x2="${P(cx + Math.sin(a) * outer)}" y2="${P(cy - Math.cos(a) * outer)}" stroke="#111" stroke-width="${sw}"/>`
+  }
+  // Hour numbers 1..12.
+  const gh = r * 0.24
+  for (let i = 1; i <= 12; i++) {
+    const a = (i / 12) * 2 * Math.PI
+    const nx = cx + Math.sin(a) * r * 0.72
+    const ny = cy - Math.cos(a) * r * 0.72
+    const str = String(i)
+    s += numberSvg(str, nx - numberWidth(str, gh) / 2, ny - gh / 2, gh, Math.max(3, gh * 0.14))
+  }
+  if (hands) {
+    const ma = (minute / 60) * 2 * Math.PI
+    const ha = ((hour % 12) / 12 + minute / 720) * 2 * Math.PI
+    const hand = (ang: number, len: number, sw: number) =>
+      `<line x1="${P(cx)}" y1="${P(cy)}" x2="${P(cx + Math.sin(ang) * len)}" y2="${P(cy - Math.cos(ang) * len)}" stroke="#111" stroke-width="${sw}" stroke-linecap="round"/>`
+    s += hand(ha, r * 0.5, Math.max(4, r * 0.06))
+    s += hand(ma, r * 0.8, Math.max(3, r * 0.045))
+  }
+  s += `<circle cx="${P(cx)}" cy="${P(cy)}" r="${Math.max(3, r * 0.05).toFixed(1)}" fill="#111"/>`
+  return s
+}
+
+// "Telling the time": a row of analogue clocks. read = clock shows a time and
+// the child writes it; draw = the time is printed and the child draws the hands.
+// Times are generated to match the age level. Deterministic — never the model.
+function clocksBlock(
+  mode: 'read' | 'draw',
+  level: 'oclock' | 'half' | 'quarter' | 'five',
+  count: number,
+  x: number,
+  top: number,
+  w: number,
+  h: number,
+  salt = 0
+): string {
+  const n = Math.max(2, Math.min(6, Math.round(count)))
+  const rng = makeRng(n * 71 + (mode === 'read' ? 3 : 5) + level.length * 13 + salt * 7919)
+  const ri = (min: number, max: number) => min + Math.floor(rng() * (max - min + 1))
+  const minutesFor = (): number => {
+    if (level === 'oclock') return 0
+    if (level === 'half') return [0, 30][ri(0, 1)]
+    if (level === 'quarter') return [0, 15, 30, 45][ri(0, 3)]
+    return ri(0, 11) * 5
+  }
+  const times: { h: number; m: number }[] = []
+  const seen = new Set<string>()
+  let guard = 0
+  while (times.length < n && guard++ < n * 40) {
+    const t = { h: ri(1, 12), m: minutesFor() }
+    const key = `${t.h}:${t.m}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    times.push(t)
+  }
+
+  const cols = Math.min(n, n <= 3 ? n : 3)
+  const rows = Math.ceil(n / cols)
+  const cellW = w / cols
+  const cellH = h / rows
+  const labelH = Math.min(64, cellH * 0.22)
+  const faceArea = cellH - labelH - 8
+  const r = Math.max(28, Math.min(cellW * 0.42, faceArea * 0.46))
+  let s = ''
+  times.forEach((t, i) => {
+    const c = i % cols, row = Math.floor(i / cols)
+    const cellX = x + c * cellW
+    const cellY = top + row * cellH
+    const cx = cellX + cellW / 2
+    // Read: hands on the face, blank line below to write the time.
+    // Draw: empty face, printed time below to draw the hands for.
+    const faceCy = cellY + (mode === 'draw' ? faceArea * 0.5 : faceArea * 0.5) + 4
+    s += clockFaceSvg(cx, faceCy, r, t.h, t.m, mode === 'read')
+    const labY = cellY + faceArea + 8
+    if (mode === 'read') {
+      s += `<line x1="${(cx - r * 0.85).toFixed(1)}" y1="${(labY + labelH * 0.7).toFixed(1)}" x2="${(cx + r * 0.85).toFixed(1)}" y2="${(labY + labelH * 0.7).toFixed(1)}" stroke="#c9c4ba" stroke-width="3"/>`
+    } else {
+      s += timeLabelSvg(t.h, t.m, cx, labY + labelH * 0.5, Math.min(labelH * 0.9, r * 0.6))
+    }
+  })
+  return s
+}
+
 const ACTIVITY_WEIGHT: Record<string, number> = {
   note: 0.6, pictures: 3, circleWords: 1.8, traceWords: 1.6,
   wordSearch: 2.6, readWords: 1.8, writeLines: 1.4, sentence: 1.4, sums: 3.2,
-  countObjects: 2.6, traceNumbers: 1.8,
+  countObjects: 2.6, countPictures: 2.4, traceNumbers: 1.8, clocks: 3.2,
 }
 
 /**
@@ -1104,17 +1269,24 @@ export async function buildComposedSheet(
   const bodyX = MARGIN
   const bodyW = A4_W - MARGIN * 2
 
-  // Pre-generate any pictures (parallel); drop a pictures block if none render.
-  const picByAct = new Map<Activity, Buffer[]>()
-  await Promise.all(
-    acts.map(async (a) => {
-      if (a.type === 'pictures' && genPicture) {
-        const bufs = (await Promise.all(a.items.slice(0, 4).map((o) => genPicture(o).catch(() => null)))).filter((b): b is Buffer => b != null)
-        if (bufs.length) picByAct.set(a, bufs)
-      }
-    })
-  )
-  const live = acts.filter((a) => a.type !== 'pictures' || picByAct.has(a))
+  // Every picture-based block (colour-and-label, count-the-pictures) draws the
+  // topic's own objects. Generate each unique object ONCE (parallel) into a
+  // shared map so both block types reuse the same thumbnail — no double cost.
+  const needsPic = (a: Activity): a is Extract<Activity, { items: string[] }> =>
+    a.type === 'pictures' || a.type === 'countPictures'
+  const picNeeds = new Set<string>()
+  for (const a of acts) if (needsPic(a)) a.items.slice(0, 4).forEach((o) => picNeeds.add(o))
+
+  const picMap = new Map<string, Buffer>()
+  if (genPicture && picNeeds.size) {
+    const names = [...picNeeds]
+    const results = await Promise.all(names.map((o) => genPicture(o).catch(() => null)))
+    names.forEach((o, i) => { if (results[i]) picMap.set(o, results[i]!) })
+  }
+  const picsFor = (a: Extract<Activity, { items: string[] }>): Buffer[] =>
+    a.items.slice(0, 4).map((o) => picMap.get(o)).filter((b): b is Buffer => b != null)
+  // Drop a picture-based block if none of its objects rendered.
+  const live = acts.filter((a) => !needsPic(a) || picsFor(a).length > 0)
 
   let overlay = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
   overlay += `<rect width="${A4_W}" height="${A4_H}" fill="#ffffff"/>`
@@ -1151,11 +1323,22 @@ export async function buildComposedSheet(
       const ch = y + sliceH - nextY
       switch (a.type) {
         case 'pictures': {
-          const { svg: ps, composites: comps } = await picturesRowBlock(picByAct.get(a) || [], !!a.label, bodyX, nextY, bodyW, ch)
+          const { svg: ps, composites: comps } = await picturesRowBlock(picsFor(a), !!a.label, bodyX, nextY, bodyW, ch)
           overlay += ps
           composites.push(...comps)
           break
         }
+        case 'countPictures': {
+          // Count the topic's own pictures: each group is K copies of one object
+          // with a box to write how many. Counts are stable per block/position.
+          const bufs = picsFor(a)
+          const entries = bufs.map((buf, i) => ({ buf, count: 2 + ((blockIndex * 7 + i * 3) % 4) }))
+          const { svg: cs, composites: comps } = await countPicturesBlock(entries, bodyX, nextY, bodyW, ch)
+          overlay += cs
+          composites.push(...comps)
+          break
+        }
+        case 'clocks': overlay += clocksBlock(a.mode, a.level, a.count, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'circleWords': overlay += circleWordsBlock(a.words, bodyX, nextY, bodyW, ch); break
         case 'traceWords': overlay += traceWordsBlock(a.words, '', bodyX, nextY, bodyW, ch); break
         case 'wordSearch': overlay += miniWordSearchBlock(a.words, bodyX, nextY, bodyW, ch); break
