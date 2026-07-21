@@ -707,3 +707,109 @@ export async function buildLetterPuzzleSheet(letter: string, words: string[], se
   svg += `</svg>`
   return sharp(Buffer.from(svg)).png().toBuffer()
 }
+
+// Big words listed to read aloud (1–2 columns depending on how many).
+function readWordsBlock(list: string[], x: number, top: number, w: number, h: number): string {
+  const cols = list.length <= 4 ? 1 : 2
+  const rows = Math.ceil(list.length / cols)
+  const cellW = w / cols
+  const cellH = h / rows
+  const longest = list.reduce((m, word) => Math.max(m, word.length), 1)
+  const gh = Math.max(48, Math.min(cellH * 0.62, (cellW * 0.86) / (longest * 0.62), 130))
+  let s = ''
+  list.forEach((word, i) => {
+    const c = i % cols
+    const r = Math.floor(i / cols)
+    const ww = numberWidth(word, gh)
+    const cx = x + c * cellW
+    const cy = top + r * cellH
+    const gy = cy + (cellH - gh) / 2
+    s += numberSvg(word, cx + (cellW - ww) / 2, gy, gh, 13)
+    // a soft dot bullet
+    s += `<circle cx="${(cx + 22).toFixed(1)}" cy="${(gy + gh / 2).toFixed(1)}" r="9" fill="#F2A81E"/>`
+  })
+  return s
+}
+
+// Numbered write-in lines (used as the Pro "write them" activity).
+function writeLinesBlock(n: number, x: number, top: number, w: number, h: number): string {
+  const rows = Math.max(1, Math.min(n, 6))
+  const rowH = Math.min(130, h / rows)
+  const numH = Math.round(rowH * 0.42)
+  let s = ''
+  for (let i = 0; i < rows; i++) {
+    const y = top + i * rowH
+    s += numberSvg(String(i + 1), x, y, numH, 12)
+    const lx = x + numberWidth(String(i + 1), numH) + 40
+    s += `<line x1="${lx.toFixed(1)}" y1="${(y + numH).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${(y + numH).toFixed(1)}" stroke="#d0cabf" stroke-width="3"/>`
+  }
+  return s
+}
+
+/**
+ * Word-practice sheet for sight / tricky / specific words that can't be drawn
+ * (e.g. there, then, that). Fully deterministic: read them, trace them, find
+ * them in a word search, and (Pro) write them. No image model needed.
+ */
+export async function buildWordPracticeSheet(title: string | undefined, words: string[], settings: PhotoJobSettings, isPro = false): Promise<Buffer> {
+  const list = words.map((w) => w.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean).slice(0, 8)
+  const bodyX = MARGIN
+  const bodyW = A4_W - MARGIN * 2
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
+  svg += `<rect width="${A4_W}" height="${A4_H}" fill="#ffffff"/>`
+
+  // Title band.
+  let y = Math.round(MARGIN * 0.7)
+  const t = (title && title.trim()) || 'MY WORDS'
+  {
+    let th = 78
+    let tw = textWidth(t, th)
+    const maxTW = bodyW * 0.92
+    if (tw > maxTW) { th = Math.max(40, Math.floor(th * maxTW / tw)); tw = textWidth(t, th) }
+    svg += textSvg(t, (A4_W - tw) / 2, y, th, 14, { color: '#111' })
+    const uy = y + th + 20
+    svg += `<line x1="${((A4_W - tw) / 2).toFixed(1)}" y1="${uy}" x2="${((A4_W + tw) / 2).toFixed(1)}" y2="${uy}" stroke="#F2A81E" stroke-width="8" stroke-linecap="round"/>`
+    y = uy + 60
+  }
+
+  const bottom = A4_H - MARGIN
+  const remaining = bottom - y
+  const gap = 46
+  // Region proportions: free = read/trace/find; Pro also = write.
+  const fr = isPro ? [0.24, 0.22, 0.30, 0.24] : [0.32, 0.28, 0.40]
+
+  // Read the words.
+  {
+    const { svg: hSvg, nextY } = headingSvg('READ THE WORDS', bodyX, y)
+    svg += hSvg
+    const hgt = remaining * fr[0] - (nextY - y)
+    svg += readWordsBlock(list, bodyX, nextY, bodyW, hgt)
+    y = nextY + hgt + gap
+  }
+  // Trace the words.
+  {
+    const { svg: hSvg, nextY } = headingSvg('TRACE THE WORDS', bodyX, y)
+    svg += hSvg
+    const hgt = remaining * fr[1] - (nextY - y)
+    svg += traceWordsBlock(list, '', bodyX, nextY, bodyW, hgt)
+    y = nextY + hgt + gap
+  }
+  // Find the words (word search).
+  {
+    const { svg: hSvg, nextY } = headingSvg('FIND THE WORDS', bodyX, y)
+    svg += hSvg
+    const hgt = isPro ? remaining * fr[2] - (nextY - y) : bottom - nextY
+    svg += miniWordSearchBlock(list, bodyX, nextY, bodyW, hgt)
+    y = nextY + hgt + gap
+  }
+  // Pro: write the words.
+  if (isPro) {
+    const { svg: hSvg, nextY } = headingSvg('WRITE THE WORDS', bodyX, y)
+    svg += hSvg
+    svg += writeLinesBlock(list.length, bodyX, nextY, bodyW, bottom - nextY)
+  }
+
+  svg += `</svg>`
+  return sharp(Buffer.from(svg)).png().toBuffer()
+}

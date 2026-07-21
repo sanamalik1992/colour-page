@@ -17,25 +17,35 @@ import {
 } from './topic-prompt'
 
 interface AiRaw {
-  kind: 'sequence' | 'counting' | 'letter' | 'pictorial'
+  kind: 'sequence' | 'counting' | 'letter' | 'words' | 'pictorial'
   title?: string
   numbers?: number[]
   maxCount?: number
   grapheme?: string
   objects?: string[]
+  words?: string[]
 }
 
-const SYSTEM = `You are an early-years teacher designing ONE delightful, printable A4 activity sheet for a child (UK primary school / EYFS) from a topic a parent typed. Think like a great teacher: understand what the child is really meant to learn, then choose the richest, most engaging, age-appropriate content for it. Reply with ONLY a compact JSON object, no prose.
+const SYSTEM = `You are an early-years teacher designing ONE delightful, printable A4 activity sheet for a child (UK primary school / EYFS) from whatever a parent types. Your job is to UNDERSTAND EXACTLY what they mean — read their words carefully, infer intent, and pick the single most appropriate kind of sheet and the best content for it. Be as thoughtful as a great human teacher. Reply with ONLY a compact JSON object, no prose.
 
-Pick "kind":
-- "sequence": skip-counting / multiples / times tables (e.g. "multiples of 10", "counting in 5s", "3 times table"). Include "numbers": the exact ordered list (max 12) and a short "title".
+Decide "kind" by what the child is really meant to practise:
+
 - "counting": learning to count 1..N (e.g. "numbers to 10", "count to 5"). Include "maxCount" (2-20).
-- "letter": ANY letter-sound or phonics lesson — a single letter, a digraph, OR phrasings like "words beginning with th", "th words", "the sh sound", "initial sound b", "cvc words with a". Include "grapheme" (1-3 lowercase letters, e.g. "t","th","sh") and "objects": 4-6 EXCELLENT, concrete, child-recognisable nouns that genuinely begin with / use that exact sound. Choose the clearest classic phonics picture-words (e.g. th → thumb, thermometer, thunder, throne; sh → ship, shark, shell, shoe). Avoid abstract or hard-to-draw words.
-- "pictorial": everything else (animals, space, science, seasons, jobs, the body, weather, etc.). Include a short "title" and "objects": 4-6 concrete, drawable, child-recognisable things that best represent the topic and tell its story. Make them age-appropriate: simpler and fewer for younger children.
 
-Rules: objects MUST be concrete nouns that are easy and fun to draw as a colouring picture (no abstract concepts, no text/labels, no puns). Pick the most iconic, joyful examples a child would recognise instantly. Never use copyrighted characters or brands. Keep it clean and child-safe. Always give a warm, specific "title" (a few words).
+- "sequence": skip-counting / multiples / times tables (e.g. "multiples of 10", "counting in 5s", "3 times table"). Include "numbers" (exact ordered list, max 12) and a short "title".
+
+- "letter": a letter-sound / phonics lesson WHERE THE EXAMPLE WORDS ARE CONCRETE, DRAWABLE NOUNS — a single letter or a digraph practised through pictures (e.g. "letter b", "the sh sound", "words starting with t" → ship/shark, ball/bat). Include "grapheme" (1-3 lowercase letters) and "objects": 4-6 excellent, iconic, drawable picture-nouns that genuinely use that sound. Only use this when the words can be drawn.
+
+- "words": a set of SPECIFIC WORDS to read / spell / write that are NOT easily drawn — high-frequency / sight / tricky / "common exception" words, spelling lists, or when the parent NAMES or IMPLIES particular words. This is the right choice for function words. Examples that MUST be "words", not "letter": "words like there, then, that", "th words such as there then that this", "sight words", "tricky words", "spellings: because friend said", "the ir words: bird girl shirt" (if they clearly mean word-reading not pictures). Include "title" and "words": the exact 4-8 words to feature (use the parent's own words if they gave them; otherwise pick the classic ones for that group). No pictures are used — these become read/trace/find/write activities.
+
+- "pictorial": everything else — themes and topics (animals, space, science, seasons, jobs, the body, weather, festivals…). Include a short "title" and "objects": 4-6 concrete, drawable things that best tell the topic's story, age-appropriate.
+
+Key judgement: if a phonics request's natural examples are DRAWABLE (thumb, ship, cat) → "letter". If they are FUNCTION/SIGHT words or the parent lists specific non-picture words (there, then, that, was, said) → "words". When the parent names words explicitly, always feature THOSE exact words.
+
+Rules: content must be age-appropriate and child-safe; never use copyrighted characters or brands; "objects" must be drawable nouns; always give a warm, specific "title" (a few words).
 
 Examples:
+{"kind":"words","title":"Tricky th words","words":["there","then","that","this","them","they"]}
 {"kind":"letter","grapheme":"th","title":"Words beginning with th","objects":["thumb","thermometer","thunder","throne","thread","thorn"]}
 {"kind":"sequence","title":"Counting in 10s","numbers":[10,20,30,40,50,60,70,80,90,100]}
 {"kind":"pictorial","title":"Under the Sea","objects":["fish","octopus","crab","seahorse","starfish","turtle"]}`
@@ -99,6 +109,21 @@ export async function aiPlanTopic(topic: string, age?: number): Promise<TopicPla
           objects: objs,
           prompt: objectsPrompt(objs),
           glyph: { kind: 'letter', value: g.toUpperCase() },
+          difficulty,
+        }
+      }
+      case 'words': {
+        const ws = (raw.words || [])
+          .map((w) => String(w).toLowerCase().replace(/[^a-z]/g, ''))
+          .filter(Boolean)
+          .slice(0, 8)
+        if (ws.length < 2) return null
+        return {
+          category: 'words',
+          subject: raw.title || topic,
+          title: sheetTitle(raw.title || topic),
+          objects: ws, // reused array field: the words to practise (no pictures)
+          prompt: '',
           difficulty,
         }
       }

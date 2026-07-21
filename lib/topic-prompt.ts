@@ -22,6 +22,7 @@
 
 export type TopicCategory =
   | 'letter'
+  | 'words'
   | 'number'
   | 'sequence'
   | 'shapes'
@@ -228,6 +229,35 @@ function detectBeginningSound(topic: string): string | null {
   return null
 }
 
+// Sight / tricky / high-frequency / spelling words, or an explicit list the
+// parent gave ("words like there, then, that", "sight words: was said the").
+// These are read/traced/written, not drawn — so they get a word-practice sheet.
+const WORD_CUES = /\b(sight|tricky|high[- ]?frequency|hfw|common(?:\s+exception)?|spelling|spellings)\b/i
+const WORD_STOP = new Set([
+  'words', 'word', 'like', 'such', 'as', 'including', 'sight', 'tricky', 'high',
+  'frequency', 'hfw', 'common', 'exception', 'exceptions', 'spelling', 'spellings',
+  'reading', 'read', 'practice', 'practise', 'list', 'the', 'and', 'or', 'of', 'for',
+  'my', 'these', 'today', 'learning', 'learn', 'that', 'begin', 'beginning', 'start',
+  'starting', 'with', 'ending', 'end',
+])
+function detectWordPractice(topic: string): { words: string[]; title: string } | null {
+  const t = topic.toLowerCase()
+  const listMatch = t.match(/(?:like|such as|including|:|-|—)\s*(.+)$/)
+  const source = listMatch ? listMatch[1] : t
+  const tokens = source
+    .split(/[,/]|\band\b|\bor\b|\s+/)
+    .map((s) => s.replace(/[^a-z]/g, ''))
+    .filter(Boolean)
+  // Keep the actual words (allow "that" etc. through only as list content).
+  const words = tokens.filter((w) => w.length >= 2 && w.length <= 12 && !WORD_STOP.has(w))
+  const explicitList = /\bwords?\s+(?:like|such as|including)\b/.test(t) || /:/.test(t)
+  const hasCue = WORD_CUES.test(t) || explicitList
+  if (hasCue && words.length >= 2) {
+    return { words: words.slice(0, 8), title: WORD_CUES.test(t) ? 'My tricky words' : 'My words' }
+  }
+  return null
+}
+
 // Objects that begin with (or use) a grapheme.
 function objectsForGrapheme(g: string): string[] {
   if (g.length === 1) return LETTER_OBJECTS[g] || []
@@ -288,6 +318,19 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
       objects: objs,
       prompt: objectsPrompt(objs), // fallback single-image prompt
       glyph: { kind: 'letter', value },
+      difficulty,
+    }
+  }
+
+  // --- sight / tricky / specific words (read-trace-write, no pictures) ---
+  const wp = detectWordPractice(topic)
+  if (wp) {
+    return {
+      category: 'words',
+      subject: wp.title,
+      title: sheetTitle(wp.title),
+      objects: wp.words,
+      prompt: '',
       difficulty,
     }
   }
