@@ -138,7 +138,12 @@ export async function aiPlanTopic(topic: string, age?: number): Promise<TopicPla
       // A stronger model plans richer, more pedagogically-sound sheets and
       // reads intent (e.g. "words beginning with th") far more reliably.
       model: 'claude-sonnet-5',
-      max_tokens: 500,
+      // Sonnet 5 runs adaptive thinking by default, and max_tokens caps
+      // thinking + output together — so thinking could eat the budget and
+      // truncate the JSON. This is a fast classification/extraction task, so
+      // turn thinking off and keep the whole budget for the plan.
+      thinking: { type: 'disabled' },
+      max_tokens: 800,
       system: SYSTEM,
       messages: [{ role: 'user', content: `Topic: "${topic}"\nChild age: ${age ?? 'unknown'}` }],
     })
