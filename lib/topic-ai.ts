@@ -103,7 +103,7 @@ Decide "kind" by what the child is really meant to practise:
     • {"type":"wordSearch","instruction":"Find the words","words":[...]}
     • {"type":"writeLines","instruction":"Write 3 nouns","count":3}
     • {"type":"sentence","instruction":"Write a sentence","lines":2}
-  Add "pro":true to the LAST 1-2 blocks (these are unlocked by Pro; free users still get the earlier ones). Order blocks from easy→hard. Choose blocks that genuinely teach THIS topic. Include a warm "title".
+  Add "pro":true to the LAST 1-2 blocks (these are unlocked by Pro; free users still get the earlier ones). Order blocks from easy→hard. Choose blocks that genuinely teach THIS topic. Keep every "instruction" very short — 2 to 4 words, like a worksheet heading ("Colour these", "Circle the adjectives", "Trace the words"). Include a warm "title" (max 4 words).
 
 Key judgement: understand the REAL learning goal, then choose the format that teaches it best — don't force a concept into a colouring grid. Phonics with drawable examples → "letter"; sight/function/named words → "words"; a theme to colour → "pictorial"; a concept or open-ended "make me an activity sheet" → "composed". When the parent names specific words/examples, use THOSE.
 
