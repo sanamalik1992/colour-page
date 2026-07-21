@@ -27,6 +27,27 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 
+  // Stale-job reaper: the process function can't run longer than maxDuration
+  // (300s). If a job has been non-terminal well past that, the serverless
+  // function died mid-run (e.g. a stalled network call) and can never finish or
+  // report its own failure — so it would sit at 99% forever. Mark it failed on
+  // read so the UI unsticks. Uses processing_started_at (set when the job locks)
+  // and falls back to created_at.
+  const STALE_MS = 360_000 // 6 minutes — comfortably beyond the 300s ceiling
+  if (job.status !== 'done' && job.status !== 'failed') {
+    const startedAt = job.processing_started_at || job.created_at
+    if (startedAt && Date.now() - new Date(startedAt).getTime() > STALE_MS) {
+      const message =
+        'This sheet timed out while generating. Please try again — it usually works on a second go.'
+      await supabase
+        .from('photo_jobs')
+        .update({ status: 'failed', error: message, updated_at: new Date().toISOString() })
+        .eq('id', job.id)
+      job.status = 'failed'
+      job.error = message
+    }
+  }
+
   // Generate signed URLs for outputs
   let signedPdfUrl: string | undefined
   let signedPngUrl: string | undefined

@@ -11,6 +11,32 @@
 import sharp from 'sharp'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
+/**
+ * fetch() with a hard timeout. Node's global fetch never times out on its own,
+ * so a stalled socket to Replicate would hang the whole serverless function
+ * until Vercel kills it at maxDuration — and once killed, our catch block never
+ * runs, leaving the job stuck in "processing" (the UI shows 99% forever). An
+ * AbortController guarantees every network call either resolves or throws.
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = 30000
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Network request timed out after ${timeoutMs}ms`)
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Provider interface
 // ---------------------------------------------------------------------------
@@ -99,7 +125,7 @@ export async function processWithReplicate(
   // Create prediction. `Prefer: wait` asks Replicate to hold the connection
   // and return the finished prediction directly (up to ~60s), which removes
   // polling latency for the common fast case.
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     'https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions',
     {
       method: 'POST',
@@ -117,7 +143,8 @@ export async function processWithReplicate(
           safety_tolerance: 2,
         },
       }),
-    }
+    },
+    60000
   )
 
   if (!res.ok) {
@@ -129,17 +156,20 @@ export async function processWithReplicate(
   await onProgress?.(60)
 
   // If `Prefer: wait` already returned a finished prediction, skip polling.
+  // kontext-pro is slower than schnell, so allow a longer (but still bounded)
+  // poll window before giving up.
   let result = prediction
   let attempts = 0
-  const maxAttempts = 120
+  const maxAttempts = 80 // × 1.5s = 120s
 
   while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
     await new Promise((r) => setTimeout(r, 1500))
     attempts++
 
-    const pollRes = await fetch(
+    const pollRes = await fetchWithTimeout(
       `https://api.replicate.com/v1/predictions/${prediction.id}`,
-      { headers: { Authorization: `Bearer ${token}` } }
+      { headers: { Authorization: `Bearer ${token}` } },
+      15000
     )
     result = await pollRes.json()
 
@@ -162,7 +192,7 @@ export async function processWithReplicate(
   await onProgress?.(85)
 
   // Download the result
-  const imgRes = await fetch(outputUrl)
+  const imgRes = await fetchWithTimeout(outputUrl, {}, 30000)
   if (!imgRes.ok) throw new Error('Failed to download generated image')
 
   return Buffer.from(await imgRes.arrayBuffer())
@@ -213,7 +243,7 @@ async function runFluxSchnell(
   onProgress?: (pct: number) => Promise<void>
 ): Promise<Buffer> {
   // flux-schnell: a fast (few seconds), cheap text-to-image model.
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     'https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions',
     {
       method: 'POST',
@@ -233,7 +263,8 @@ async function runFluxSchnell(
           disable_safety_checker: false,
         },
       }),
-    }
+    },
+    60000 // Prefer: wait=55 holds the connection up to ~55s
   )
 
   if (!res.ok) {
@@ -244,16 +275,21 @@ async function runFluxSchnell(
   const prediction = await res.json()
   await onProgress?.(60)
 
+  // Poll ceiling kept tight: schnell finishes in seconds, so if it hasn't
+  // completed in ~45s it's stuck — fail fast and let the caller retry rather
+  // than burning the whole function budget on one stalled prediction.
   let result = prediction
   let attempts = 0
-  const maxAttempts = 120
+  const maxAttempts = 30 // × 1.5s = 45s
 
   while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
     await new Promise((r) => setTimeout(r, 1500))
     attempts++
-    const pollRes = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    const pollRes = await fetchWithTimeout(
+      `https://api.replicate.com/v1/predictions/${prediction.id}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      15000
+    )
     result = await pollRes.json()
     await onProgress?.(Math.min(60 + Math.floor(attempts * 0.6), 80))
   }
@@ -272,7 +308,7 @@ async function runFluxSchnell(
 
   await onProgress?.(85)
 
-  const imgRes = await fetch(outputUrl)
+  const imgRes = await fetchWithTimeout(outputUrl, {}, 30000)
   if (!imgRes.ok) throw new Error('Failed to download generated image')
   const buf = Buffer.from(await imgRes.arrayBuffer())
   if (buf.length < 1000) throw new Error('Generated image was empty')
@@ -316,18 +352,18 @@ async function inkFraction(buffer: Buffer): Promise<number> {
 export async function generateGoodObject(
   prompt: string,
   settings: PhotoJobSettings,
-  extraTries = 2
+  extraTries = 1
 ): Promise<Buffer> {
+  // Only GROSS failures are rejected — a near-blank frame or a near-solid blob.
+  // Everything in between is accepted immediately so we don't multiply the
+  // generation time (and risk the function timing out) on healthy line art.
   let best: Buffer | null = null
-  let bestDist = Infinity
   for (let i = 0; i <= extraTries; i++) {
     const buf = await generateFromText(prompt, settings) // throws only on hard API failure
+    best = buf
     const ink = await inkFraction(buf)
-    if (ink >= 0.02 && ink <= 0.5) return buf // looks like healthy line art
-    // Otherwise keep the attempt whose ink is closest to a sensible ~12%.
-    const dist = ink < 0 ? Infinity : Math.abs(ink - 0.12)
-    if (dist < bestDist) { bestDist = dist; best = buf }
-    console.warn(`generateGoodObject: attempt ${i + 1} ink=${ink.toFixed(3)} out of range, retrying`)
+    if (ink < 0 || (ink > 0.008 && ink < 0.6)) return buf // healthy (or couldn't measure — keep it)
+    console.warn(`generateGoodObject: attempt ${i + 1} ink=${ink.toFixed(3)} (blank/blob), retrying`)
   }
   return best!
 }
