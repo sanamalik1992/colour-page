@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { preprocessImage, processWithReplicate, generateFromText, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
-import { renderNumberSheet, renderSequenceSheet, buildLetterSheet } from '@/lib/topic-render'
+import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet } from '@/lib/topic-render'
+import { singleObjectPrompt } from '@/lib/topic-prompt'
 import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
@@ -87,6 +88,29 @@ export async function POST(request: NextRequest) {
         const maxN = parseInt(glyph.value.split('-')[1] || '10', 10)
         lineArtBuffer = await renderNumberSheet(maxN, settings)
         await updateJob(jobId, { progress: 80 })
+      } else if (settings.category === 'letter' && glyph?.kind === 'letter' && settings.objects?.length) {
+        // Letter/phonics: generate each object as its own clear picture (in
+        // parallel), then compose a page-filling sticker grid under the stamped
+        // grapheme + trace. Clearer + fuller than one merged image.
+        if (!hasReplicate) throw new Error('Text-to-image generation is not configured')
+        await updateJob(jobId, { progress: 20 })
+        const pics = (await Promise.all(
+          settings.objects.slice(0, 6).map((obj) =>
+            generateFromText(singleObjectPrompt(obj), settings).catch((e) => {
+              console.error(`object "${obj}" failed:`, e)
+              return null
+            })
+          )
+        )).filter((b): b is Buffer => b != null)
+        await updateJob(jobId, { progress: 78 })
+
+        if (pics.length >= 2) {
+          lineArtBuffer = await buildLetterStickerSheet(pics, glyph.value, settings)
+        } else {
+          // Fallback: one combined image under the header (old behaviour).
+          const generated = await generateFromText(settings.prompt || '', settings)
+          lineArtBuffer = await buildLetterSheet(generated, glyph.value, settings)
+        }
       } else {
         // Everything else needs the text-to-image model. There's no CV fallback
         // (nothing to trace without a photo), so a missing token is fatal.

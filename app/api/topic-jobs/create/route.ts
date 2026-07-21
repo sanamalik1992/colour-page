@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
       prompt: plan.prompt,
       glyph: plan.glyph,
       numbers: plan.numbers,
+      objects: plan.objects,
     }
 
     const isPro = usage.isPro
