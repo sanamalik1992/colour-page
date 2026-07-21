@@ -88,6 +88,7 @@ export async function aiPlanTopic(topic: string, age?: number): Promise<TopicPla
         return {
           category: 'letter',
           subject: g.length > 1 ? `Sound "${g}"` : `Letter ${g.toUpperCase()}`,
+          objects: objs,
           prompt: objectsPrompt(objs),
           glyph: { kind: 'letter', value: g.toUpperCase() },
           difficulty,

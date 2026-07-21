@@ -49,6 +49,7 @@ export interface TopicPlan {
   prompt: string // the text-to-image prompt
   glyph?: GlyphSpec // deterministic overlay for letters/numbers (later stage)
   numbers?: number[] // for 'sequence' — the exact numbers to render (e.g. multiples)
+  objects?: string[] // for letter/pictorial — generate each separately, then grid
   difficulty: Difficulty
 }
 
@@ -70,6 +71,15 @@ const STYLE_SUFFIX =
 export function objectsPrompt(objs: string[]): string {
   return `Coloring book line art of ${objs.length} separate simple objects, each ` +
     `drawn large with space around it: ${objs.join(', ')}. ${STYLE_SUFFIX}`
+}
+
+// One clear, whole object filling the frame — used per sticker cell so each
+// picture is instantly recognisable and never merged with another (no puns).
+export function singleObjectPrompt(obj: string): string {
+  return `Coloring book line art of one single ${obj}. A whole ${obj}, big and bold, ` +
+    `centred and filling the frame, instantly recognisable to a small child, cheerful ` +
+    `friendly cartoon style with a happy face if it is a creature. Only one ${obj} and ` +
+    `nothing else in the picture. ${STYLE_SUFFIX}`
 }
 
 // A pictorial colouring prompt for a set of concrete subjects.
@@ -130,7 +140,7 @@ const LETTER_OBJECTS: Record<string, string[]> = {
 
 // Common phonics digraphs → objects that use that sound.
 const DIGRAPH_OBJECTS: Record<string, string[]> = {
-  sh: ['sheep', 'shell', 'ship', 'shark'],
+  sh: ['ship', 'shark', 'shoe', 'shell'],
   ch: ['chair', 'cheese', 'cherry', 'chick'],
   th: ['thumb', 'thread', 'throne', 'thermometer'],
   ng: ['ring', 'king', 'swing', 'wing'],
@@ -226,12 +236,16 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   const phonics = letter ? null : detectPhonics(topic)
   const grapheme = letter || phonics
   if (grapheme) {
-    const objs = objectsForGrapheme(grapheme).slice(0, Math.max(3, n))
+    // Fill the sticker grid: 4 pictures for younger, up to 6 for older.
+    const want = difficulty.detailLevel === 'high' ? 6 : 4
+    const pool = objectsForGrapheme(grapheme)
+    const objs = (pool.length ? pool : ['ball', 'cat', 'star', 'sun']).slice(0, want)
     const value = grapheme.toUpperCase()
     return {
       category: 'letter',
       subject: phonics ? `Sound "${grapheme}"` : `Letter ${value}`,
-      prompt: objectsPrompt(objs.length ? objs : ['a ball', 'a cat', 'a star']),
+      objects: objs,
+      prompt: objectsPrompt(objs), // fallback single-image prompt
       glyph: { kind: 'letter', value },
       difficulty,
     }

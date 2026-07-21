@@ -16,6 +16,7 @@ export interface PhotoJobSettings {
   category?: string
   prompt?: string
   numbers?: number[] // for 'sequence' sheets (multiples / times tables)
+  objects?: string[] // for 'letter'/pictorial — generate each separately, then grid
   // Deterministic glyph to draw ourselves for letter/number sheets:
   //  { kind: 'letter', value: 'B' } | { kind: 'numberRange', value: '1-10' }
   glyph?: { kind: 'letter' | 'numberRange'; value: string }
