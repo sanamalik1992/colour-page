@@ -448,13 +448,17 @@ function makeWordSearch(words: string[], size: number): string[][] {
 }
 
 // A small activity heading with a short underline, returned as SVG. Returns the
-// y just below the heading so callers can stack content under it.
+// y just below the heading so callers can stack content under it. The font
+// shrinks to fit the available width so long instructions never clip off-page.
 function headingSvg(text: string, x: number, y: number): { svg: string; nextY: number } {
-  const h = 54
-  const w = textWidth(text, h)
+  const maxW = A4_W - MARGIN - x
+  let h = 54
+  let w = textWidth(text, h)
+  if (w > maxW) { h = Math.max(30, Math.floor(h * (maxW / w))); w = textWidth(text, h) }
+  const uy = y + h + 16
   let s = textSvg(text, x, y, h, 12, { color: '#111' })
-  s += `<line x1="${x}" y1="${(y + h + 16).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${(y + h + 16).toFixed(1)}" stroke="#F2A81E" stroke-width="7" stroke-linecap="round"/>`
-  return { svg: s, nextY: y + h + 48 }
+  s += `<line x1="${x}" y1="${uy.toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${uy.toFixed(1)}" stroke="#F2A81E" stroke-width="7" stroke-linecap="round"/>`
+  return { svg: s, nextY: uy + 30 }
 }
 
 // Index-based pseudo-random so blocks vary but render identically each time

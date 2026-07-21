@@ -77,9 +77,14 @@ export interface TopicPlan {
 }
 
 // Turn any topic label into a clean CAPS heading our glyph font can render
-// (it draws A–Z and 0–9 only, so drop everything else).
+// (it draws A–Z and 0–9 only, so drop everything else). Trims to a whole-word
+// boundary so a long title never loses its last letter mid-word.
 export function sheetTitle(s: string): string {
-  return s.toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 26)
+  const clean = s.toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (clean.length <= 30) return clean
+  const cut = clean.slice(0, 30)
+  const sp = cut.lastIndexOf(' ')
+  return (sp > 12 ? cut.slice(0, sp) : cut).trim()
 }
 
 // Pins every prompt to the existing colouring-page look. Tuning this affects
