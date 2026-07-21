@@ -52,6 +52,11 @@ function normalizeActivities(raw: RawActivity[]): Activity[] {
       case 'sentence':
         out.push({ type: 'sentence', instruction: instr, lines: Math.max(1, Math.min(5, Math.round(a.lines || 2))), pro })
         break
+      case 'sums': {
+        const op = a.op === 'subtract' || a.op === 'mixed' ? a.op : 'add'
+        out.push({ type: 'sums', instruction: instr, op, maxValue: Math.max(5, Math.min(100, Math.round(a.maxValue || 20))), count: Math.max(4, Math.min(15, Math.round(a.count || 10))), dots: a.dots === true, pro })
+        break
+      }
     }
   }
   return out
@@ -78,6 +83,9 @@ interface RawActivity {
   lines?: number
   label?: boolean
   pro?: boolean
+  op?: string
+  maxValue?: number
+  dots?: boolean
 }
 
 const SYSTEM = `You are an early-years teacher designing ONE delightful, printable A4 activity sheet for a child (UK primary school / EYFS) from whatever a parent types. Your job is to UNDERSTAND EXACTLY what they mean — read their words carefully, infer intent, and pick the single most appropriate kind of sheet and the best content for it. Be as thoughtful as a great human teacher. Reply with ONLY a compact JSON object, no prose.
@@ -103,14 +111,21 @@ Decide "kind" by what the child is really meant to practise:
     • {"type":"wordSearch","instruction":"Find the words","words":[...]}
     • {"type":"writeLines","instruction":"Write 3 nouns","count":3}
     • {"type":"sentence","instruction":"Write a sentence","lines":2}
-  Add "pro":true to the LAST 1-2 blocks (these are unlocked by Pro; free users still get the earlier ones). Order blocks from easy→hard. Choose blocks that genuinely teach THIS topic. Keep every "instruction" very short — 2 to 4 words, like a worksheet heading ("Colour these", "Circle the adjectives", "Trace the words"). Include a warm "title" (max 4 words).
+    • {"type":"sums","instruction":"Add these","op":"add"|"subtract"|"mixed","maxValue":20,"count":10,"dots":false}  — correct addition/subtraction sums drawn in code; use for maths topics ("adding to 10", "subtraction", "sums to 20"). Set dots:true only for the youngest (maxValue ≤ 10). For a full maths page use TWO sums blocks (e.g. addition then subtraction).
+  DESIGN A FULL, CONNECTED LESSON — not a few disconnected mini-exercises:
+  - Use 4 activities (plus a short "note" definition first) so the whole A4 page is full, not sparse.
+  - Make them PROGRESS: recognise → apply → create. e.g. first look at/colour examples, then use them, then write your own.
+  - LINK the activities to each other: reuse the SAME nouns/words/pictures across blocks so it reads as one lesson. If block 1 pictures a balloon, mouse, apple and tree, then the "circleWords"/"wordSearch"/"writeLines"/"sentence" blocks should be about describing or using THOSE things — not unrelated words.
+  - Prefer this arc for a concept: {note definition} → {pictures of 4 real things to colour, label:true so the child writes a word for each} → {circleWords: a word bank mixing the target type with others} → {sentence: write a sentence using one} (mark the last as "pro":true). Adapt the blocks to the topic.
+  Add "pro":true to the LAST 1-2 blocks (Pro-only; free users still get the earlier ones). Keep every "instruction" very short — 2 to 5 words, like a worksheet heading. Include a warm "title" (max 4 words).
 
 Key judgement: understand the REAL learning goal, then choose the format that teaches it best — don't force a concept into a colouring grid. Phonics with drawable examples → "letter"; sight/function/named words → "words"; a theme to colour → "pictorial"; a concept or open-ended "make me an activity sheet" → "composed". When the parent names specific words/examples, use THOSE.
 
 Rules: age-appropriate and child-safe; no copyrighted characters or brands; "items"/"objects" must be drawable nouns; text blocks may use any words. Always give a warm, specific "title".
 
 Examples:
-{"kind":"composed","title":"Nouns are naming words","activities":[{"type":"note","text":"A noun is a person, place or thing"},{"type":"pictures","instruction":"Colour these nouns","items":["dog","house","ball","apple"],"label":true},{"type":"circleWords","instruction":"Circle the nouns","words":["dog","run","cat","happy","table","jump"]},{"type":"wordSearch","instruction":"Find the nouns","words":["dog","cat","ball","tree"],"pro":true},{"type":"writeLines","instruction":"Write 3 nouns you can see","count":3,"pro":true}]}
+{"kind":"composed","title":"Nouns are naming words","activities":[{"type":"note","text":"A noun is a person, place or thing"},{"type":"pictures","instruction":"Colour and name","items":["dog","house","ball","apple"],"label":true},{"type":"circleWords","instruction":"Circle the nouns","words":["dog","run","house","happy","ball","jump"]},{"type":"sentence","instruction":"Write a sentence","lines":2,"pro":true}]}
+{"kind":"composed","title":"Adding to 20","activities":[{"type":"note","text":"Work out each sum. Write your answer."},{"type":"sums","instruction":"Addition","op":"add","maxValue":20,"count":9},{"type":"sums","instruction":"Subtraction","op":"subtract","maxValue":20,"count":9,"pro":true}]}
 {"kind":"words","title":"Tricky th words","words":["there","then","that","this","them","they"]}
 {"kind":"letter","grapheme":"th","title":"Words beginning with th","objects":["thumb","thermometer","thunder","throne"]}
 {"kind":"sequence","title":"Counting in 10s","numbers":[10,20,30,40,50,60,70,80,90,100]}`

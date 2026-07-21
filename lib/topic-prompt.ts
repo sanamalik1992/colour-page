@@ -60,6 +60,8 @@ export type ActivityKind =
   | { type: 'readWords'; instruction: string; words: string[] }
   | { type: 'writeLines'; instruction: string; count: number } // numbered write-in lines
   | { type: 'sentence'; instruction: string; lines: number } // ruled sentence lines
+  // Deterministic maths: correct sums generated in code (never the image model).
+  | { type: 'sums'; instruction: string; op: 'add' | 'subtract' | 'mixed'; maxValue: number; count: number; dots?: boolean }
 
 // `pro: true` blocks only render on Pro sheets; free sheets show the rest.
 export type Activity = ActivityKind & { pro?: boolean }
@@ -287,10 +289,12 @@ function detectWordPractice(topic: string): { words: string[]; title: string } |
 // Grammar / literacy concepts a colouring page can't represent as a single
 // picture. Each becomes a designed, multi-activity "composed" sheet. The AI
 // planner handles the long tail; this keeps the common ones working offline.
-const CONCEPTS: Record<string, { title: string; note: string; pics?: string[]; mixed: string[]; find: string[]; word: string }> = {
-  noun: { word: 'NOUN', title: 'Nouns are naming words', note: 'A NOUN IS A PERSON PLACE OR THING', pics: ['dog', 'house', 'ball', 'apple'], mixed: ['dog', 'run', 'cat', 'happy', 'table', 'jump', 'tree', 'fast'], find: ['dog', 'cat', 'ball', 'tree'] },
-  verb: { word: 'VERB', title: 'Verbs are doing words', note: 'A VERB IS AN ACTION WORD', pics: ['running', 'jumping', 'swimming', 'kicking'], mixed: ['run', 'cat', 'jump', 'table', 'hop', 'happy', 'skip', 'tree'], find: ['run', 'jump', 'hop', 'skip'] },
-  adjective: { word: 'ADJECTIVE', title: 'Adjectives are describing words', note: 'AN ADJECTIVE DESCRIBES A NOUN', mixed: ['big', 'dog', 'happy', 'run', 'soft', 'table', 'fast', 'jump'], find: ['big', 'soft', 'fast', 'kind'] },
+// Connected 4-activity lessons: colour real examples → sort/apply → create.
+// The pictures and the word bank relate to each other so it reads as one lesson.
+const CONCEPTS: Record<string, { title: string; note: string; pics: string[]; mixed: string[]; word: string; verb: string }> = {
+  noun: { word: 'NOUN', verb: 'NAME', title: 'Nouns are naming words', note: 'A NOUN IS A PERSON PLACE OR THING', pics: ['dog', 'house', 'ball', 'apple'], mixed: ['dog', 'run', 'house', 'happy', 'ball', 'jump', 'apple', 'fast'] },
+  verb: { word: 'VERB', verb: 'NAME', title: 'Verbs are doing words', note: 'A VERB IS AN ACTION WORD', pics: ['running', 'jumping', 'swimming', 'hopping'], mixed: ['run', 'cat', 'jump', 'table', 'swim', 'happy', 'hop', 'tree'] },
+  adjective: { word: 'ADJECTIVE', verb: 'DESCRIBE', title: 'Adjectives describe things', note: 'AN ADJECTIVE IS A DESCRIBING WORD', pics: ['balloon', 'mouse', 'apple', 'tree'], mixed: ['big', 'dog', 'red', 'run', 'tall', 'jump', 'soft', 'shiny'] },
 }
 function conceptKey(topic: string): string | null {
   const t = topic.toLowerCase()
@@ -299,15 +303,39 @@ function conceptKey(topic: string): string | null {
   if (/\badjectives?\b|describing words?\b/.test(t)) return 'adjective'
   return null
 }
-function conceptActivities(key: string, d: Difficulty): Activity[] {
+// Simple arithmetic topics ("adding to 10", "subtraction", "sums to 20").
+// Builds a full page: a note + two sums blocks, scaled by age band.
+function detectSums(topic: string, d: Difficulty): Activity[] | null {
+  const t = topic.toLowerCase()
+  if (!/\b(sums?|adding|addition|add up|plus|subtract\w*|minus|take[\s-]?aways?|number bonds?|maths? problems?)\b/.test(t)) return null
+  const mv = t.match(/\b(?:to|within|up to)\s+(\d{1,3})\b/) || t.match(/\b(\d{1,3})\b/)
+  const band = d.detailLevel
+  const defMax = band === 'low' ? 10 : band === 'high' ? 50 : 20
+  const maxValue = mv ? Math.max(5, Math.min(100, parseInt(mv[1], 10))) : defMax
+  const wantsAdd = /\b(add|adding|addition|plus|bond)/.test(t)
+  const wantsSub = /\b(subtract|minus|take|less)/.test(t)
+  const note: Activity = { type: 'note', text: 'Work out each sum. Write your answer in the box.' }
+  if (band === 'low') {
+    return [note, { type: 'sums', instruction: 'Count and add', op: wantsSub && !wantsAdd ? 'subtract' : 'add', maxValue: Math.min(10, maxValue), count: 9, dots: true }]
+  }
+  const n = band === 'high' ? 10 : 12
+  if (wantsAdd && !wantsSub) {
+    return [note, { type: 'sums', instruction: 'Addition', op: 'add', maxValue, count: n }, { type: 'sums', instruction: 'More addition', op: 'add', maxValue, count: n, pro: true }]
+  }
+  if (wantsSub && !wantsAdd) {
+    return [note, { type: 'sums', instruction: 'Subtraction', op: 'subtract', maxValue, count: n }, { type: 'sums', instruction: 'More subtraction', op: 'subtract', maxValue, count: n, pro: true }]
+  }
+  return [note, { type: 'sums', instruction: 'Addition', op: 'add', maxValue, count: n }, { type: 'sums', instruction: 'Subtraction', op: 'subtract', maxValue, count: n, pro: true }]
+}
+
+function conceptActivities(key: string): Activity[] {
   const c = CONCEPTS[key]
-  const P = c.word + 'S'
-  const acts: Activity[] = [{ type: 'note', text: c.note }]
-  if (c.pics) acts.push({ type: 'pictures', instruction: `COLOUR THE ${P}`, items: c.pics, label: d.detailLevel !== 'low' })
-  acts.push({ type: 'circleWords', instruction: `CIRCLE THE ${P}`, words: c.mixed })
-  acts.push({ type: 'wordSearch', instruction: `FIND THE ${P}`, words: c.find, pro: true })
-  acts.push({ type: 'writeLines', instruction: `WRITE 3 ${P}`, count: 3, pro: true })
-  return acts
+  return [
+    { type: 'note', text: c.note },
+    { type: 'pictures', instruction: `Colour and ${c.verb.toLowerCase()}`, items: c.pics, label: true },
+    { type: 'circleWords', instruction: `Circle the ${c.word.toLowerCase()}s`, words: c.mixed },
+    { type: 'sentence', instruction: 'Write a sentence', lines: 2, pro: true },
+  ]
 }
 
 // Objects that begin with (or use) a grapheme.
@@ -381,10 +409,16 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
       category: 'composed',
       subject: CONCEPTS[ck].title,
       title: sheetTitle(CONCEPTS[ck].title),
-      activities: conceptActivities(ck, difficulty),
+      activities: conceptActivities(ck),
       prompt: '',
       difficulty,
     }
+  }
+
+  // --- simple sums (addition / subtraction), drawn deterministically ---
+  const sums = detectSums(topic, difficulty)
+  if (sums) {
+    return { category: 'composed', subject: 'Sums', title: sheetTitle('Sums'), activities: sums, prompt: '', difficulty }
   }
 
   // --- sight / tricky / specific words (read-trace-write, no pictures) ---
