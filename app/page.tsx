@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { Hero3D } from '@/components/ui/hero-3d'
+import { ProActivityPreviews } from '@/components/ui/pro-activity-previews'
 import { Footer } from '@/components/sections/footer'
 import { useSessionId } from '@/hooks/useSessionId'
 import { prepareImageForUpload, readJsonSafe, friendlyError } from '@/lib/client-image'
@@ -634,17 +635,31 @@ export default function Home() {
                     </div>
                   )}
 
-                  {isWatermarked && !isPro && (
+                  {isWatermarked && !isPro && genMode === 'topic' && (
+                    <div className="rounded-xl border border-brand-primary/30 bg-zinc-900/60 p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Sparkles className="w-4 h-4 text-brand-primary" />
+                        <p className="text-sm font-bold text-white">Pro adds more activities to every sheet</p>
+                      </div>
+                      <p className="text-xs text-gray-400 mb-4">
+                        You&apos;re seeing the free taster. Pro packs in a second age-matched activity
+                        — and removes the watermark.
+                      </p>
+                      <ProActivityPreviews />
+                      <Link href="/pro" className="btn-primary w-full mt-4">
+                        <Sparkles className="w-4 h-4" />
+                        Unlock full activity sheets with Pro
+                      </Link>
+                    </div>
+                  )}
+
+                  {isWatermarked && !isPro && genMode !== 'topic' && (
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-3">
                       <Lock className="w-4 h-4 text-amber-600 flex-shrink-0" />
                       <p className="text-sm text-amber-700">
-                        {genMode === 'topic'
-                          ? 'This is the free taster. '
-                          : 'Free downloads include a light watermark. '}
+                        Free downloads include a light watermark.{' '}
                         <Link href="/pro" className="font-semibold underline">Upgrade to Pro</Link>{' '}
-                        {genMode === 'topic'
-                          ? 'to add a second activity (tracing, word games, writing) and remove the watermark.'
-                          : 'for clean pages.'}
+                        for clean pages.
                       </p>
                     </div>
                   )}

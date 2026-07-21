@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
+import { ProActivityPreviews } from '@/components/ui/pro-activity-previews'
 
 // An annual plan is only offered when a separate annual price is configured,
 // so the customer is always charged the amount they see.
@@ -192,6 +193,19 @@ export default function ProPage() {
             </div>
           </div>
 
+          {/* Learning-sheet activity showcase */}
+          <div className="mt-8 rounded-2xl border border-brand-primary/30 bg-zinc-900/60 p-6 sm:p-8">
+            <div className="flex items-center gap-2 mb-1">
+              <Sparkles className="w-5 h-5 text-brand-primary" />
+              <h2 className="text-base font-bold text-white">Richer learning sheets</h2>
+            </div>
+            <p className="text-sm text-gray-400 mb-6">
+              Free gives one activity per topic. Pro packs in a second, age-matched activity —
+              tracing, letter hunts, word searches and writing — so every sheet keeps kids busy.
+            </p>
+            <ProActivityPreviews />
+          </div>
+
           {/* Free vs Pro */}
           <div className="mt-8 bg-zinc-800/50 border border-zinc-700 rounded-2xl overflow-hidden">
             <div className="grid grid-cols-3 text-sm">
@@ -200,7 +214,7 @@ export default function ProPage() {
               <div className="p-4 text-center font-bold text-brand-primary border-l border-zinc-700 bg-brand-primary/5">Pro</div>
               {[
                 ['Colouring pages', '3 / day', 'Unlimited'],
-                ['Dot-to-dot puzzles', '1 free', 'Unlimited'],
+                ['Learning activities', '1 per sheet', 'Full multi-activity sheets'],
                 ['Watermark', 'Yes', 'None'],
                 ['Processing speed', 'Standard', 'Priority'],
               ].map(([label, free, pro], i) => (
