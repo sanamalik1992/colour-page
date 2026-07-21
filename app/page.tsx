@@ -638,9 +638,13 @@ export default function Home() {
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-3">
                       <Lock className="w-4 h-4 text-amber-600 flex-shrink-0" />
                       <p className="text-sm text-amber-700">
-                        Free downloads include a light watermark.{' '}
+                        {genMode === 'topic'
+                          ? 'This is the free taster. '
+                          : 'Free downloads include a light watermark. '}
                         <Link href="/pro" className="font-semibold underline">Upgrade to Pro</Link>{' '}
-                        for clean pages.
+                        {genMode === 'topic'
+                          ? 'to add a second activity (tracing, word games, writing) and remove the watermark.'
+                          : 'for clean pages.'}
                       </p>
                     </div>
                   )}
