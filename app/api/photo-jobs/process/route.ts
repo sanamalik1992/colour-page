@@ -12,7 +12,7 @@ export const maxDuration = 300 // Vercel Pro: 5 minutes
 // this point we mark the job failed OURSELVES — otherwise Vercel hard-kills the
 // function at maxDuration, our catch block never runs, and the job is left in
 // "processing" forever (the client bar sits at 99% with no error).
-const WORK_DEADLINE_MS = 275_000
+const WORK_DEADLINE_MS = 180_000
 
 class DeadlineError extends Error {
   constructor() {
