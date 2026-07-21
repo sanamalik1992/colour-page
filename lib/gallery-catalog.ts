@@ -25,6 +25,13 @@ export interface GalleryCategory {
 
 export const GALLERY_CATEGORIES: GalleryCategory[] = [
   {
+    key: 'trending',
+    label: 'Trending',
+    blurb: "The most-loved pages right now — original, not any brand",
+    accent: 'from-orange-400 to-pink-600',
+    items: ['Unicorn', 'Mermaid', 'Dragon', 'Superhero', 'Rescue Puppy', 'Pop Star', 'Robot', 'Race Car'],
+  },
+  {
     key: 'animals',
     label: 'Animals',
     blurb: 'Friendly creatures big and small',

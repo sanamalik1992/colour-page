@@ -15,6 +15,7 @@ import {
   Filter,
   AlertTriangle,
   ArrowRight,
+  Flame,
   PawPrint,
   Footprints,
   Fish,
@@ -32,6 +33,7 @@ import { GALLERY_CATEGORIES, galleryTopicHref } from '@/lib/gallery-catalog'
 
 // Line icons for each curated category (keyed by GalleryCategory.key).
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  trending: Flame,
   animals: PawPrint,
   dinosaurs: Footprints,
   sea: Fish,
