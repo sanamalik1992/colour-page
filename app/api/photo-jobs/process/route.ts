@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { preprocessImage, processWithReplicate, generateFromText, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
+import { preprocessImage, processWithReplicate, generateFromText, generateGoodObject, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
 import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet, buildWordPracticeSheet, buildComposedSheet } from '@/lib/topic-render'
 import { singleObjectPrompt, type Activity } from '@/lib/topic-prompt'
 import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
         // generate their objects via the model; the rest are deterministic.
         await updateJob(jobId, { progress: 20 })
         const genPicture = hasReplicate
-          ? (obj: string) => generateFromText(singleObjectPrompt(obj), settings).catch((e) => { console.error(`object "${obj}" failed:`, e); return null })
+          ? (obj: string) => generateGoodObject(singleObjectPrompt(obj), settings).catch((e) => { console.error(`object "${obj}" failed:`, e); return null })
           : undefined
         lineArtBuffer = await buildComposedSheet(settings.title, settings.activities as Activity[], settings, !!job.is_pro, genPicture)
         await updateJob(jobId, { progress: 82 })
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
           await updateJob(jobId, { progress: 20 })
           const pics = (await Promise.all(
             settings.objects.slice(0, 6).map((obj) =>
-              generateFromText(singleObjectPrompt(obj), settings).catch((e) => {
+              generateGoodObject(singleObjectPrompt(obj), settings).catch((e) => {
                 console.error(`object "${obj}" failed:`, e)
                 return null
               })

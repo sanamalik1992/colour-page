@@ -60,6 +60,10 @@ export type ActivityKind =
   | { type: 'readWords'; instruction: string; words: string[] }
   | { type: 'writeLines'; instruction: string; count: number } // numbered write-in lines
   | { type: 'sentence'; instruction: string; lines: number } // ruled sentence lines
+  // Deterministic maths: correct sums generated in code (never the image model).
+  | { type: 'sums'; instruction: string; op: 'add' | 'subtract' | 'mixed'; maxValue: number; count: number; dots?: boolean }
+  | { type: 'countObjects'; instruction: string; count: number; maxCount: number } // colour & count groups of dots, write how many
+  | { type: 'traceNumbers'; instruction: string; upTo: number } // trace dotted numerals 1..N
 
 // `pro: true` blocks only render on Pro sheets; free sheets show the rest.
 export type Activity = ActivityKind & { pro?: boolean }
@@ -287,10 +291,12 @@ function detectWordPractice(topic: string): { words: string[]; title: string } |
 // Grammar / literacy concepts a colouring page can't represent as a single
 // picture. Each becomes a designed, multi-activity "composed" sheet. The AI
 // planner handles the long tail; this keeps the common ones working offline.
-const CONCEPTS: Record<string, { title: string; note: string; pics?: string[]; mixed: string[]; find: string[]; word: string }> = {
-  noun: { word: 'NOUN', title: 'Nouns are naming words', note: 'A NOUN IS A PERSON PLACE OR THING', pics: ['dog', 'house', 'ball', 'apple'], mixed: ['dog', 'run', 'cat', 'happy', 'table', 'jump', 'tree', 'fast'], find: ['dog', 'cat', 'ball', 'tree'] },
-  verb: { word: 'VERB', title: 'Verbs are doing words', note: 'A VERB IS AN ACTION WORD', pics: ['running', 'jumping', 'swimming', 'kicking'], mixed: ['run', 'cat', 'jump', 'table', 'hop', 'happy', 'skip', 'tree'], find: ['run', 'jump', 'hop', 'skip'] },
-  adjective: { word: 'ADJECTIVE', title: 'Adjectives are describing words', note: 'AN ADJECTIVE DESCRIBES A NOUN', mixed: ['big', 'dog', 'happy', 'run', 'soft', 'table', 'fast', 'jump'], find: ['big', 'soft', 'fast', 'kind'] },
+// Connected 4-activity lessons: colour real examples → sort/apply → create.
+// The pictures and the word bank relate to each other so it reads as one lesson.
+const CONCEPTS: Record<string, { title: string; note: string; pics: string[]; mixed: string[]; word: string; verb: string }> = {
+  noun: { word: 'NOUN', verb: 'NAME', title: 'Nouns are naming words', note: 'A NOUN IS A PERSON PLACE OR THING', pics: ['dog', 'house', 'ball', 'apple'], mixed: ['dog', 'run', 'house', 'happy', 'ball', 'jump', 'apple', 'fast'] },
+  verb: { word: 'VERB', verb: 'NAME', title: 'Verbs are doing words', note: 'A VERB IS AN ACTION WORD', pics: ['running', 'jumping', 'swimming', 'hopping'], mixed: ['run', 'cat', 'jump', 'table', 'swim', 'happy', 'hop', 'tree'] },
+  adjective: { word: 'ADJECTIVE', verb: 'DESCRIBE', title: 'Adjectives describe things', note: 'AN ADJECTIVE IS A DESCRIBING WORD', pics: ['balloon', 'mouse', 'apple', 'tree'], mixed: ['big', 'dog', 'red', 'run', 'tall', 'jump', 'soft', 'shiny'] },
 }
 function conceptKey(topic: string): string | null {
   const t = topic.toLowerCase()
@@ -299,15 +305,85 @@ function conceptKey(topic: string): string | null {
   if (/\badjectives?\b|describing words?\b/.test(t)) return 'adjective'
   return null
 }
-function conceptActivities(key: string, d: Difficulty): Activity[] {
-  const c = CONCEPTS[key]
-  const P = c.word + 'S'
-  const acts: Activity[] = [{ type: 'note', text: c.note }]
-  if (c.pics) acts.push({ type: 'pictures', instruction: `COLOUR THE ${P}`, items: c.pics, label: d.detailLevel !== 'low' })
-  acts.push({ type: 'circleWords', instruction: `CIRCLE THE ${P}`, words: c.mixed })
-  acts.push({ type: 'wordSearch', instruction: `FIND THE ${P}`, words: c.find, pro: true })
-  acts.push({ type: 'writeLines', instruction: `WRITE 3 ${P}`, count: 3, pro: true })
+// Simple arithmetic topics ("adding to 10", "subtraction", "sums to 20").
+// Builds a full page: a note + two sums blocks, scaled by age band.
+function detectSums(topic: string, d: Difficulty): Activity[] | null {
+  const t = topic.toLowerCase()
+  if (!/\b(sums?|adding|addition|add up|plus|subtract\w*|minus|take[\s-]?aways?|number bonds?|maths? problems?)\b/.test(t)) return null
+  const mv = t.match(/\b(?:to|within|up to)\s+(\d{1,3})\b/) || t.match(/\b(\d{1,3})\b/)
+  const band = d.detailLevel
+  const defMax = band === 'low' ? 10 : band === 'high' ? 50 : 20
+  const maxValue = mv ? Math.max(5, Math.min(100, parseInt(mv[1], 10))) : defMax
+  const wantsAdd = /\b(add|adding|addition|plus|bond)/.test(t)
+  const wantsSub = /\b(subtract|minus|take|less)/.test(t)
+  const note: Activity = { type: 'note', text: 'Count, then work out each sum.' }
+  // A count-and-colour warm-up gives the maths page some variety before the sums.
+  const warmUp: Activity = { type: 'countObjects', instruction: 'Count and colour', count: band === 'low' ? 4 : 6, maxCount: Math.min(10, maxValue) }
+  if (band === 'low') {
+    return [note, warmUp, { type: 'sums', instruction: 'Count and add', op: wantsSub && !wantsAdd ? 'subtract' : 'add', maxValue: Math.min(10, maxValue), count: 8, dots: true }]
+  }
+  const n = band === 'high' ? 10 : 12
+  const main = wantsSub && !wantsAdd ? 'subtract' : 'add'
+  const other = main === 'add' ? 'subtract' : 'add'
+  const mainInstr = main === 'add' ? 'Addition' : 'Subtraction'
+  const otherInstr = other === 'add' ? 'Addition' : 'Subtraction'
+  const second: Activity = wantsAdd !== wantsSub
+    ? { type: 'sums', instruction: `More ${mainInstr.toLowerCase()}`, op: main, maxValue, count: n, pro: true }
+    : { type: 'sums', instruction: otherInstr, op: other, maxValue, count: n, pro: true }
+  return [note, warmUp, { type: 'sums', instruction: mainInstr, op: main, maxValue, count: n }, second]
+}
+
+// Turn a theme's drawable objects into a VARIED sheet rather than a plain
+// colour page: colour & label the pictures → a puzzle/trace → count / write.
+export function pictorialActivities(objects: string[], d: Difficulty): Activity[] {
+  const objs = objects.map((o) => o.trim()).filter(Boolean).slice(0, 4)
+  const names = [...new Set(objects.map((o) => o.toUpperCase().replace(/[^A-Z]/g, '')).filter((w) => w.length >= 2 && w.length <= 8))].slice(0, 4)
+  const acts: Activity[] = [{ type: 'pictures', instruction: 'Colour and label', items: objs, label: true }]
+  if (d.detailLevel === 'low') {
+    acts.push({ type: 'countObjects', instruction: 'Count and colour', count: 4, maxCount: 6 })
+    if (names.length) acts.push({ type: 'traceWords', instruction: 'Trace the words', words: names })
+  } else {
+    if (names.length >= 2) acts.push({ type: 'wordSearch', instruction: 'Find the words', words: names })
+    else acts.push({ type: 'countObjects', instruction: 'Count and colour', count: 6, maxCount: 10 })
+    acts.push({ type: 'sentence', instruction: 'Write a sentence', lines: 2, pro: true })
+  }
   return acts
+}
+
+// Concrete drawable objects for the common themes (used by the offline fallback;
+// the AI planner supplies its own, better-tailored object lists).
+const THEME_SETS: { re: RegExp; title: string; objects: string[] }[] = [
+  { re: /\bfarm\b/i, title: 'Farm animals', objects: ['cow', 'pig', 'sheep', 'horse', 'duck', 'hen'] },
+  { re: /\b(jungle|rainforest)\b/i, title: 'Jungle animals', objects: ['lion', 'tiger', 'monkey', 'elephant', 'snake', 'parrot'] },
+  { re: /\bzoo\b/i, title: 'Zoo animals', objects: ['lion', 'giraffe', 'zebra', 'monkey', 'penguin', 'bear'] },
+  { re: /\b(sea creatures|ocean|under the sea|sea life)\b/i, title: 'Under the sea', objects: ['fish', 'crab', 'octopus', 'turtle', 'starfish', 'whale'] },
+  { re: /\b(pets?)\b/i, title: 'Pets', objects: ['dog', 'cat', 'rabbit', 'fish', 'hamster', 'bird'] },
+  { re: /\b(dinosaur|dinosaurs)\b/i, title: 'Dinosaurs', objects: ['t rex', 'triceratops', 'stegosaurus', 'brachiosaurus'] },
+  { re: /\b(space|planet|planets|rocket|solar system|astronaut|galaxy)\b/i, title: 'Space', objects: ['rocket', 'planet', 'star', 'moon', 'astronaut', 'comet'] },
+  { re: /\b(minibeast|minibeasts|bug|bugs|insect|insects|creepy crawl)/i, title: 'Minibeasts', objects: ['ladybird', 'snail', 'bee', 'caterpillar', 'butterfly', 'spider'] },
+  { re: /\b(farm animals?|animals?)\b/i, title: 'Animals', objects: ['dog', 'cat', 'rabbit', 'duck', 'lion', 'bear'] },
+]
+
+// A varied counting sheet: count & colour groups → trace the numerals → a few
+// simple sums. Mixes colour/count, write and do families in one page.
+export function numberActivities(maxN: number): Activity[] {
+  const n = Math.max(3, Math.min(20, Math.round(maxN)))
+  return [
+    { type: 'note', text: 'Count, trace and add.' },
+    { type: 'countObjects', instruction: 'Count and colour', count: n <= 5 ? 4 : 6, maxCount: n },
+    { type: 'traceNumbers', instruction: 'Trace the numbers', upTo: n },
+    { type: 'sums', instruction: 'Add them up', op: 'add', maxValue: Math.min(10, n), count: 6, dots: n <= 10, pro: true },
+  ]
+}
+
+function conceptActivities(key: string): Activity[] {
+  const c = CONCEPTS[key]
+  return [
+    { type: 'note', text: c.note },
+    { type: 'pictures', instruction: `Colour and ${c.verb.toLowerCase()}`, items: c.pics, label: true },
+    { type: 'circleWords', instruction: `Circle the ${c.word.toLowerCase()}s`, words: c.mixed },
+    { type: 'sentence', instruction: 'Write a sentence', lines: 2, pro: true },
+  ]
 }
 
 // Objects that begin with (or use) a grapheme.
@@ -381,10 +457,16 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
       category: 'composed',
       subject: CONCEPTS[ck].title,
       title: sheetTitle(CONCEPTS[ck].title),
-      activities: conceptActivities(ck, difficulty),
+      activities: conceptActivities(ck),
       prompt: '',
       difficulty,
     }
+  }
+
+  // --- simple sums (addition / subtraction), drawn deterministically ---
+  const sums = detectSums(topic, difficulty)
+  if (sums) {
+    return { category: 'composed', subject: 'Sums', title: sheetTitle('Sums'), activities: sums, prompt: '', difficulty }
   }
 
   // --- sight / tricky / specific words (read-trace-write, no pictures) ---
@@ -416,10 +498,11 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   const maxN = detectNumberMax(topic)
   if (maxN) {
     return {
-      category: 'number',
+      category: 'composed',
       subject: `Numbers 1–${maxN}`,
+      title: sheetTitle(`Numbers to ${maxN}`),
+      activities: numberActivities(maxN),
       prompt: '',
-      glyph: { kind: 'numberRange', value: `1-${maxN}` },
       difficulty,
     }
   }
@@ -432,24 +515,22 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
     return { category: 'shapes', subject: 'Shapes', prompt, difficulty }
   }
 
-  // --- space ---
-  if (/\b(space|planet|planets|rocket|solar system|astronaut|galaxy|stars?)\b/i.test(topic)) {
-    const prompt =
-      `Coloring book line art of a friendly rocket, a planet with rings, ${n} stars, a ` +
-      `smiling crescent moon and a little astronaut, each large and separate. ${STYLE_SUFFIX}`
-    return { category: 'space', subject: 'Space', prompt, difficulty }
+  // --- themes (animals, space, minibeasts, sea…) → a VARIED sheet, not just a
+  // colour page: colour & label the pictures, then a puzzle / count / write. ---
+  const theme = THEME_SETS.find((s) => s.re.test(topic))
+  if (theme) {
+    return {
+      category: 'composed',
+      subject: theme.title,
+      title: sheetTitle(theme.title),
+      objects: theme.objects,
+      activities: pictorialActivities(theme.objects, difficulty),
+      prompt: '',
+      difficulty,
+    }
   }
 
-  // --- minibeasts / bugs ---
-  if (/\b(minibeast|minibeasts|bug|bugs|insect|insects|creepy crawl)/i.test(topic)) {
-    const beasts = ['a ladybird', 'a snail', 'a bumblebee', 'a caterpillar', 'a butterfly', 'a spider']
-    const prompt =
-      `Coloring book line art of ${n} large separate minibeasts: ${beasts.slice(0, n).join(', ')}. ` +
-      `${STYLE_SUFFIX}`
-    return { category: 'minibeasts', subject: 'Minibeasts', prompt, difficulty }
-  }
-
-  // --- colours (rainbow) ---
+  // --- colours (rainbow) — kept as a single themed colour page ---
   if (/\bcolou?rs?\b/i.test(topic) || /\brainbow\b/i.test(topic)) {
     const prompt =
       `Coloring book line art of a large rainbow with an apple, a sun, a leaf and a ` +
@@ -457,16 +538,7 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
     return { category: 'colours', subject: 'Colours', prompt, difficulty }
   }
 
-  // --- animals (broad) ---
-  if (/\b(animal|animals|farm|jungle|zoo|pets?|dinosaur|dinosaurs|sea creatures|ocean)\b/i.test(topic)) {
-    const subject = titleCase(topic)
-    const prompt =
-      `Coloring book line art of ${n} large separate ${subject.toLowerCase()}, friendly ` +
-      `cartoon outlines. ${STYLE_SUFFIX}`
-    return { category: 'animals', subject, prompt, difficulty }
-  }
-
-  // --- generic fallback ---
+  // --- generic fallback (unknown topic, AI off): single colour page ---
   const subject = titleCase(topic)
   const prompt =
     `Coloring book line art of ${n} large separate simple pictures of ${subject.toLowerCase()}. ` +

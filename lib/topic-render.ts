@@ -894,6 +894,9 @@ async function picturesRowBlock(
   const rows = Math.ceil(n / cols)
   const cellW = w / cols
   const cellH = h / rows
+  // Fill the slice: pictures take most of the cell; a label line (write a word)
+  // sits snug beneath each so the picture and its word read as one unit.
+  const picBoxH = label ? cellH * 0.78 : cellH * 0.96
   let svg = ''
   const composites: sharp.OverlayOptions[] = []
   for (let i = 0; i < n; i++) {
@@ -901,23 +904,187 @@ async function picturesRowBlock(
     const r = Math.floor(i / cols)
     const cx = x + c * cellW
     const cy = top + r * cellH
-    const picBoxH = label ? cellH * 0.66 : cellH * 0.9
-    const innerW = Math.round(cellW * 0.8)
-    const innerH = Math.round(picBoxH * 0.92)
+    const innerW = Math.round(cellW * 0.88)
+    const innerH = Math.round(picBoxH * 0.96)
     const pic = await sharp(bufs[i]).greyscale().resize(innerW, innerH, { fit: 'inside', background: '#ffffff' }).flatten({ background: '#ffffff' }).toBuffer()
     const pm = await sharp(pic).metadata()
     composites.push({ input: pic, left: Math.round(cx + (cellW - (pm.width || innerW)) / 2), top: Math.round(cy + (picBoxH - (pm.height || innerH)) / 2) })
     if (label) {
-      const ly = cy + cellH * 0.86
-      svg += `<line x1="${(cx + cellW * 0.12).toFixed(1)}" y1="${ly.toFixed(1)}" x2="${(cx + cellW * 0.88).toFixed(1)}" y2="${ly.toFixed(1)}" stroke="#c9c4ba" stroke-width="3"/>`
+      const ly = cy + picBoxH + (cellH - picBoxH) * 0.55
+      svg += `<line x1="${(cx + cellW * 0.14).toFixed(1)}" y1="${ly.toFixed(1)}" x2="${(cx + cellW * 0.86).toFixed(1)}" y2="${ly.toFixed(1)}" stroke="#c9c4ba" stroke-width="3"/>`
     }
   }
   return { svg, composites }
 }
 
+// A tiny seeded RNG so a sheet's sums are varied but reproducible (stable to
+// eyeball and test). Not for security — just deterministic variety.
+function makeRng(seed: number): () => number {
+  let s = seed >>> 0 || 1
+  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 }
+}
+
+// The glyph font has no +, −, or =, so draw them as plain strokes.
+function opGlyph(kind: '+' | '-' | '=', cx: number, cy: number, size: number, stroke: number): string {
+  const h = size / 2
+  const L = (x1: number, y1: number, x2: number, y2: number) =>
+    `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#111" stroke-width="${stroke}" stroke-linecap="round"/>`
+  if (kind === '-') return L(cx - h, cy, cx + h, cy)
+  if (kind === '+') return L(cx - h, cy, cx + h, cy) + L(cx, cy - h, cx, cy + h)
+  const g = size * 0.24
+  return L(cx - h, cy - g, cx + h, cy - g) + L(cx - h, cy + g, cx + h, cy + g)
+}
+
+// Countable dots under an operand (visual aid for the youngest children).
+function countDots(n: number, cx: number, top: number, r: number): string {
+  if (n < 1) return ''
+  const per = Math.min(n, 5)
+  const step = r * 2.5
+  let s = ''
+  for (let i = 0; i < n; i++) {
+    const rr = Math.floor(i / per), cc = i % per
+    const rowN = Math.min(per, n - rr * per)
+    const cxx = cx - (rowN - 1) * step / 2 + cc * step
+    const cyy = top + r + rr * step
+    s += `<circle cx="${cxx.toFixed(1)}" cy="${cyy.toFixed(1)}" r="${r.toFixed(1)}" fill="none" stroke="#111" stroke-width="3.5"/>`
+  }
+  return s
+}
+
+// A grid of correct addition/subtraction sums with a box to write the answer.
+// `salt` varies the generated sums between two sums blocks on the same sheet.
+function sumsBlock(op: 'add' | 'subtract' | 'mixed', maxValue: number, count: number, dots: boolean, x: number, top: number, w: number, h: number, salt = 0): string {
+  const maxV = Math.max(5, Math.min(100, Math.round(maxValue)))
+  const n = Math.max(2, Math.min(15, Math.round(count)))
+  const rng = makeRng(maxV * 131 + n * 17 + (op === 'add' ? 1 : op === 'subtract' ? 2 : 3) + salt * 7919)
+  const ri = (min: number, max: number) => min + Math.floor(rng() * (max - min + 1))
+
+  // Generate `n` distinct, always-correct sums (answer written by the child).
+  const items: { a: number; b: number; sign: '+' | '-' }[] = []
+  const seen = new Set<string>()
+  let guard = 0
+  while (items.length < n && guard++ < n * 40) {
+    const add = op === 'add' || (op === 'mixed' && rng() < 0.5)
+    let a: number, b: number
+    if (add) { a = ri(1, maxV - 1); b = ri(1, maxV - a) }
+    else { a = ri(2, maxV); b = ri(1, a - 1 < 1 ? a : a - 1) } // avoid a-a=0
+    const key = `${a}${add ? '+' : '-'}${b}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    items.push({ a, b, sign: add ? '+' : '-' })
+  }
+
+  const useDots = dots && maxV <= 10
+  const cols = maxV > 20 ? 2 : 3
+  const rows = Math.ceil(items.length / cols)
+  const cellW = w / cols
+
+  // One shared glyph height for the whole block: fit the widest equation to the
+  // column width, then cap by the vertical budget per row.
+  const eqW = (it: { a: number; b: number }, gh: number) => {
+    const gap = gh * 0.34
+    return numberWidth(String(it.a), gh) + gap + gh * 0.62 + gap + numberWidth(String(it.b), gh) + gap + gh * 0.7 + gap + gh * 1.15
+  }
+  const dotBlockH = (gh: number) => (useDots ? gh * 1.6 : 0) // dots sit under the row
+  let gh = Math.min(96, (h / rows) / (useDots ? 2.9 : 1.9))
+  const widest = () => Math.max(...items.map((it) => eqW(it, gh)))
+  if (widest() > cellW * 0.9) gh = gh * (cellW * 0.9 / widest())
+  gh = Math.max(26, gh)
+
+  // Rows fill the slice evenly (each equation centred in its row cell), so the
+  // block uses the whole height rather than clustering at the top.
+  const rowContentH = gh + dotBlockH(gh)
+  const rowPitch = h / rows
+
+  return items.map((it, i) => {
+    const col = i % cols, row = Math.floor(i / cols)
+    const cellX = x + col * cellW
+    const rowTop = top + row * rowPitch + Math.max(0, (rowPitch - rowContentH) / 2)
+    const gap = gh * 0.34, opW = gh * 0.62, eqSym = gh * 0.7
+    const totalW = eqW(it, gh)
+    const midY = rowTop + gh / 2
+    let cx = cellX + (cellW - totalW) / 2
+    const st = Math.max(6, gh * 0.14)
+    let s = ''
+    s += numberSvg(String(it.a), cx, rowTop, gh, st)
+    if (useDots) s += countDots(it.a, cx + numberWidth(String(it.a), gh) / 2, rowTop + gh + gh * 0.18, gh * 0.16)
+    cx += numberWidth(String(it.a), gh) + gap
+    s += opGlyph(it.sign, cx + opW / 2, midY, opW, st)
+    cx += opW + gap
+    s += numberSvg(String(it.b), cx, rowTop, gh, st)
+    if (useDots) s += countDots(it.b, cx + numberWidth(String(it.b), gh) / 2, rowTop + gh + gh * 0.18, gh * 0.16)
+    cx += numberWidth(String(it.b), gh) + gap
+    s += opGlyph('=', cx + eqSym / 2, midY, eqSym, st)
+    cx += eqSym + gap
+    s += `<rect x="${cx.toFixed(1)}" y="${rowTop.toFixed(1)}" width="${(gh * 1.15).toFixed(1)}" height="${gh.toFixed(1)}" rx="10" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    return s
+  }).join('')
+}
+
+// "Count and colour": groups of hollow (colour-in) dots, each with a box to
+// write how many. Colour + count in one deterministic block.
+function countObjectsBlock(count: number, maxCount: number, x: number, top: number, w: number, h: number, salt = 0): string {
+  const n = Math.max(2, Math.min(8, Math.round(count)))
+  const maxC = Math.max(2, Math.min(12, Math.round(maxCount)))
+  const rng = makeRng(n * 53 + maxC * 131 + salt * 7919)
+  const groups = Array.from({ length: n }, () => 1 + Math.floor(rng() * maxC))
+  const cols = n <= 4 ? n : Math.ceil(n / 2)
+  const rows = Math.ceil(n / cols)
+  const cellW = w / cols
+  const cellH = h / rows
+  let s = ''
+  groups.forEach((g, i) => {
+    const c = i % cols, r = Math.floor(i / cols)
+    const cx = x + c * cellW + cellW / 2
+    const cyTop = top + r * cellH
+    // dots grid (up to 5 per row)
+    const per = Math.min(g, 5)
+    const dRows = Math.ceil(g / per)
+    const dotArea = cellH * 0.62
+    const rad = Math.max(9, Math.min(26, dotArea / (dRows * 2.6), cellW * 0.8 / (per * 2.6)))
+    const step = rad * 2.5
+    const gridTop = cyTop + (dotArea - (dRows * step - (step - rad * 2))) / 2
+    for (let k = 0; k < g; k++) {
+      const rr = Math.floor(k / per), cc = k % per
+      const rowN = Math.min(per, g - rr * per)
+      const dx = cx - (rowN - 1) * step / 2 + cc * step
+      const dy = gridTop + rad + rr * step
+      s += `<circle cx="${dx.toFixed(1)}" cy="${dy.toFixed(1)}" r="${rad.toFixed(1)}" fill="none" stroke="#111" stroke-width="4"/>`
+    }
+    // answer box beneath the group
+    const boxH = Math.min(cellH * 0.24, 90)
+    const boxW = boxH * 1.1
+    s += `<rect x="${(cx - boxW / 2).toFixed(1)}" y="${(cyTop + cellH - boxH - 6).toFixed(1)}" width="${boxW.toFixed(1)}" height="${boxH.toFixed(1)}" rx="10" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+  })
+  return s
+}
+
+// "Trace the numbers": dotted numerals 1..N to write over, on baselines.
+function traceNumbersBlock(upTo: number, x: number, top: number, w: number, h: number): string {
+  const N = Math.max(3, Math.min(20, Math.round(upTo)))
+  const nums = Array.from({ length: N }, (_, i) => String(i + 1))
+  const perRow = N <= 10 ? Math.min(N, 5) : Math.ceil(N / Math.ceil(N / 6))
+  const rows = Math.ceil(N / perRow)
+  const cellW = w / perRow
+  const rowH = h / rows
+  const gh = Math.max(40, Math.min(rowH * 0.6, cellW * 0.5, 150))
+  let s = ''
+  nums.forEach((num, i) => {
+    const c = i % perRow, r = Math.floor(i / perRow)
+    const cx = x + c * cellW
+    const yTop = top + r * rowH + (rowH - gh) / 2
+    const nw = numberWidth(num, gh)
+    const baseY = yTop + gh + gh * 0.06
+    s += `<line x1="${(cx + cellW * 0.1).toFixed(1)}" y1="${baseY.toFixed(1)}" x2="${(cx + cellW * 0.9).toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="#e0dbd0" stroke-width="3"/>`
+    s += numberSvg(num, cx + (cellW - nw) / 2, yTop, gh, Math.max(6, gh * 0.14), { dashed: true, color: '#9aa0a6' })
+  })
+  return s
+}
+
 const ACTIVITY_WEIGHT: Record<string, number> = {
   note: 0.6, pictures: 3, circleWords: 1.8, traceWords: 1.6,
-  wordSearch: 2.6, readWords: 1.8, writeLines: 1.4, sentence: 1.4,
+  wordSearch: 2.6, readWords: 1.8, writeLines: 1.4, sentence: 1.4, sums: 3.2,
+  countObjects: 2.6, traceNumbers: 1.8,
 }
 
 /**
@@ -964,16 +1131,18 @@ export async function buildComposedSheet(
     overlay += textSvg(t, (A4_W - tw) / 2, y, th, 14, { color: '#111' })
     const uy = y + th + 18
     overlay += `<line x1="${((A4_W - tw) / 2).toFixed(1)}" y1="${uy}" x2="${((A4_W + tw) / 2).toFixed(1)}" y2="${uy}" stroke="#F2A81E" stroke-width="8" stroke-linecap="round"/>`
-    y = uy + 50
+    y = uy + 34
   }
 
   const bottom = A4_H - MARGIN
-  const gap = 34
+  const gap = 22
   const totalW = live.reduce((s, a) => s + (ACTIVITY_WEIGHT[a.type] || 1.6), 0) || 1
   const bodyH = bottom - y - gap * live.length
 
+  let blockIndex = 0
   for (const a of live) {
     const sliceH = ((ACTIVITY_WEIGHT[a.type] || 1.6) / totalW) * bodyH
+    blockIndex++
     if (a.type === 'note') {
       overlay += noteBlock(a.text, bodyX, y, bodyW, sliceH)
     } else {
@@ -993,6 +1162,9 @@ export async function buildComposedSheet(
         case 'readWords': overlay += readWordsBlock(a.words.map(up), bodyX, nextY, bodyW, ch); break
         case 'writeLines': overlay += writeLinesBlock(a.count, bodyX, nextY, bodyW, ch); break
         case 'sentence': overlay += sentenceLinesBlock(a.lines, bodyX, nextY, bodyW, ch); break
+        case 'sums': overlay += sumsBlock(a.op, a.maxValue, a.count, !!a.dots, bodyX, nextY, bodyW, ch, blockIndex); break
+        case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex); break
+        case 'traceNumbers': overlay += traceNumbersBlock(a.upTo, bodyX, nextY, bodyW, ch); break
       }
     }
     y += sliceH + gap
