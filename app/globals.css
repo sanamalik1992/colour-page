@@ -4,10 +4,12 @@
 
 @layer base {
   :root {
-    --brand-primary: #10B981;
-    --brand-glow: #34D399;
-    --brand-border: #059669;
-    --brand-hover: #047857;
+    --brand-primary: #F2A81E;
+    --brand-glow: #F5B94B;
+    --brand-border: #D98A0C;
+    --brand-hover: #C67F0A;
+    --accent-ink: #2A1E00;
+    --font-display: ui-rounded, "SF Pro Rounded", "Segoe UI Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
 
   * {
@@ -15,25 +17,39 @@
   }
 
   body {
-    @apply bg-zinc-950 text-gray-900 antialiased;
+    @apply bg-[#14100f] text-gray-900 antialiased;
   }
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+@keyframes h3dFloat {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(-16px) rotate(2deg); }
+}
+.h3d-float { animation: h3dFloat 7s ease-in-out infinite; }
+.h3d-float-slow { animation: h3dFloat 9s ease-in-out infinite 0.5s; }
+@media (prefers-reduced-motion: reduce) {
+  .h3d-float, .h3d-float-slow { animation: none; }
 }
 
 @layer utilities {
   /* Polished app background: near-black base with soft, playful colour glows */
   .app-bg {
-    background-color: #0a0a0f;
+    background-color: #14100f;
     background-image:
-      radial-gradient(55rem 55rem at 12% -8%, rgba(16, 185, 129, 0.13), transparent 60%),
-      radial-gradient(45rem 45rem at 88% -6%, rgba(139, 92, 246, 0.12), transparent 55%),
-      radial-gradient(50rem 50rem at 50% 112%, rgba(56, 189, 248, 0.10), transparent 60%);
+      radial-gradient(58rem 55rem at 88% -10%, rgba(242, 168, 30, 0.16), transparent 60%),
+      radial-gradient(46rem 46rem at 8% 4%, rgba(242, 168, 30, 0.06), transparent 60%);
     background-attachment: fixed;
     background-repeat: no-repeat;
   }
 
-  /* Rainbow brand accent ribbon */
+  /* Gold brand accent ribbon */
   .rainbow-bar {
-    background-image: linear-gradient(90deg, #fb7185, #fbbf24, #34d399, #38bdf8, #a78bfa);
+    background-image: linear-gradient(90deg, #F6B72A, #F2A81E, #D98A0C);
   }
 
   /* Shared frosted surface for cards/panels on the dark theme */
@@ -53,10 +69,10 @@
 
   /* Primary button with green gradient */
   .btn-primary {
-    @apply h-12 px-8 rounded-xl font-semibold text-base;
-    @apply bg-gradient-to-r from-brand-primary to-brand-border;
-    @apply hover:from-brand-border hover:to-brand-hover;
-    @apply text-white shadow-md hover:shadow-glow;
+    @apply h-12 px-8 rounded-xl font-bold text-base;
+    @apply bg-gradient-to-b from-[#F6B72A] to-[#E39A0C];
+    @apply hover:from-[#F8C13F] hover:to-[#EAA21A];
+    @apply text-[#2A1E00] shadow-md hover:shadow-glow;
     @apply transition-all duration-200;
     @apply hover:-translate-y-0.5;
     @apply focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2 focus:ring-offset-zinc-900;
