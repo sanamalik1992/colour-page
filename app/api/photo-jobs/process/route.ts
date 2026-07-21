@@ -96,8 +96,11 @@ export async function POST(request: NextRequest) {
         //    then compose a sticker grid — recognise/colour (low) or
         //    write-the-missing-sound fill-gap (medium).
         const band = settings.detailLevel
+        // Pro sheets carry a second, age-matched activity (colour-every-letter,
+        // trace-the-words, write-a-sentence); free sheets are a single taster.
+        const isPro = !!job.is_pro
         if (band === 'high') {
-          lineArtBuffer = await buildLetterPuzzleSheet(glyph.value, settings.objects, settings)
+          lineArtBuffer = await buildLetterPuzzleSheet(glyph.value, settings.objects, settings, isPro)
           await updateJob(jobId, { progress: 82 })
         } else {
           if (!hasReplicate) throw new Error('Text-to-image generation is not configured')
@@ -114,8 +117,8 @@ export async function POST(request: NextRequest) {
 
           if (pics.length >= 2) {
             lineArtBuffer = band === 'low'
-              ? await buildLetterStickerSheet(pics, glyph.value, settings)
-              : await buildLetterWriteSheet(pics, glyph.value, settings.objects, settings)
+              ? await buildLetterStickerSheet(pics, glyph.value, settings, isPro)
+              : await buildLetterWriteSheet(pics, glyph.value, settings.objects, settings, isPro)
           } else {
             // Fallback: one combined image under the header (old behaviour).
             const generated = await generateFromText(settings.prompt || '', settings)

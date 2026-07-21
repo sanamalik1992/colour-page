@@ -278,7 +278,8 @@ function doodleSvg(kind: number, cx: number, cy: number, size: number): string {
 export async function buildLetterStickerSheet(
   objectPngs: Buffer[],
   letter: string,
-  settings: PhotoJobSettings
+  settings: PhotoJobSettings,
+  isPro = false
 ): Promise<Buffer> {
   const d = detail(settings)
   const chars = letter.toUpperCase().slice(0, 3)
@@ -293,7 +294,10 @@ export async function buildLetterStickerSheet(
   const bodyX = MARGIN
   const bodyY = bodyTop
   const bodyW = A4_W - MARGIN * 2
-  const bodyH = A4_H - bodyTop - MARGIN
+  const fullBodyH = A4_H - bodyTop - MARGIN
+  // Pro pages carry a second activity below the picture grid, so the grid takes
+  // ~62% of the body; free pages give the whole body to the pictures.
+  const bodyH = isPro ? Math.round(fullBodyH * 0.62) : fullBodyH
   const cellW = bodyW / cols
   const cellH = bodyH / rows
 
@@ -331,6 +335,15 @@ export async function buildLetterStickerSheet(
     const top = Math.round(cy + (cellH - (pm.height || innerH)) / 2)
     composites.push({ input: pic, left, top })
   }
+
+  // Pro-only second activity: colour every letter that makes the sound.
+  if (isPro) {
+    const actTop = bodyTop + bodyH + 40
+    const { svg: hSvg, nextY } = headingSvg(`COLOUR EVERY ${chars}`, bodyX, actTop)
+    overlay += hSvg
+    overlay += circleLetterBlock(chars, bodyX, nextY, bodyW, A4_H - MARGIN - nextY)
+  }
+
   overlay += `</svg>`
 
   return sharp({ create: { width: A4_W, height: A4_H, channels: 3, background: '#ffffff' } })
@@ -410,11 +423,67 @@ function makeWordSearch(words: string[], size: number): string[][] {
   return G
 }
 
+// A small activity heading with a short underline, returned as SVG. Returns the
+// y just below the heading so callers can stack content under it.
+function headingSvg(text: string, x: number, y: number): { svg: string; nextY: number } {
+  const h = 54
+  const w = textWidth(text, h)
+  let s = textSvg(text, x, y, h, 12, { color: '#111' })
+  s += `<line x1="${x}" y1="${(y + h + 16).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${(y + h + 16).toFixed(1)}" stroke="#F2A81E" stroke-width="7" stroke-linecap="round"/>`
+  return { svg: s, nextY: y + h + 48 }
+}
+
+// Index-based pseudo-random so blocks vary but render identically each time
+// (no reliance on Math.random for layout — keeps output stable to eyeball/test).
+function pick<T>(arr: T[], seed: number): T {
+  return arr[Math.abs((seed * 2654435761) >>> 0) % arr.length]
+}
+
+// "Colour/circle every X": a grid of big mixed letters, about half the target
+// grapheme and half distractors, for a find-and-colour activity.
+function circleLetterBlock(target: string, x: number, top: number, w: number, h: number): string {
+  const t = target.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'A'
+  const distractors = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').filter((c) => !t.includes(c))
+  const cols = 5
+  const rows = 2
+  const cellW = w / cols
+  const cellH = h / rows
+  const gh = Math.max(60, Math.min(cellH * 0.62, cellW * 0.55, 150))
+  let s = ''
+  for (let i = 0; i < cols * rows; i++) {
+    const c = i % cols
+    const r = Math.floor(i / cols)
+    // Roughly alternate target/distractor, seeded so it's varied but stable.
+    const isTarget = (i * 3 + 1) % 2 === 0
+    const ch = isTarget ? t : pick(distractors, i + 11)
+    const gw = numberWidth(ch, gh)
+    s += numberSvg(ch, x + c * cellW + (cellW - gw) / 2, top + r * cellH + (cellH - gh) / 2, gh, 15)
+  }
+  return s
+}
+
+// "Trace the words": each word rendered dotted on a baseline to write over.
+function traceWordsBlock(words: string[], grapheme: string, x: number, top: number, w: number, h: number): string {
+  const list = words.map((word) => word.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean).slice(0, 4)
+  if (!list.length) return ''
+  const rowH = h / list.length
+  const gh = Math.max(50, Math.min(rowH * 0.56, 120))
+  let s = ''
+  list.forEach((word, i) => {
+    const y = top + i * rowH + (rowH - gh) / 2
+    const baseY = y + gh + gh * 0.06
+    s += `<line x1="${x}" y1="${baseY.toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="#e0dbd0" stroke-width="3"/>`
+    // First glyph(s) of the target sound solid as a hint, rest dotted to trace.
+    s += numberSvg(word, x + 24, y, gh, 15, { dashed: true, color: '#9aa0a6' })
+  })
+  return s
+}
+
 /**
  * 6–8 band: "write the missing sound". Sticker grid where each picture has the
  * word underneath with the target grapheme replaced by a write-in line.
  */
-export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string, words: string[], settings: PhotoJobSettings): Promise<Buffer> {
+export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string, words: string[], settings: PhotoJobSettings, isPro = false): Promise<Buffer> {
   const d = detail(settings)
   const chars = letter.toUpperCase().slice(0, 3)
   const { svg: topSvg, bodyTop } = renderLetterTop(chars, d)
@@ -426,7 +495,9 @@ export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string
   const rows = Math.ceil(count / cols)
   const bodyX = MARGIN, bodyY = bodyTop
   const bodyW = A4_W - MARGIN * 2
-  const bodyH = A4_H - bodyTop - MARGIN
+  const fullBodyH = A4_H - bodyTop - MARGIN
+  // Pro adds a "trace the words" activity below the fill-the-gap grid.
+  const bodyH = isPro ? Math.round(fullBodyH * 0.6) : fullBodyH
   const cellW = bodyW / cols
   const cellH = bodyH / rows
 
@@ -451,6 +522,15 @@ export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string
     const top = Math.round(cy + fh * 0.14)
     composites.push({ input: pic, left, top })
   }
+
+  // Pro-only second activity: trace the whole words.
+  if (isPro) {
+    const actTop = bodyTop + bodyH + 40
+    const { svg: hSvg, nextY } = headingSvg('TRACE THE WORDS', bodyX, actTop)
+    overlay += hSvg
+    overlay += traceWordsBlock(words, chars, bodyX, nextY, bodyW, A4_H - MARGIN - nextY)
+  }
+
   overlay += `</svg>`
 
   return sharp({ create: { width: A4_W, height: A4_H, channels: 3, background: '#ffffff' } })
@@ -463,7 +543,7 @@ export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string
  * 9–10 band: a word-search puzzle using the target words, a "find these" list,
  * and lined space to write a sentence. Fully deterministic — no model needed.
  */
-export async function buildLetterPuzzleSheet(letter: string, words: string[], settings: PhotoJobSettings): Promise<Buffer> {
+export async function buildLetterPuzzleSheet(letter: string, words: string[], settings: PhotoJobSettings, isPro = false): Promise<Buffer> {
   const chars = letter.toUpperCase().slice(0, 3)
   const list = words.map((w) => w.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean).slice(0, 6)
   const size = Math.max(9, Math.min(12, ...list.map((w) => w.length + 4), 12))
@@ -505,12 +585,14 @@ export async function buildLetterPuzzleSheet(letter: string, words: string[], se
     if (wx > A4_W - MARGIN - 300) { wx = MARGIN + textWidth('FIND', labelH) + labelH; }
   }
 
-  // Sentence lines
-  const sentTop = listY + Math.round(A4_H * 0.06)
-  svg += textSvg('WRITE A SENTENCE', MARGIN, sentTop, 60, 11)
-  for (let i = 0; i < 2; i++) {
-    const y = sentTop + 150 + i * 150
-    svg += `<line x1="${MARGIN}" y1="${y}" x2="${A4_W - MARGIN}" y2="${y}" stroke="#d0cabf" stroke-width="3"/>`
+  // Sentence-writing lines (Pro only — the extra activity on this page).
+  if (isPro) {
+    const sentTop = listY + Math.round(A4_H * 0.06)
+    svg += textSvg('WRITE A SENTENCE', MARGIN, sentTop, 60, 11)
+    for (let i = 0; i < 3; i++) {
+      const y = sentTop + 150 + i * 150
+      svg += `<line x1="${MARGIN}" y1="${y}" x2="${A4_W - MARGIN}" y2="${y}" stroke="#d0cabf" stroke-width="3"/>`
+    }
   }
 
   svg += `</svg>`
