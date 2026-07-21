@@ -8,6 +8,29 @@ import type { PhotoJobSettings } from '@/types/photo-job'
 
 export const maxDuration = 300 // Vercel Pro: 5 minutes
 
+// Internal deadline, kept safely below maxDuration. If the work isn't done by
+// this point we mark the job failed OURSELVES — otherwise Vercel hard-kills the
+// function at maxDuration, our catch block never runs, and the job is left in
+// "processing" forever (the client bar sits at 99% with no error).
+const WORK_DEADLINE_MS = 275_000
+
+class DeadlineError extends Error {
+  constructor() {
+    super('This sheet is taking longer than expected. Please try again — it usually works on a second go.')
+    this.name = 'DeadlineError'
+  }
+}
+
+function withDeadline<T>(work: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new DeadlineError()), WORK_DEADLINE_MS)
+    work.then(
+      (v) => { clearTimeout(timer); resolve(v) },
+      (e) => { clearTimeout(timer); reject(e) }
+    )
+  })
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -73,6 +96,10 @@ export async function POST(request: NextRequest) {
     // column if a migration added one.
     const isTopic = settings.source === 'topic' || job.source === 'topic'
     const hasReplicate = !!process.env.REPLICATE_API_TOKEN
+
+    // All generation + rendering runs under an internal deadline so a stalled
+    // job fails cleanly instead of hanging at 99% until Vercel kills it.
+    await withDeadline((async (jobId: string) => {
     let lineArtBuffer: Buffer
 
     if (isTopic) {
@@ -226,6 +253,7 @@ export async function POST(request: NextRequest) {
       output_png_path: pngPath,
       completed_at: new Date().toISOString(),
     })
+    })(jobId)) // end withDeadline
 
     return NextResponse.json({ success: true, status: 'done' })
   } catch (error) {
