@@ -257,7 +257,7 @@ export default function Home() {
       setDisplayPct((prev) => {
         const floor = Math.max(prev, progress) // respect real server milestones
         const next = Math.max(floor, Math.min(93, target), prev + 0.25) // always inch up
-        return Math.min(next, 99)
+        return Math.min(next, 96)
       })
     }, 200)
     return () => clearInterval(id)
@@ -326,10 +326,17 @@ export default function Home() {
   const limitReached = !isPro && remaining <= 0
 
   const pct = Math.round(displayPct)
+  const elapsedSec = isProcessing && genStartRef.current != null
+    ? (Date.now() - genStartRef.current) / 1000
+    : 0
+  // Detailed sheets (several generated pictures) legitimately take a while. Once
+  // we're near the top of the bar, reassure rather than sit on a frozen number
+  // so a slow-but-fine job never reads as "stuck".
   const stageLabel =
     pct < 12 ? (genMode === 'topic' ? 'Planning the activity…' : 'Getting your photo ready…')
       : pct < 45 ? (genMode === 'topic' ? 'Designing the sheet…' : 'Reading your photo…')
       : pct < 75 ? 'Drawing the outlines…'
+      : elapsedSec > 70 ? 'Still working — detailed sheets can take a minute or two…'
       : pct < 95 ? 'Adding the finishing touches…'
       : 'Almost ready…'
 
