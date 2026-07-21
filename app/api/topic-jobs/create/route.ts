@@ -127,6 +127,9 @@ export async function POST(request: NextRequest) {
       isPro,
       subject: plan.subject,
       category: plan.category,
+      // Context for the Pro-activity preview thumbnails on the result screen.
+      glyph: plan.glyph?.value || null,
+      words: plan.objects || [],
     })
   } catch (error) {
     console.error('Topic job create error:', error)
