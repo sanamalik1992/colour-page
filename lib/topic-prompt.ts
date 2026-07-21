@@ -106,21 +106,45 @@ const STYLE_SUFFIX =
   'no letters, no numbers, no captions, no title, no labels, no writing and no ' +
   'border frame anywhere in the image — pictures only.'
 
+// Some object names are ambiguous to a diffusion model and come back as a vague
+// blob (e.g. "moon" → a plain disc that reads as a planet). Map those to the
+// single, iconic, instantly-nameable form a child would recognise so every
+// picture is clear. Only add entries where the plain word is genuinely unclear.
+const OBJECT_CLARITY: Record<string, string> = {
+  moon: 'crescent moon',
+  star: 'five-pointed star',
+  sun: 'bright sun with rays',
+  cloud: 'fluffy cloud',
+  heart: 'love heart',
+  snowflake: 'six-point snowflake',
+  leaf: 'single leaf',
+  flower: 'daisy flower',
+  tree: 'leafy tree',
+  fish: 'side-view fish',
+  bird: 'small side-view bird',
+  butterfly: 'symmetrical butterfly',
+}
+export function clarifyObject(obj: string): string {
+  const key = obj.trim().toLowerCase()
+  return OBJECT_CLARITY[key] || obj.trim()
+}
+
 // A clean, instruction-free prompt for a set of objects (used by letter and
 // phonics sheets, where we stamp the letter ourselves and only need the model
 // to draw the objects).
 export function objectsPrompt(objs: string[]): string {
   return `Coloring book line art of ${objs.length} separate simple objects, each ` +
-    `drawn large with space around it: ${objs.join(', ')}. ${STYLE_SUFFIX}`
+    `drawn large with space around it: ${objs.map(clarifyObject).join(', ')}. ${STYLE_SUFFIX}`
 }
 
 // One clear, whole object filling the frame — used per sticker cell so each
 // picture is instantly recognisable and never merged with another (no puns).
 export function singleObjectPrompt(obj: string): string {
-  return `Coloring book line art of one single ${obj}. A whole ${obj}, big and bold, ` +
-    `centred and filling the frame, instantly recognisable to a small child, cheerful ` +
-    `friendly cartoon style with a happy face if it is a creature. Only one ${obj} and ` +
-    `nothing else in the picture. ${STYLE_SUFFIX}`
+  const o = clarifyObject(obj)
+  return `Coloring book line art of one single ${o}. A whole ${o}, big and bold, ` +
+    `centred and filling the frame, with a simple, clean, unmistakable outline that a ` +
+    `small child could name at a glance, cheerful friendly cartoon style with a happy ` +
+    `face if it is a creature. Only one ${o} and nothing else in the picture. ${STYLE_SUFFIX}`
 }
 
 // A pictorial colouring prompt for a set of concrete subjects.
