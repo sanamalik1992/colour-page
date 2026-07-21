@@ -15,23 +15,23 @@ import {
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 
-// Swap these placeholders for real product photos: drop files in /public and
-// set src to e.g. '/printer/photo-1.jpg'. Leave src empty to show the labelled
-// placeholder slot.
+// Product photos live in /public/printer. Leave src empty to show a labelled
+// placeholder slot instead.
 const GALLERY: { src?: string; label: string }[] = [
-  { label: 'Main product photo' },
-  { label: 'Printing from phone' },
-  { label: 'In the box' },
-  { label: 'Size / in hand' },
+  { src: '/printer/1-easy-for-parents.webp', label: 'Easy for parents, fun for kids' },
+  { src: '/printer/2-print-anywhere.webp', label: 'Print colouring pages anywhere' },
+  { src: '/printer/3-print-colour-enjoy.webp', label: 'Print, colour, enjoy' },
+  { src: '/printer/4-learning-and-fun.webp', label: 'Learning & fun in one printer' },
+  { src: '/printer/5-portable.webp', label: 'Small, portable & ready to go' },
 ]
 
 const SPECS = [
   { icon: Ban, title: 'Inkless — no cartridges', desc: 'Thermal printing, so there is no ink or toner to ever buy or replace.' },
-  { icon: Bluetooth, title: 'Wireless Bluetooth', desc: 'Pairs with your phone, tablet or laptop in seconds — no cables, no setup.' },
-  { icon: Smartphone, title: 'Print from your phone', desc: 'Send any activity or colouring sheet straight from the colour.page app.' },
+  { icon: Bluetooth, title: 'Bluetooth + USB-C', desc: 'Connect wirelessly or by cable — pairs in seconds, no fiddly setup.' },
+  { icon: Smartphone, title: 'Phone, tablet & computer', desc: 'Works with iOS, Android, Windows and macOS — print from almost anything.' },
   { icon: Printer, title: 'A4 & 8.5×11 paper', desc: 'Full-size thermal paper — proper worksheets, not tiny sticker prints.' },
-  { icon: BatteryCharging, title: 'Rechargeable & portable', desc: 'Pop it in a bag for car journeys, cafés, grandparents’ house and holidays.' },
-  { icon: Sparkles, title: 'Keeps kids busy', desc: 'Fresh sheets on demand, anywhere — no more “I’m bored”.' },
+  { icon: BatteryCharging, title: 'Lightweight & portable', desc: 'Just 440 g and 25.1 × 5.4 × 3.2 cm — slips into a bag for anywhere.' },
+  { icon: Sparkles, title: 'Colouring, activities & more', desc: 'Colouring pages, mazes, tracing, reward charts, maths — fresh sheets on demand.' },
 ]
 
 export default function PrinterPage() {
@@ -117,9 +117,9 @@ export default function PrinterPage() {
               Portable Bluetooth Colouring Printer
             </h1>
             <p className="mt-3 text-gray-300">
-              Print activity and colouring sheets straight from your phone, anywhere. A pocket-size
-              inkless printer that pairs over Bluetooth and never needs an ink cartridge — just load
-              thermal paper and go.
+              Print activity and colouring sheets straight from your phone, anywhere. A lightweight
+              440 g inkless printer that connects over Bluetooth or USB-C and never needs an ink
+              cartridge — just load thermal paper and go.
             </p>
 
             <div className="mt-5 flex items-end gap-3">
@@ -166,7 +166,7 @@ export default function PrinterPage() {
           </div>
           <p className="text-center text-xs text-gray-600 mt-8 max-w-2xl mx-auto">
             Thermal printer prints in black on thermal paper. Requires compatible A4 or 8.5×11 thermal
-            paper (not included). Bluetooth pairing with iOS and Android devices.
+            paper (not included). Connects via Bluetooth or USB-C; works with iOS, Android, Windows and macOS.
           </p>
         </div>
       </main>
