@@ -72,6 +72,24 @@ export async function POST(request: NextRequest) {
             updated_at: new Date().toISOString()
           }, { onConflict: 'stripe_subscription_id' })
         }
+
+        // Physical order (portable printer) — a one-off payment, NOT a
+        // subscription, so no Pro is granted. Log the shipping details so the
+        // order to post is easy to find; Stripe's Dashboard remains the source
+        // of truth for fulfilment.
+        if (session.mode === 'payment' && session.metadata?.product === 'portable-printer') {
+          const ship = session.shipping_details
+          const cust = session.customer_details
+          console.log('PRINTER ORDER', JSON.stringify({
+            sessionId: session.id,
+            paid: session.payment_status,
+            amountTotal: session.amount_total,
+            email: cust?.email || session.customer_email,
+            phone: cust?.phone,
+            shipTo: ship?.name,
+            address: ship?.address,
+          }))
+        }
         break
       }
 
