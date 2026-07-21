@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { preprocessImage, processWithReplicate, generateFromText, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
-import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet, buildWordPracticeSheet } from '@/lib/topic-render'
-import { singleObjectPrompt } from '@/lib/topic-prompt'
+import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet, buildWordPracticeSheet, buildComposedSheet } from '@/lib/topic-render'
+import { singleObjectPrompt, type Activity } from '@/lib/topic-prompt'
 import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
@@ -92,6 +92,16 @@ export async function POST(request: NextRequest) {
         // Sight / tricky / specific words (there, then, that…) — a read-trace-
         // find-write practice sheet, drawn deterministically (no pictures).
         lineArtBuffer = await buildWordPracticeSheet(settings.title, settings.objects, settings, !!job.is_pro)
+        await updateJob(jobId, { progress: 82 })
+      } else if (settings.category === 'composed' && settings.activities?.length) {
+        // Open-ended / concept topics (nouns, verbs, "an interactive sheet
+        // about X"): a designed sequence of activity blocks. Any picture blocks
+        // generate their objects via the model; the rest are deterministic.
+        await updateJob(jobId, { progress: 20 })
+        const genPicture = hasReplicate
+          ? (obj: string) => generateFromText(singleObjectPrompt(obj), settings).catch((e) => { console.error(`object "${obj}" failed:`, e); return null })
+          : undefined
+        lineArtBuffer = await buildComposedSheet(settings.title, settings.activities as Activity[], settings, !!job.is_pro, genPicture)
         await updateJob(jobId, { progress: 82 })
       } else if (settings.category === 'letter' && glyph?.kind === 'letter' && settings.objects?.length) {
         // Letter/phonics: the ACTIVITY TYPE changes with age band.
