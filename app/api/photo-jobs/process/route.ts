@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { preprocessImage, processWithReplicate, generateFromText, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
-import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet } from '@/lib/topic-render'
+import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet } from '@/lib/topic-render'
 import { singleObjectPrompt } from '@/lib/topic-prompt'
 import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
 import type { PhotoJobSettings } from '@/types/photo-job'
@@ -89,27 +89,38 @@ export async function POST(request: NextRequest) {
         lineArtBuffer = await renderNumberSheet(maxN, settings)
         await updateJob(jobId, { progress: 80 })
       } else if (settings.category === 'letter' && glyph?.kind === 'letter' && settings.objects?.length) {
-        // Letter/phonics: generate each object as its own clear picture (in
-        // parallel), then compose a page-filling sticker grid under the stamped
-        // grapheme + trace. Clearer + fuller than one merged image.
-        if (!hasReplicate) throw new Error('Text-to-image generation is not configured')
-        await updateJob(jobId, { progress: 20 })
-        const pics = (await Promise.all(
-          settings.objects.slice(0, 6).map((obj) =>
-            generateFromText(singleObjectPrompt(obj), settings).catch((e) => {
-              console.error(`object "${obj}" failed:`, e)
-              return null
-            })
-          )
-        )).filter((b): b is Buffer => b != null)
-        await updateJob(jobId, { progress: 78 })
-
-        if (pics.length >= 2) {
-          lineArtBuffer = await buildLetterStickerSheet(pics, glyph.value, settings)
+        // Letter/phonics: the ACTIVITY TYPE changes with age band.
+        //  • 9–10 (high): a word-search + write-a-sentence puzzle — fully
+        //    deterministic (our glyph font), no image model needed.
+        //  • 3–5 / 6–8: generate each object as its own clear picture (parallel)
+        //    then compose a sticker grid — recognise/colour (low) or
+        //    write-the-missing-sound fill-gap (medium).
+        const band = settings.detailLevel
+        if (band === 'high') {
+          lineArtBuffer = await buildLetterPuzzleSheet(glyph.value, settings.objects, settings)
+          await updateJob(jobId, { progress: 82 })
         } else {
-          // Fallback: one combined image under the header (old behaviour).
-          const generated = await generateFromText(settings.prompt || '', settings)
-          lineArtBuffer = await buildLetterSheet(generated, glyph.value, settings)
+          if (!hasReplicate) throw new Error('Text-to-image generation is not configured')
+          await updateJob(jobId, { progress: 20 })
+          const pics = (await Promise.all(
+            settings.objects.slice(0, 6).map((obj) =>
+              generateFromText(singleObjectPrompt(obj), settings).catch((e) => {
+                console.error(`object "${obj}" failed:`, e)
+                return null
+              })
+            )
+          )).filter((b): b is Buffer => b != null)
+          await updateJob(jobId, { progress: 78 })
+
+          if (pics.length >= 2) {
+            lineArtBuffer = band === 'low'
+              ? await buildLetterStickerSheet(pics, glyph.value, settings)
+              : await buildLetterWriteSheet(pics, glyph.value, settings.objects, settings)
+          } else {
+            // Fallback: one combined image under the header (old behaviour).
+            const generated = await generateFromText(settings.prompt || '', settings)
+            lineArtBuffer = await buildLetterSheet(generated, glyph.value, settings)
+          }
         }
       } else {
         // Everything else needs the text-to-image model. There's no CV fallback

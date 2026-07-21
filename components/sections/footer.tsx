@@ -25,7 +25,6 @@ export function Footer() {
               <h4 className="text-sm font-semibold text-white mb-4">Product</h4>
               <ul className="space-y-2.5">
                 <li><Link href="/" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Create Page</Link></li>
-                <li><Link href="/dot-to-dot" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Dot-to-Dot</Link></li>
                 <li><Link href="/print-pages" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Gallery</Link></li>
                 <li><Link href="/library" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">My Pages</Link></li>
                 <li><Link href="/pro" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Go Pro</Link></li>
