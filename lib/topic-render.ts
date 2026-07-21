@@ -338,3 +338,181 @@ export async function buildLetterStickerSheet(
     .png()
     .toBuffer()
 }
+
+// ---------------------------------------------------------------------------
+// Deterministic text helpers (our glyph font renders A–Z + 0–9 in caps)
+// ---------------------------------------------------------------------------
+
+// Render UPPERCASE text, handling spaces between words. Returns the SVG string.
+function textSvg(text: string, x: number, y: number, h: number, stroke: number, opts?: { dashed?: boolean; color?: string }): string {
+  const space = h * 0.5
+  let cx = x
+  let out = ''
+  for (const w of text.toUpperCase().split(' ')) {
+    if (w) out += numberSvg(w, cx, y, h, stroke, opts)
+    cx += numberWidth(w, h) + space
+  }
+  return out
+}
+function textWidth(text: string, h: number): number {
+  const space = h * 0.5
+  const words = text.toUpperCase().split(' ')
+  return words.reduce((s, w, i) => s + numberWidth(w, h) + (i ? space : 0), 0)
+}
+
+// A word with its target grapheme replaced by a write-in line (fill-the-gap).
+function gappedWordSvg(word: string, grapheme: string, centerX: number, top: number, h: number, stroke: number): string {
+  const wu = word.toUpperCase().replace(/[^A-Z]/g, '')
+  const gu = grapheme.toUpperCase()
+  let idx = wu.indexOf(gu)
+  let glen = gu.length
+  if (idx < 0) { idx = 0; glen = Math.min(gu.length, wu.length) }
+  const before = wu.slice(0, idx)
+  const after = wu.slice(idx + glen)
+  const pad = h * 0.18
+  const gapW = numberWidth('NN'.slice(0, glen) || 'N', h)
+  const beforeW = before ? numberWidth(before, h) : 0
+  const afterW = after ? numberWidth(after, h) : 0
+  const totalW = beforeW + (before ? pad : 0) + gapW + (after ? pad : 0) + afterW
+  let x = centerX - totalW / 2
+  let s = ''
+  if (before) { s += numberSvg(before, x, top, h, stroke); x += beforeW + pad }
+  const lineY = top + h * 1.02
+  s += `<line x1="${x.toFixed(1)}" y1="${lineY.toFixed(1)}" x2="${(x + gapW).toFixed(1)}" y2="${lineY.toFixed(1)}" stroke="#111" stroke-width="${stroke}" stroke-linecap="round"/>`
+  x += gapW + (after ? pad : 0)
+  if (after) s += numberSvg(after, x, top, h, stroke)
+  return s
+}
+
+// Place words in an N×N grid (right / down / diagonal), fill the rest randomly.
+function makeWordSearch(words: string[], size: number): string[][] {
+  const G: string[][] = Array.from({ length: size }, () => Array(size).fill(''))
+  const dirs = [[0, 1], [1, 0], [1, 1]]
+  for (const raw of words) {
+    const w = raw.toUpperCase().replace(/[^A-Z]/g, '')
+    if (!w || w.length > size) continue
+    for (let tries = 0; tries < 300; tries++) {
+      const [dr, dc] = dirs[Math.floor(Math.random() * dirs.length)]
+      const r0 = Math.floor(Math.random() * (dr ? size - w.length + 1 : size))
+      const c0 = Math.floor(Math.random() * (dc ? size - w.length + 1 : size))
+      let fits = true
+      for (let k = 0; k < w.length; k++) {
+        const cur = G[r0 + dr * k][c0 + dc * k]
+        if (cur && cur !== w[k]) { fits = false; break }
+      }
+      if (!fits) continue
+      for (let k = 0; k < w.length; k++) G[r0 + dr * k][c0 + dc * k] = w[k]
+      break
+    }
+  }
+  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+  for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (!G[r][c]) G[r][c] = A[Math.floor(Math.random() * 26)]
+  return G
+}
+
+/**
+ * 6–8 band: "write the missing sound". Sticker grid where each picture has the
+ * word underneath with the target grapheme replaced by a write-in line.
+ */
+export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string, words: string[], settings: PhotoJobSettings): Promise<Buffer> {
+  const d = detail(settings)
+  const chars = letter.toUpperCase().slice(0, 3)
+  const { svg: topSvg, bodyTop } = renderLetterTop(chars, d)
+  const topPng = await sharp(Buffer.from(topSvg)).png().toBuffer()
+
+  const pics = objectPngs.slice(0, 6)
+  const count = Math.max(1, pics.length)
+  const cols = count <= 4 ? 2 : 3
+  const rows = Math.ceil(count / cols)
+  const bodyX = MARGIN, bodyY = bodyTop
+  const bodyW = A4_W - MARGIN * 2
+  const bodyH = A4_H - bodyTop - MARGIN
+  const cellW = bodyW / cols
+  const cellH = bodyH / rows
+
+  let overlay = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
+  const composites: sharp.OverlayOptions[] = [{ input: topPng, left: 0, top: 0 }]
+  const wordH = Math.min(cellH * 0.16, 130)
+
+  for (let i = 0; i < count; i++) {
+    const col = i % cols, row = Math.floor(i / cols)
+    const cx = bodyX + col * cellW, cy = bodyY + row * cellH
+    const fPad = Math.min(cellW, cellH) * 0.06
+    const fx = cx + fPad, fy = cy + fPad, fw = cellW - fPad * 2, fh = cellH - fPad * 2
+    overlay += `<rect x="${fx.toFixed(1)}" y="${fy.toFixed(1)}" width="${fw.toFixed(1)}" height="${fh.toFixed(1)}" rx="46" fill="none" stroke="#e2ded6" stroke-width="4" stroke-dasharray="14 12"/>`
+    // gapped word near the bottom of the cell
+    if (words[i]) overlay += gappedWordSvg(words[i], chars, cx + cellW / 2, cy + cellH - wordH * 1.7, wordH, d === 'high' ? 12 : 15)
+    // picture in the upper part
+    const innerW = Math.round(fw * 0.72)
+    const innerH = Math.round(fh * 0.5)
+    const pic = await sharp(pics[i]).greyscale().resize(innerW, innerH, { fit: 'inside', background: '#ffffff' }).flatten({ background: '#ffffff' }).toBuffer()
+    const pm = await sharp(pic).metadata()
+    const left = Math.round(cx + (cellW - (pm.width || innerW)) / 2)
+    const top = Math.round(cy + fh * 0.14)
+    composites.push({ input: pic, left, top })
+  }
+  overlay += `</svg>`
+
+  return sharp({ create: { width: A4_W, height: A4_H, channels: 3, background: '#ffffff' } })
+    .composite([{ input: Buffer.from(overlay), top: 0, left: 0 }, ...composites])
+    .png()
+    .toBuffer()
+}
+
+/**
+ * 9–10 band: a word-search puzzle using the target words, a "find these" list,
+ * and lined space to write a sentence. Fully deterministic — no model needed.
+ */
+export async function buildLetterPuzzleSheet(letter: string, words: string[], settings: PhotoJobSettings): Promise<Buffer> {
+  const chars = letter.toUpperCase().slice(0, 3)
+  const list = words.map((w) => w.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean).slice(0, 6)
+  const size = Math.max(9, Math.min(12, ...list.map((w) => w.length + 4), 12))
+  const grid = makeWordSearch(list, size)
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
+  svg += `<rect width="${A4_W}" height="${A4_H}" fill="#ffffff"/>`
+
+  // Header grapheme
+  const hH = Math.round(A4_H * 0.09)
+  const hGlyphH = Math.round(hH * 0.8)
+  svg += numberSvg(chars, (A4_W - numberWidth(chars, hGlyphH)) / 2, MARGIN * 0.5, hGlyphH, 22)
+
+  // Word-search grid
+  const gridTop = MARGIN + hH
+  const gridMax = Math.min(A4_W - MARGIN * 2, Math.round(A4_H * 0.52))
+  const cell = Math.floor(gridMax / size)
+  const gridSize = cell * size
+  const gridX = Math.round((A4_W - gridSize) / 2)
+  svg += `<rect x="${gridX}" y="${gridTop}" width="${gridSize}" height="${gridSize}" fill="none" stroke="#c9c4ba" stroke-width="3" rx="24"/>`
+  const letterH = Math.round(cell * 0.6)
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const ch = grid[r][c]
+      const lw = numberWidth(ch, letterH)
+      svg += numberSvg(ch, gridX + c * cell + (cell - lw) / 2, gridTop + r * cell + (cell - letterH) / 2, letterH, 8)
+    }
+  }
+
+  // "FIND" list
+  const listY = gridTop + gridSize + Math.round(A4_H * 0.03)
+  const labelH = 70
+  svg += textSvg('FIND', MARGIN, listY, labelH, 12)
+  let wx = MARGIN + textWidth('FIND', labelH) + labelH
+  const wordH = 66
+  for (const w of list) {
+    svg += numberSvg(w, wx, listY + 2, wordH, 10)
+    wx += numberWidth(w, wordH) + wordH
+    if (wx > A4_W - MARGIN - 300) { wx = MARGIN + textWidth('FIND', labelH) + labelH; }
+  }
+
+  // Sentence lines
+  const sentTop = listY + Math.round(A4_H * 0.06)
+  svg += textSvg('WRITE A SENTENCE', MARGIN, sentTop, 60, 11)
+  for (let i = 0; i < 2; i++) {
+    const y = sentTop + 150 + i * 150
+    svg += `<line x1="${MARGIN}" y1="${y}" x2="${A4_W - MARGIN}" y2="${y}" stroke="#d0cabf" stroke-width="3"/>`
+  }
+
+  svg += `</svg>`
+  return sharp(Buffer.from(svg)).png().toBuffer()
+}

@@ -14,10 +14,33 @@ import {
   TrendingUp,
   Filter,
   AlertTriangle,
+  ArrowRight,
+  PawPrint,
+  Footprints,
+  Fish,
+  Rocket,
+  Car,
+  Flower2,
+  Wand2,
+  Cake,
+  type LucideIcon,
 } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 import { PRINT_PAGE_CATEGORIES, SEASONS } from '@/types/photo-job'
+import { GALLERY_CATEGORIES, galleryTopicHref } from '@/lib/gallery-catalog'
+
+// Line icons for each curated category (keyed by GalleryCategory.key).
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  animals: PawPrint,
+  dinosaurs: Footprints,
+  sea: Fish,
+  space: Rocket,
+  vehicles: Car,
+  nature: Flower2,
+  fantasy: Wand2,
+  fun: Cake,
+}
 
 interface PrintPageItem {
   id: string
@@ -61,6 +84,9 @@ export default function PrintPagesPage() {
   const [currentSeason, setCurrentSeason] = useState<string | null>(null)
   const [total, setTotal] = useState(0)
   const [showFilters, setShowFilters] = useState(false)
+
+  // Curated "ready-made" picker — which category a child has opened.
+  const [pickedCat, setPickedCat] = useState<string>(GALLERY_CATEGORIES[0].key)
 
   // Search suggestions state
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -216,8 +242,75 @@ export default function PrintPagesPage() {
           </div>
           <h1 className="text-3xl md:text-4xl font-bold text-white mb-3">Colouring Gallery</h1>
           <p className="text-gray-400 max-w-xl mx-auto">
-            Browse our library of original colouring sheets. Download, print, and colour!
+            Pick a ready-made page or search our library. Choose, print, and colour!
           </p>
+        </div>
+
+        {/* Ready-made picker — populated categories kids can choose from */}
+        <section className="mb-14">
+          <div className="flex items-center justify-center gap-2 mb-5">
+            <Sparkles className="w-5 h-5 text-brand-primary" />
+            <h2 className="text-lg font-bold text-white">Choose a ready-made page</h2>
+          </div>
+
+          {/* Category chooser */}
+          <div className="flex flex-wrap justify-center gap-2.5 mb-7">
+            {GALLERY_CATEGORIES.map((cat) => {
+              const Icon = CATEGORY_ICONS[cat.key] || Star
+              const active = pickedCat === cat.key
+              return (
+                <button
+                  key={cat.key}
+                  onClick={() => setPickedCat(cat.key)}
+                  className={`flex items-center gap-2 px-3.5 py-2.5 rounded-2xl border text-sm font-semibold transition-all ${
+                    active
+                      ? 'border-brand-primary/50 bg-brand-primary/15 text-white shadow-lg'
+                      : 'border-zinc-700 text-gray-300 hover:border-zinc-600 hover:text-white'
+                  }`}
+                >
+                  <span className={`w-8 h-8 rounded-xl flex items-center justify-center bg-gradient-to-br ${cat.accent}`}>
+                    <Icon className="w-4 h-4 text-white" />
+                  </span>
+                  {cat.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Items in the chosen category */}
+          {GALLERY_CATEGORIES.filter((c) => c.key === pickedCat).map((cat) => {
+            const Icon = CATEGORY_ICONS[cat.key] || Star
+            return (
+              <div key={cat.key}>
+                <p className="text-center text-sm text-gray-400 mb-5">{cat.blurb}</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-w-4xl mx-auto">
+                  {cat.items.map((item) => (
+                    <Link
+                      key={item}
+                      href={galleryTopicHref(item)}
+                      className="group relative flex flex-col items-center justify-center gap-3 rounded-2xl border border-zinc-700/80 bg-zinc-800/40 p-5 text-center hover:border-brand-primary/60 hover:bg-zinc-800/70 transition-all"
+                    >
+                      <span
+                        className={`w-14 h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br ${cat.accent} shadow-md group-hover:scale-105 transition-transform`}
+                      >
+                        <Icon className="w-7 h-7 text-white" />
+                      </span>
+                      <span className="text-sm font-semibold text-white leading-tight">{item}</span>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-brand-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                        Make it <ArrowRight className="w-3 h-3" />
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </section>
+
+        {/* Divider into the searchable library below */}
+        <div className="text-center mb-6">
+          <h2 className="text-lg font-bold text-white">More from our library</h2>
+          <p className="text-sm text-gray-500">Search and filter every colouring sheet we&apos;ve made</p>
         </div>
 
         {/* Search with Typeahead */}

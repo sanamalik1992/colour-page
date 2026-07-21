@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { Sparkles, Printer } from 'lucide-react'
+import { Printer } from 'lucide-react'
 
 export function Header() {
   return (
@@ -22,11 +22,6 @@ export function Header() {
             <Link href="/print" className="px-4 py-2 text-sm font-semibold text-gray-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors flex items-center gap-1.5">
               <Printer className="w-4 h-4" />
               Print Library
-            </Link>
-            <Link href="/dot-to-dot" className="px-4 py-2 text-sm font-semibold text-amber-400 hover:text-amber-300 hover:bg-zinc-800 rounded-lg transition-colors flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4" />
-              Dot-to-Dot
-              <span className="text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded-full">New</span>
             </Link>
           </nav>
 

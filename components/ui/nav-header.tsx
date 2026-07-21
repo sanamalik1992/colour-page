@@ -1,19 +1,24 @@
 'use client'
 
 import Link from 'next/link'
-import { Sparkles, ImagePlus, Crown, CircleDot, LayoutGrid, FolderHeart } from 'lucide-react'
+import { Sparkles, ImagePlus, Crown, LayoutGrid, FolderHeart } from 'lucide-react'
 
 interface NavHeaderProps {
   active?: 'create' | 'library' | 'print-pages' | 'dot-to-dot' | 'pro'
   isPro?: boolean
 }
 
-const NAV_ITEMS = [
+const NAV_ITEMS: {
+  key: string
+  href: string
+  label: string
+  icon: typeof ImagePlus
+  showLabel: 'sm' | 'md'
+}[] = [
   { key: 'create', href: '/', label: 'Create', icon: ImagePlus, showLabel: 'sm' },
-  { key: 'dot-to-dot', href: '/dot-to-dot', label: 'Dot-to-Dot', icon: CircleDot, showLabel: 'md' },
   { key: 'print-pages', href: '/print-pages', label: 'Gallery', icon: LayoutGrid, showLabel: 'sm' },
   { key: 'library', href: '/library', label: 'My Pages', icon: FolderHeart, showLabel: 'sm' },
-] as const
+]
 
 export function NavHeader({ active, isPro }: NavHeaderProps) {
   const linkClass = (key: string) =>

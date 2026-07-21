@@ -148,8 +148,10 @@ export default function Home() {
     }
   }
 
-  const handleGenerateTopic = async () => {
-    if (!topic.trim() || !sessionId) return
+  const handleGenerateTopic = async (topicOverride?: string, ageOverride?: number | '') => {
+    const useTopic = (topicOverride ?? topic).trim()
+    const useAge = ageOverride ?? childAge
+    if (!useTopic || !sessionId) return
     setIsSubmitting(true)
     setError('')
     genStartRef.current = Date.now()
@@ -160,9 +162,9 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          topic: topic.trim(),
+          topic: useTopic,
           sessionId,
-          age: childAge === '' ? undefined : childAge,
+          age: useAge === '' ? undefined : useAge,
         }),
       })
 
@@ -178,6 +180,27 @@ export default function Home() {
       setIsSubmitting(false)
     }
   }
+
+  // Ready-made gallery pick: the gallery links here as `/?topic=Lion&age=4`.
+  // Once the session is ready, switch to topic mode, prefill, and kick off the
+  // generation automatically so children go straight to their page.
+  const autoRanRef = useRef(false)
+  useEffect(() => {
+    if (autoRanRef.current || !sessionId) return
+    const params = new URLSearchParams(window.location.search)
+    const t = (params.get('topic') || '').trim().slice(0, 80)
+    if (!t) return
+    autoRanRef.current = true
+    const ageNum = parseInt(params.get('age') || '', 10)
+    const age: number | '' = Number.isFinite(ageNum) ? Math.max(3, Math.min(10, ageNum)) : ''
+    setGenMode('topic')
+    setTopic(t)
+    setChildAge(age)
+    // Clear the query string so a later reset/refresh doesn't re-trigger.
+    window.history.replaceState(null, '', window.location.pathname)
+    handleGenerateTopic(t, age)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
 
   // Poll for status
   useEffect(() => {
@@ -544,7 +567,7 @@ export default function Home() {
                   </div>
 
                   <button
-                    onClick={handleGenerateTopic}
+                    onClick={() => handleGenerateTopic()}
                     disabled={limitReached || !topic.trim()}
                     className="btn-primary w-full"
                   >
@@ -706,19 +729,7 @@ export default function Home() {
           </div>
 
           {/* Quick Links */}
-          <div className="grid grid-cols-2 gap-3 mt-6">
-            <Link
-              href="/dot-to-dot"
-              className="flex items-center gap-3 bg-zinc-800/50 border border-zinc-700 rounded-xl p-4 hover:border-zinc-600 transition-colors group"
-            >
-              <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                <CircleDot className="w-5 h-5 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-white leading-tight">Dot-to-Dot</p>
-                <p className="text-xs text-gray-500 truncate">Photo puzzles</p>
-              </div>
-            </Link>
+          <div className="mt-6">
             <Link
               href="/print-pages"
               className="flex items-center gap-3 bg-zinc-800/50 border border-zinc-700 rounded-xl p-4 hover:border-zinc-600 transition-colors group"
@@ -727,8 +738,8 @@ export default function Home() {
                 <Printer className="w-5 h-5 text-white" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-white leading-tight">Gallery</p>
-                <p className="text-xs text-gray-500 truncate">Ready-made pages</p>
+                <p className="text-sm font-semibold text-white leading-tight">Colouring Gallery</p>
+                <p className="text-xs text-gray-500 truncate">Ready-made pages for kids to choose</p>
               </div>
             </Link>
           </div>
