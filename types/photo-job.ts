@@ -15,6 +15,7 @@ export interface PhotoJobSettings {
   age?: number
   category?: string
   prompt?: string
+  title?: string // friendly CAPS heading printed on the sheet
   numbers?: number[] // for 'sequence' sheets (multiples / times tables)
   objects?: string[] // for 'letter'/pictorial — generate each separately, then grid
   // Deterministic glyph to draw ourselves for letter/number sheets:

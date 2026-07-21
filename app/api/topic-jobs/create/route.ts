@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
       age,
       category: plan.category,
       prompt: plan.prompt,
+      title: plan.title,
       glyph: plan.glyph,
       numbers: plan.numbers,
       objects: plan.objects,

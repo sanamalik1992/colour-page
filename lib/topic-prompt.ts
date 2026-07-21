@@ -22,6 +22,7 @@
 
 export type TopicCategory =
   | 'letter'
+  | 'words'
   | 'number'
   | 'sequence'
   | 'shapes'
@@ -47,10 +48,17 @@ export interface TopicPlan {
   category: TopicCategory
   subject: string // cleaned, human-readable topic
   prompt: string // the text-to-image prompt
+  title?: string // a friendly heading printed on the sheet (CAPS, A–Z only)
   glyph?: GlyphSpec // deterministic overlay for letters/numbers (later stage)
   numbers?: number[] // for 'sequence' — the exact numbers to render (e.g. multiples)
   objects?: string[] // for letter/pictorial — generate each separately, then grid
   difficulty: Difficulty
+}
+
+// Turn any topic label into a clean CAPS heading our glyph font can render
+// (it draws A–Z and 0–9 only, so drop everything else).
+export function sheetTitle(s: string): string {
+  return s.toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 26)
 }
 
 // Pins every prompt to the existing colouring-page look. Tuning this affects
@@ -138,20 +146,33 @@ const LETTER_OBJECTS: Record<string, string[]> = {
   z: ['zebra', 'zip', 'zigzag'],
 }
 
-// Common phonics digraphs → objects that use that sound.
+// Common phonics digraphs → objects that use that sound. Kept concrete, whole
+// and easy for a small child to recognise and colour (no abstract words).
 const DIGRAPH_OBJECTS: Record<string, string[]> = {
-  sh: ['ship', 'shark', 'shoe', 'shell'],
-  ch: ['chair', 'cheese', 'cherry', 'chick'],
-  th: ['thumb', 'thread', 'throne', 'thermometer'],
-  ng: ['ring', 'king', 'swing', 'wing'],
-  oo: ['moon', 'boot', 'spoon', 'balloon'],
-  ee: ['bee', 'tree', 'sheep', 'feet'],
-  ai: ['rain', 'train', 'snail', 'tail'],
-  oa: ['boat', 'goat', 'coat', 'soap'],
-  ck: ['duck', 'sock', 'clock', 'rock'],
-  qu: ['queen', 'quilt', 'quill'],
-  ph: ['phone', 'photo', 'dolphin'],
-  wh: ['whale', 'wheel', 'whisk'],
+  sh: ['ship', 'shark', 'shoe', 'shell', 'sheep', 'shed'],
+  ch: ['chair', 'cheese', 'cherry', 'chick', 'chips', 'chain'],
+  th: ['thumb', 'thermometer', 'thunder', 'throne', 'thread', 'thorn'],
+  ng: ['ring', 'king', 'swing', 'wing', 'sting', 'kangaroo'],
+  oo: ['moon', 'boot', 'spoon', 'balloon', 'broom', 'igloo'],
+  ee: ['bee', 'tree', 'sheep', 'feet', 'queen', 'wheel'],
+  ai: ['rain', 'train', 'snail', 'tail', 'sail', 'nail'],
+  oa: ['boat', 'goat', 'coat', 'soap', 'toast', 'road'],
+  ck: ['duck', 'sock', 'clock', 'rock', 'truck', 'brick'],
+  qu: ['queen', 'quilt', 'quill', 'squid'],
+  ph: ['phone', 'photo', 'dolphin', 'elephant'],
+  wh: ['whale', 'wheel', 'whisk', 'wheat'],
+  ar: ['star', 'car', 'jar', 'shark'],
+  or: ['fork', 'corn', 'horse', 'fort'],
+  ir: ['bird', 'girl', 'shirt', 'skirt'],
+  ur: ['nurse', 'turtle', 'purse', 'burger'],
+  ow: ['cow', 'owl', 'flower', 'crown'],
+  ou: ['house', 'mouse', 'cloud', 'mouth'],
+  oy: ['boy', 'toy', 'oyster'],
+  oi: ['coin', 'soil', 'foil'],
+  ay: ['tray', 'crayon', 'hay', 'spray'],
+  ea: ['leaf', 'seal', 'peach', 'bead'],
+  igh: ['light', 'knight', 'kite'],
+  aw: ['saw', 'claw', 'straw', 'paw'],
 }
 
 const clean = (s: string) =>
@@ -188,6 +209,53 @@ function detectPhonics(topic: string): string | null {
     .filter(Boolean)
   const grapheme = words.find((w) => !PHONICS_STOP.has(w) && w.length >= 1 && w.length <= 3)
   return grapheme || null
+}
+
+// Everyday phrasings for a beginning-sound lesson that don't use the words
+// "phonics"/"sound"/"digraph": "words beginning with th", "words that start
+// with s", "th words", "initial sound b". Returns the grapheme or null.
+function detectBeginningSound(topic: string): string | null {
+  const t = topic.toLowerCase()
+  let m = t.match(/\bwords?\s+(?:that\s+)?(?:begin|beginning|start|starting)\s+with\s+(?:the\s+)?(?:letter\s+|sound\s+)?['"]?([a-z]{1,3})['"]?/)
+  if (m) return m[1]
+  m = t.match(/\b(?:begin|beginning|initial|start|starting)\s+(?:sound|letter)s?\s+(?:of\s+)?['"]?([a-z]{1,3})['"]?/)
+  if (m) return m[1]
+  m = t.match(/\bwords?\s+with\s+(?:the\s+)?['"]?([a-z]{1,3})['"]?\s+sound\b/)
+  if (m) return m[1]
+  // "th words" / "sh words" — require a known grapheme so we don't misread
+  // things like "sight words" or "tricky words".
+  m = t.match(/\b['"]?([a-z]{1,3})['"]?\s+words\b/)
+  if (m && (m[1].length === 1 || m[1] in DIGRAPH_OBJECTS)) return m[1]
+  return null
+}
+
+// Sight / tricky / high-frequency / spelling words, or an explicit list the
+// parent gave ("words like there, then, that", "sight words: was said the").
+// These are read/traced/written, not drawn — so they get a word-practice sheet.
+const WORD_CUES = /\b(sight|tricky|high[- ]?frequency|hfw|common(?:\s+exception)?|spelling|spellings)\b/i
+const WORD_STOP = new Set([
+  'words', 'word', 'like', 'such', 'as', 'including', 'sight', 'tricky', 'high',
+  'frequency', 'hfw', 'common', 'exception', 'exceptions', 'spelling', 'spellings',
+  'reading', 'read', 'practice', 'practise', 'list', 'the', 'and', 'or', 'of', 'for',
+  'my', 'these', 'today', 'learning', 'learn', 'that', 'begin', 'beginning', 'start',
+  'starting', 'with', 'ending', 'end',
+])
+function detectWordPractice(topic: string): { words: string[]; title: string } | null {
+  const t = topic.toLowerCase()
+  const listMatch = t.match(/(?:like|such as|including|:|-|—)\s*(.+)$/)
+  const source = listMatch ? listMatch[1] : t
+  const tokens = source
+    .split(/[,/]|\band\b|\bor\b|\s+/)
+    .map((s) => s.replace(/[^a-z]/g, ''))
+    .filter(Boolean)
+  // Keep the actual words (allow "that" etc. through only as list content).
+  const words = tokens.filter((w) => w.length >= 2 && w.length <= 12 && !WORD_STOP.has(w))
+  const explicitList = /\bwords?\s+(?:like|such as|including)\b/.test(t) || /:/.test(t)
+  const hasCue = WORD_CUES.test(t) || explicitList
+  if (hasCue && words.length >= 2) {
+    return { words: words.slice(0, 8), title: WORD_CUES.test(t) ? 'My tricky words' : 'My words' }
+  }
+  return null
 }
 
 // Objects that begin with (or use) a grapheme.
@@ -234,19 +302,35 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   // --- letters & phonics (we stamp the grapheme; model draws objects only) ---
   const letter = detectLetter(topic)
   const phonics = letter ? null : detectPhonics(topic)
-  const grapheme = letter || phonics
+  const beginning = letter || phonics ? null : detectBeginningSound(topic)
+  const grapheme = letter || phonics || beginning
   if (grapheme) {
     // Fill the sticker grid: 4 pictures for younger, up to 6 for older.
     const want = difficulty.detailLevel === 'high' ? 6 : 4
     const pool = objectsForGrapheme(grapheme)
     const objs = (pool.length ? pool : ['ball', 'cat', 'star', 'sun']).slice(0, want)
     const value = grapheme.toUpperCase()
+    const isSound = !!(phonics || beginning) || grapheme.length > 1
     return {
       category: 'letter',
-      subject: phonics ? `Sound "${grapheme}"` : `Letter ${value}`,
+      subject: isSound ? `Sound "${grapheme}"` : `Letter ${value}`,
+      title: isSound ? sheetTitle(`Words with ${value}`) : sheetTitle(`The letter ${value}`),
       objects: objs,
       prompt: objectsPrompt(objs), // fallback single-image prompt
       glyph: { kind: 'letter', value },
+      difficulty,
+    }
+  }
+
+  // --- sight / tricky / specific words (read-trace-write, no pictures) ---
+  const wp = detectWordPractice(topic)
+  if (wp) {
+    return {
+      category: 'words',
+      subject: wp.title,
+      title: sheetTitle(wp.title),
+      objects: wp.words,
+      prompt: '',
       difficulty,
     }
   }
