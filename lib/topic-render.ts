@@ -11,6 +11,7 @@
  */
 import sharp from 'sharp'
 import { numberSvg, numberWidth } from '@/lib/glyph-font'
+import type { Activity } from '@/lib/topic-prompt'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
 const A4_W = 2480
@@ -812,4 +813,190 @@ export async function buildWordPracticeSheet(title: string | undefined, words: s
 
   svg += `</svg>`
   return sharp(Buffer.from(svg)).png().toBuffer()
+}
+
+// ---------------------------------------------------------------------------
+// Composed sheet: a designed sequence of activity blocks (open-ended topics)
+// ---------------------------------------------------------------------------
+
+const up = (s: string) => s.toUpperCase().replace(/[^A-Z ]/g, ' ').replace(/\s+/g, ' ').trim()
+
+// A centred definition / caption line (word-wrapped).
+function noteBlock(text: string, x: number, top: number, w: number, h: number): string {
+  const words = up(text).split(' ').filter(Boolean)
+  const fh = Math.min(h * 0.42, 56)
+  const maxW = w * 0.86
+  const lines: string[] = []
+  let line = ''
+  for (const word of words) {
+    const cand = line ? `${line} ${word}` : word
+    if (textWidth(cand, fh) > maxW && line) { lines.push(line); line = word } else line = cand
+  }
+  if (line) lines.push(line)
+  const lineH = fh * 1.25
+  let cy = top + Math.max(0, (h - lines.length * lineH) / 2)
+  let s = ''
+  for (const ln of lines) {
+    const lw = textWidth(ln, fh)
+    s += textSvg(ln, x + (w - lw) / 2, cy, fh, 11, { color: '#B26A00' })
+    cy += lineH
+  }
+  return s
+}
+
+// A grid of words to look at and circle the ones matching the rule.
+function circleWordsBlock(words: string[], x: number, top: number, w: number, h: number): string {
+  const list = words.map(up).filter(Boolean).slice(0, 8)
+  if (!list.length) return ''
+  const cols = list.length <= 4 ? list.length : 4
+  const rows = Math.ceil(list.length / cols)
+  const cellW = w / cols
+  const cellH = h / rows
+  const gh = Math.max(42, Math.min(cellH * 0.5, 92))
+  let s = ''
+  list.forEach((word, i) => {
+    const c = i % cols
+    const r = Math.floor(i / cols)
+    const ww = numberWidth(word, gh)
+    s += numberSvg(word, x + c * cellW + (cellW - ww) / 2, top + r * cellH + (cellH - gh) / 2, gh, 13)
+  })
+  return s
+}
+
+// Ruled sentence lines.
+function sentenceLinesBlock(lines: number, x: number, top: number, w: number, h: number): string {
+  const n = Math.max(1, Math.min(lines, 5))
+  const rowH = Math.min(130, h / n)
+  let s = ''
+  for (let i = 0; i < n; i++) {
+    const y = top + i * rowH + rowH * 0.7
+    s += `<line x1="${x}" y1="${y.toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${y.toFixed(1)}" stroke="#d0cabf" stroke-width="3"/>`
+  }
+  return s
+}
+
+// A row/grid of pictures to colour (and optionally a blank line to label each).
+async function picturesRowBlock(
+  bufs: Buffer[],
+  label: boolean,
+  x: number,
+  top: number,
+  w: number,
+  h: number
+): Promise<{ svg: string; composites: sharp.OverlayOptions[] }> {
+  const n = bufs.length
+  if (!n) return { svg: '', composites: [] }
+  const cols = Math.min(n, 4)
+  const rows = Math.ceil(n / cols)
+  const cellW = w / cols
+  const cellH = h / rows
+  let svg = ''
+  const composites: sharp.OverlayOptions[] = []
+  for (let i = 0; i < n; i++) {
+    const c = i % cols
+    const r = Math.floor(i / cols)
+    const cx = x + c * cellW
+    const cy = top + r * cellH
+    const picBoxH = label ? cellH * 0.66 : cellH * 0.9
+    const innerW = Math.round(cellW * 0.8)
+    const innerH = Math.round(picBoxH * 0.92)
+    const pic = await sharp(bufs[i]).greyscale().resize(innerW, innerH, { fit: 'inside', background: '#ffffff' }).flatten({ background: '#ffffff' }).toBuffer()
+    const pm = await sharp(pic).metadata()
+    composites.push({ input: pic, left: Math.round(cx + (cellW - (pm.width || innerW)) / 2), top: Math.round(cy + (picBoxH - (pm.height || innerH)) / 2) })
+    if (label) {
+      const ly = cy + cellH * 0.86
+      svg += `<line x1="${(cx + cellW * 0.12).toFixed(1)}" y1="${ly.toFixed(1)}" x2="${(cx + cellW * 0.88).toFixed(1)}" y2="${ly.toFixed(1)}" stroke="#c9c4ba" stroke-width="3"/>`
+    }
+  }
+  return { svg, composites }
+}
+
+const ACTIVITY_WEIGHT: Record<string, number> = {
+  note: 0.6, pictures: 3, circleWords: 1.8, traceWords: 1.6,
+  wordSearch: 2.6, readWords: 1.8, writeLines: 1.4, sentence: 1.4,
+}
+
+/**
+ * Render a designed sheet from a sequence of activity blocks. This is what lets
+ * an open-ended request ("an interactive sheet about nouns") become a real,
+ * varied worksheet: the planner picks the blocks, we lay them out top-to-bottom.
+ * Free sheets drop any block flagged `pro`.
+ */
+export async function buildComposedSheet(
+  title: string | undefined,
+  activities: Activity[],
+  settings: PhotoJobSettings,
+  isPro: boolean,
+  genPicture?: (obj: string) => Promise<Buffer | null>
+): Promise<Buffer> {
+  const acts = activities.filter((a) => isPro || !a.pro).slice(0, 6)
+  const bodyX = MARGIN
+  const bodyW = A4_W - MARGIN * 2
+
+  // Pre-generate any pictures (parallel); drop a pictures block if none render.
+  const picByAct = new Map<Activity, Buffer[]>()
+  await Promise.all(
+    acts.map(async (a) => {
+      if (a.type === 'pictures' && genPicture) {
+        const bufs = (await Promise.all(a.items.slice(0, 4).map((o) => genPicture(o).catch(() => null)))).filter((b): b is Buffer => b != null)
+        if (bufs.length) picByAct.set(a, bufs)
+      }
+    })
+  )
+  const live = acts.filter((a) => a.type !== 'pictures' || picByAct.has(a))
+
+  let overlay = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
+  overlay += `<rect width="${A4_W}" height="${A4_H}" fill="#ffffff"/>`
+  const composites: sharp.OverlayOptions[] = []
+
+  // Title band.
+  let y = Math.round(MARGIN * 0.6)
+  const t = (title && title.trim()) || 'LEARNING SHEET'
+  {
+    let th = 72
+    let tw = textWidth(t, th)
+    const maxTW = bodyW * 0.92
+    if (tw > maxTW) { th = Math.max(40, Math.floor(th * maxTW / tw)); tw = textWidth(t, th) }
+    overlay += textSvg(t, (A4_W - tw) / 2, y, th, 14, { color: '#111' })
+    const uy = y + th + 18
+    overlay += `<line x1="${((A4_W - tw) / 2).toFixed(1)}" y1="${uy}" x2="${((A4_W + tw) / 2).toFixed(1)}" y2="${uy}" stroke="#F2A81E" stroke-width="8" stroke-linecap="round"/>`
+    y = uy + 50
+  }
+
+  const bottom = A4_H - MARGIN
+  const gap = 34
+  const totalW = live.reduce((s, a) => s + (ACTIVITY_WEIGHT[a.type] || 1.6), 0) || 1
+  const bodyH = bottom - y - gap * live.length
+
+  for (const a of live) {
+    const sliceH = ((ACTIVITY_WEIGHT[a.type] || 1.6) / totalW) * bodyH
+    if (a.type === 'note') {
+      overlay += noteBlock(a.text, bodyX, y, bodyW, sliceH)
+    } else {
+      const { svg: hSvg, nextY } = headingSvg(up(a.instruction), bodyX, y)
+      overlay += hSvg
+      const ch = y + sliceH - nextY
+      switch (a.type) {
+        case 'pictures': {
+          const { svg: ps, composites: comps } = await picturesRowBlock(picByAct.get(a) || [], !!a.label, bodyX, nextY, bodyW, ch)
+          overlay += ps
+          composites.push(...comps)
+          break
+        }
+        case 'circleWords': overlay += circleWordsBlock(a.words, bodyX, nextY, bodyW, ch); break
+        case 'traceWords': overlay += traceWordsBlock(a.words, '', bodyX, nextY, bodyW, ch); break
+        case 'wordSearch': overlay += miniWordSearchBlock(a.words, bodyX, nextY, bodyW, ch); break
+        case 'readWords': overlay += readWordsBlock(a.words.map(up), bodyX, nextY, bodyW, ch); break
+        case 'writeLines': overlay += writeLinesBlock(a.count, bodyX, nextY, bodyW, ch); break
+        case 'sentence': overlay += sentenceLinesBlock(a.lines, bodyX, nextY, bodyW, ch); break
+      }
+    }
+    y += sliceH + gap
+  }
+
+  overlay += `</svg>`
+  return sharp({ create: { width: A4_W, height: A4_H, channels: 3, background: '#ffffff' } })
+    .composite([{ input: Buffer.from(overlay), top: 0, left: 0 }, ...composites])
+    .png()
+    .toBuffer()
 }

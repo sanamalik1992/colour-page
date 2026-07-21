@@ -52,6 +52,7 @@ export default function Home() {
   // What was actually searched, for the Pro-activity preview thumbnails.
   const [previewToken, setPreviewToken] = useState('')
   const [previewWords, setPreviewWords] = useState<string[]>([])
+  const [previewCategory, setPreviewCategory] = useState('')
 
   // Settings
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait')
@@ -180,6 +181,7 @@ export default function Home() {
       const derived = useTopic.toUpperCase().replace(/[^A-Z ]/g, '').split(' ').filter(Boolean).pop() || 'A'
       setPreviewToken((data.glyph as string) || derived.slice(0, 8))
       setPreviewWords(Array.isArray(data.words) ? (data.words as string[]) : [])
+      setPreviewCategory(typeof data.category === 'string' ? data.category : '')
 
       setJobId(data.jobId as string)
       setJobStatus('queued')
@@ -651,10 +653,12 @@ export default function Home() {
                         <p className="text-sm font-bold text-white">Pro adds more activities to every sheet</p>
                       </div>
                       <p className="text-xs text-gray-400 mb-4">
-                        You&apos;re seeing the free taster. Pro packs in a second age-matched activity
+                        You&apos;re seeing the free taster. Pro packs in extra age-matched activities
                         — and removes the watermark.
                       </p>
-                      <ProActivityPreviews token={previewToken} words={previewWords} />
+                      {(previewCategory === 'letter' || previewCategory === 'words') && (
+                        <ProActivityPreviews token={previewToken} words={previewWords} />
+                      )}
                       <Link href="/pro" className="btn-primary w-full mt-4">
                         <Sparkles className="w-4 h-4" />
                         Unlock full activity sheets with Pro

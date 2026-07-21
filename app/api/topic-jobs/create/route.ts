@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
       glyph: plan.glyph,
       numbers: plan.numbers,
       objects: plan.objects,
+      activities: plan.activities,
     }
 
     const isPro = usage.isPro

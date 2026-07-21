@@ -18,6 +18,9 @@ export interface PhotoJobSettings {
   title?: string // friendly CAPS heading printed on the sheet
   numbers?: number[] // for 'sequence' sheets (multiples / times tables)
   objects?: string[] // for 'letter'/pictorial — generate each separately, then grid
+  // for 'composed' sheets — a designed sequence of activity blocks. Kept as
+  // unknown[] here to avoid a type dependency on lib/; validated by the renderer.
+  activities?: unknown[]
   // Deterministic glyph to draw ourselves for letter/number sheets:
   //  { kind: 'letter', value: 'B' } | { kind: 'numberRange', value: '1-10' }
   glyph?: { kind: 'letter' | 'numberRange'; value: string }

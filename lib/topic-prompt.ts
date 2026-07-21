@@ -23,6 +23,7 @@
 export type TopicCategory =
   | 'letter'
   | 'words'
+  | 'composed'
   | 'number'
   | 'sequence'
   | 'shapes'
@@ -44,6 +45,25 @@ export interface GlyphSpec {
   value: string
 }
 
+// A composable palette of activity blocks the planner can arrange into ONE
+// sheet, in order. This is what lets the tool handle open-ended requests
+// ("an interactive sheet about nouns") — the AI designs the sheet from these
+// building blocks instead of being forced into a fixed template. Every block
+// except `pictures` renders deterministically (our glyph font), so text is
+// always correct; `pictures` uses the image model for the named objects.
+export type ActivityKind =
+  | { type: 'note'; text: string } // a short caption / definition line
+  | { type: 'pictures'; instruction: string; items: string[]; label?: boolean } // colour (and optionally label) each object
+  | { type: 'circleWords'; instruction: string; words: string[] } // circle the ones that match the rule
+  | { type: 'traceWords'; instruction: string; words: string[] } // trace dotted words
+  | { type: 'wordSearch'; instruction: string; words: string[] }
+  | { type: 'readWords'; instruction: string; words: string[] }
+  | { type: 'writeLines'; instruction: string; count: number } // numbered write-in lines
+  | { type: 'sentence'; instruction: string; lines: number } // ruled sentence lines
+
+// `pro: true` blocks only render on Pro sheets; free sheets show the rest.
+export type Activity = ActivityKind & { pro?: boolean }
+
 export interface TopicPlan {
   category: TopicCategory
   subject: string // cleaned, human-readable topic
@@ -52,6 +72,7 @@ export interface TopicPlan {
   glyph?: GlyphSpec // deterministic overlay for letters/numbers (later stage)
   numbers?: number[] // for 'sequence' — the exact numbers to render (e.g. multiples)
   objects?: string[] // for letter/pictorial — generate each separately, then grid
+  activities?: Activity[] // for 'composed' — a designed sequence of activity blocks
   difficulty: Difficulty
 }
 
@@ -258,6 +279,32 @@ function detectWordPractice(topic: string): { words: string[]; title: string } |
   return null
 }
 
+// Grammar / literacy concepts a colouring page can't represent as a single
+// picture. Each becomes a designed, multi-activity "composed" sheet. The AI
+// planner handles the long tail; this keeps the common ones working offline.
+const CONCEPTS: Record<string, { title: string; note: string; pics?: string[]; mixed: string[]; find: string[]; word: string }> = {
+  noun: { word: 'NOUN', title: 'Nouns are naming words', note: 'A NOUN IS A PERSON PLACE OR THING', pics: ['dog', 'house', 'ball', 'apple'], mixed: ['dog', 'run', 'cat', 'happy', 'table', 'jump', 'tree', 'fast'], find: ['dog', 'cat', 'ball', 'tree'] },
+  verb: { word: 'VERB', title: 'Verbs are doing words', note: 'A VERB IS AN ACTION WORD', pics: ['running', 'jumping', 'swimming', 'kicking'], mixed: ['run', 'cat', 'jump', 'table', 'hop', 'happy', 'skip', 'tree'], find: ['run', 'jump', 'hop', 'skip'] },
+  adjective: { word: 'ADJECTIVE', title: 'Adjectives are describing words', note: 'AN ADJECTIVE DESCRIBES A NOUN', mixed: ['big', 'dog', 'happy', 'run', 'soft', 'table', 'fast', 'jump'], find: ['big', 'soft', 'fast', 'kind'] },
+}
+function conceptKey(topic: string): string | null {
+  const t = topic.toLowerCase()
+  if (/\bnouns?\b|naming words?\b/.test(t)) return 'noun'
+  if (/\bverbs?\b|doing words?\b|action words?\b/.test(t)) return 'verb'
+  if (/\badjectives?\b|describing words?\b/.test(t)) return 'adjective'
+  return null
+}
+function conceptActivities(key: string, d: Difficulty): Activity[] {
+  const c = CONCEPTS[key]
+  const P = c.word + 'S'
+  const acts: Activity[] = [{ type: 'note', text: c.note }]
+  if (c.pics) acts.push({ type: 'pictures', instruction: `COLOUR THE ${P}`, items: c.pics, label: d.detailLevel !== 'low' })
+  acts.push({ type: 'circleWords', instruction: `CIRCLE THE ${P}`, words: c.mixed })
+  acts.push({ type: 'wordSearch', instruction: `FIND THE ${P}`, words: c.find, pro: true })
+  acts.push({ type: 'writeLines', instruction: `WRITE 3 ${P}`, count: 3, pro: true })
+  return acts
+}
+
 // Objects that begin with (or use) a grapheme.
 function objectsForGrapheme(g: string): string[] {
   if (g.length === 1) return LETTER_OBJECTS[g] || []
@@ -318,6 +365,19 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
       objects: objs,
       prompt: objectsPrompt(objs), // fallback single-image prompt
       glyph: { kind: 'letter', value },
+      difficulty,
+    }
+  }
+
+  // --- grammar / literacy concepts (nouns, verbs, adjectives…) ---
+  const ck = conceptKey(topic)
+  if (ck) {
+    return {
+      category: 'composed',
+      subject: CONCEPTS[ck].title,
+      title: sheetTitle(CONCEPTS[ck].title),
+      activities: conceptActivities(ck, difficulty),
+      prompt: '',
       difficulty,
     }
   }

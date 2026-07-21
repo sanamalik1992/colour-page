@@ -13,17 +13,71 @@ import {
   objectsPrompt,
   pictorialPrompt,
   sheetTitle,
+  type Activity,
   type TopicPlan,
 } from './topic-prompt'
 
+// Validate/coerce the AI's freeform activity list into supported blocks. Unknown
+// block types are dropped; each block keeps only its expected fields.
+function normalizeActivities(raw: RawActivity[]): Activity[] {
+  const out: Activity[] = []
+  const words = (a: RawActivity) => (a.words || []).map((w) => String(w)).filter(Boolean).slice(0, 8)
+  for (const a of raw.slice(0, 6)) {
+    const instr = String(a.instruction || '').slice(0, 40)
+    const pro = a.pro === true
+    switch (a.type) {
+      case 'note':
+        if (a.text) out.push({ type: 'note', text: String(a.text).slice(0, 90), pro })
+        break
+      case 'pictures': {
+        const items = (a.items || []).map((s) => String(s)).filter(Boolean).slice(0, 4)
+        if (items.length) out.push({ type: 'pictures', instruction: instr, items, label: a.label !== false, pro })
+        break
+      }
+      case 'circleWords':
+        if (words(a).length >= 3) out.push({ type: 'circleWords', instruction: instr, words: words(a), pro })
+        break
+      case 'traceWords':
+        if (words(a).length) out.push({ type: 'traceWords', instruction: instr, words: words(a), pro })
+        break
+      case 'wordSearch':
+        if (words(a).length >= 2) out.push({ type: 'wordSearch', instruction: instr, words: words(a), pro })
+        break
+      case 'readWords':
+        if (words(a).length) out.push({ type: 'readWords', instruction: instr, words: words(a), pro })
+        break
+      case 'writeLines':
+        out.push({ type: 'writeLines', instruction: instr, count: Math.max(1, Math.min(6, Math.round(a.count || 3))), pro })
+        break
+      case 'sentence':
+        out.push({ type: 'sentence', instruction: instr, lines: Math.max(1, Math.min(5, Math.round(a.lines || 2))), pro })
+        break
+    }
+  }
+  return out
+}
+
 interface AiRaw {
-  kind: 'sequence' | 'counting' | 'letter' | 'words' | 'pictorial'
+  kind: 'sequence' | 'counting' | 'letter' | 'words' | 'pictorial' | 'composed'
   title?: string
   numbers?: number[]
   maxCount?: number
   grapheme?: string
   objects?: string[]
   words?: string[]
+  activities?: RawActivity[]
+}
+
+interface RawActivity {
+  type: string
+  text?: string
+  instruction?: string
+  items?: string[]
+  words?: string[]
+  count?: number
+  lines?: number
+  label?: boolean
+  pro?: boolean
 }
 
 const SYSTEM = `You are an early-years teacher designing ONE delightful, printable A4 activity sheet for a child (UK primary school / EYFS) from whatever a parent types. Your job is to UNDERSTAND EXACTLY what they mean — read their words carefully, infer intent, and pick the single most appropriate kind of sheet and the best content for it. Be as thoughtful as a great human teacher. Reply with ONLY a compact JSON object, no prose.
@@ -38,17 +92,28 @@ Decide "kind" by what the child is really meant to practise:
 
 - "words": a set of SPECIFIC WORDS to read / spell / write that are NOT easily drawn — high-frequency / sight / tricky / "common exception" words, spelling lists, or when the parent NAMES or IMPLIES particular words. This is the right choice for function words. Examples that MUST be "words", not "letter": "words like there, then, that", "th words such as there then that this", "sight words", "tricky words", "spellings: because friend said", "the ir words: bird girl shirt" (if they clearly mean word-reading not pictures). Include "title" and "words": the exact 4-8 words to feature (use the parent's own words if they gave them; otherwise pick the classic ones for that group). No pictures are used — these become read/trace/find/write activities.
 
-- "pictorial": everything else — themes and topics (animals, space, science, seasons, jobs, the body, weather, festivals…). Include a short "title" and "objects": 4-6 concrete, drawable things that best tell the topic's story, age-appropriate.
+- "pictorial": a THEME to colour (animals, space, seasons, festivals…) where colouring pictures is the whole point. Include "title" and "objects": 4-6 concrete, drawable things that tell the topic's story.
 
-Key judgement: if a phonics request's natural examples are DRAWABLE (thumb, ship, cat) → "letter". If they are FUNCTION/SIGHT words or the parent lists specific non-picture words (there, then, that, was, said) → "words". When the parent names words explicitly, always feature THOSE exact words.
+- "composed": ANYTHING that needs a real, interactive worksheet rather than one fixed format — especially GRAMMAR/LITERACY CONCEPTS (nouns, verbs, adjectives, opposites, rhyming, plurals, syllables), maths concepts, or any request like "an interactive sheet about X", "activities for Y". You DESIGN the sheet by choosing an ordered list of "activities" (3-6 blocks) from this palette:
+    • {"type":"note","text":"short caption or definition, CAPS-friendly"}
+    • {"type":"pictures","instruction":"...","items":["dog","house",...],"label":true}  — colour (and label) drawable objects; ONLY use drawable nouns here
+    • {"type":"circleWords","instruction":"Circle the nouns","words":["dog","run","cat","happy",...]}  — a mix; the child circles the ones that fit
+    • {"type":"readWords","instruction":"Read these words","words":[...]}
+    • {"type":"traceWords","instruction":"Trace the words","words":[...]}
+    • {"type":"wordSearch","instruction":"Find the words","words":[...]}
+    • {"type":"writeLines","instruction":"Write 3 nouns","count":3}
+    • {"type":"sentence","instruction":"Write a sentence","lines":2}
+  Add "pro":true to the LAST 1-2 blocks (these are unlocked by Pro; free users still get the earlier ones). Order blocks from easy→hard. Choose blocks that genuinely teach THIS topic. Include a warm "title".
 
-Rules: content must be age-appropriate and child-safe; never use copyrighted characters or brands; "objects" must be drawable nouns; always give a warm, specific "title" (a few words).
+Key judgement: understand the REAL learning goal, then choose the format that teaches it best — don't force a concept into a colouring grid. Phonics with drawable examples → "letter"; sight/function/named words → "words"; a theme to colour → "pictorial"; a concept or open-ended "make me an activity sheet" → "composed". When the parent names specific words/examples, use THOSE.
+
+Rules: age-appropriate and child-safe; no copyrighted characters or brands; "items"/"objects" must be drawable nouns; text blocks may use any words. Always give a warm, specific "title".
 
 Examples:
+{"kind":"composed","title":"Nouns are naming words","activities":[{"type":"note","text":"A noun is a person, place or thing"},{"type":"pictures","instruction":"Colour these nouns","items":["dog","house","ball","apple"],"label":true},{"type":"circleWords","instruction":"Circle the nouns","words":["dog","run","cat","happy","table","jump"]},{"type":"wordSearch","instruction":"Find the nouns","words":["dog","cat","ball","tree"],"pro":true},{"type":"writeLines","instruction":"Write 3 nouns you can see","count":3,"pro":true}]}
 {"kind":"words","title":"Tricky th words","words":["there","then","that","this","them","they"]}
-{"kind":"letter","grapheme":"th","title":"Words beginning with th","objects":["thumb","thermometer","thunder","throne","thread","thorn"]}
-{"kind":"sequence","title":"Counting in 10s","numbers":[10,20,30,40,50,60,70,80,90,100]}
-{"kind":"pictorial","title":"Under the Sea","objects":["fish","octopus","crab","seahorse","starfish","turtle"]}`
+{"kind":"letter","grapheme":"th","title":"Words beginning with th","objects":["thumb","thermometer","thunder","throne"]}
+{"kind":"sequence","title":"Counting in 10s","numbers":[10,20,30,40,50,60,70,80,90,100]}`
 
 function extractJson(text: string): AiRaw | null {
   const start = text.indexOf('{')
@@ -123,6 +188,18 @@ export async function aiPlanTopic(topic: string, age?: number): Promise<TopicPla
           subject: raw.title || topic,
           title: sheetTitle(raw.title || topic),
           objects: ws, // reused array field: the words to practise (no pictures)
+          prompt: '',
+          difficulty,
+        }
+      }
+      case 'composed': {
+        const activities = normalizeActivities(raw.activities || [])
+        if (activities.length < 2) return null
+        return {
+          category: 'composed',
+          subject: raw.title || topic,
+          title: sheetTitle(raw.title || topic),
+          activities,
           prompt: '',
           difficulty,
         }
