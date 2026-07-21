@@ -6,7 +6,7 @@
  */
 export function Hero3D() {
   return (
-    <div className="pointer-events-none absolute inset-0 z-0 hidden lg:block" aria-hidden="true">
+    <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
       <svg width="0" height="0" className="absolute">
         <defs>
           <radialGradient id="h3d-sphere" cx="34%" cy="26%" r="82%">
@@ -34,16 +34,16 @@ export function Hero3D() {
         </defs>
       </svg>
 
-      {/* glossy gold sphere — top right, clear of the card */}
-      <svg className="absolute right-[2%] top-[8%] w-28 xl:w-40 h3d-float" viewBox="0 0 200 200"
+      {/* glossy gold sphere — top-right corner (peeks on mobile, gutter on desktop) */}
+      <svg className="absolute w-20 -right-6 top-1 opacity-90 lg:opacity-100 lg:w-28 lg:right-[2%] lg:top-[8%] xl:w-40 h3d-float" viewBox="0 0 200 200"
         style={{ filter: 'drop-shadow(0 24px 26px rgba(0,0,0,.45))' }}>
         <ellipse cx="100" cy="184" rx="60" ry="12" fill="#000" opacity=".3" />
         <circle cx="100" cy="94" r="80" fill="url(#h3d-sphere)" />
         <ellipse cx="74" cy="64" rx="24" ry="18" fill="url(#h3d-hl)" />
       </svg>
 
-      {/* colouring pencil — top left */}
-      <svg className="absolute left-[3%] top-[6%] w-20 xl:w-28 h3d-float-slow" viewBox="0 0 200 210"
+      {/* colouring pencil — top-left corner (peeks on mobile, gutter on desktop) */}
+      <svg className="absolute w-14 -left-4 top-2 opacity-90 lg:opacity-100 lg:w-20 lg:left-[3%] lg:top-[6%] xl:w-28 h3d-float-slow" viewBox="0 0 200 210"
         style={{ filter: 'drop-shadow(0 22px 24px rgba(0,0,0,.45))' }}>
         <g transform="rotate(34 100 105)">
           <path d="M92 184 L108 184 L100 200 Z" fill="#7E2A18" />
@@ -55,8 +55,8 @@ export function Hero3D() {
         </g>
       </svg>
 
-      {/* teal cube — mid left, beside the card */}
-      <svg className="absolute left-[4%] top-[46%] w-20 xl:w-28 h3d-float" viewBox="0 0 200 210"
+      {/* teal cube — mid left, beside the card (desktop only) */}
+      <svg className="absolute hidden lg:block left-[4%] top-[46%] w-20 xl:w-28 h3d-float" viewBox="0 0 200 210"
         style={{ filter: 'drop-shadow(0 22px 24px rgba(0,0,0,.45))' }}>
         <ellipse cx="100" cy="196" rx="56" ry="12" fill="#000" opacity=".28" />
         <path d="M100 20 L180 62 L100 104 L20 62 Z" fill="url(#h3d-cT)" />
@@ -64,8 +64,8 @@ export function Hero3D() {
         <path d="M180 62 L100 104 L100 188 L180 146 Z" fill="url(#h3d-cR)" />
       </svg>
 
-      {/* gold doodle — mid right, beside the card */}
-      <svg className="absolute right-[5%] top-[50%] w-24 xl:w-32 h3d-float-slow" viewBox="0 0 170 90"
+      {/* gold doodle — mid right, beside the card (desktop only) */}
+      <svg className="absolute hidden lg:block right-[5%] top-[50%] w-24 xl:w-32 h3d-float-slow" viewBox="0 0 170 90"
         fill="none" stroke="#F2A81E" strokeWidth="6" strokeLinecap="round">
         <path d="M8 52 C 20 14 58 12 60 44 C 61 66 34 66 38 46 C 42 28 78 26 92 46 C 103 61 128 60 160 30" />
       </svg>
