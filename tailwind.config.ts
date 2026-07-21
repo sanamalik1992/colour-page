@@ -9,14 +9,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Green Design Tokens
+        // Gold Design Tokens
         brand: {
-          primary: '#10B981',      // Primary green
-          glow: '#34D399',         // Green glow
-          border: '#059669',       // Border green
-          hover: '#047857',        // Hover green
-          light: '#D1FAE5',        // Light green bg
-          dark: '#065F46',         // Dark green
+          primary: '#F2A81E',      // Primary gold
+          glow: '#F5B94B',         // Gold glow
+          border: '#D98A0C',       // Deeper gold (borders)
+          hover: '#C67F0A',        // Hover gold
+          light: '#FCF1D4',        // Light gold bg
+          dark: '#9A6E06',         // Dark gold (text on light)
         },
       },
       fontFamily: {
@@ -64,8 +64,8 @@ const config: Config = {
         'lg': '0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.06)',
         'xl': '0 20px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.06)',
         '2xl': '0 25px 50px -12px rgb(0 0 0 / 0.20)',
-        'glow': '0 0 20px rgba(16, 185, 129, 0.4)',
-        'glow-lg': '0 0 40px rgba(16, 185, 129, 0.6)',
+        'glow': '0 0 20px rgba(242, 168, 30, 0.4)',
+        'glow-lg': '0 0 40px rgba(242, 168, 30, 0.55)',
         'none': '0 0 #0000',
       },
       animation: {

@@ -31,7 +31,7 @@ export function NavHeader({ active, isPro }: NavHeaderProps) {
             <span className="w-6 h-6 rounded-lg rainbow-bar flex items-center justify-center shadow-sm" aria-hidden>
               <span className="w-2 h-2 rounded-full bg-white/90" />
             </span>
-            <span className="text-white font-extrabold text-lg tracking-tight">
+            <span className="font-display text-white font-extrabold text-lg tracking-tight">
               colour<span className="text-brand-glow">.</span>page
             </span>
           </Link>
@@ -55,10 +55,8 @@ export function NavHeader({ active, isPro }: NavHeaderProps) {
             ) : (
               <Link
                 href="/pro"
-                className={`ml-1 h-8 px-3 font-semibold text-xs rounded-lg flex items-center hover:opacity-90 transition-opacity ${
-                  active === 'pro'
-                    ? 'bg-brand-border text-white'
-                    : 'bg-brand-primary text-white'
+                className={`ml-1 h-8 px-3 font-bold text-xs rounded-lg flex items-center hover:opacity-90 transition-opacity text-[#2A1E00] ${
+                  active === 'pro' ? 'bg-brand-border' : 'bg-brand-primary'
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5 sm:mr-1" />
