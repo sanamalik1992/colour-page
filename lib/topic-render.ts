@@ -1263,7 +1263,10 @@ export async function buildComposedSheet(
   activities: Activity[],
   settings: PhotoJobSettings,
   isPro: boolean,
-  genPicture?: (obj: string) => Promise<Buffer | null>
+  genPicture?: (obj: string) => Promise<Buffer | null>,
+  // Fires as each unique object finishes so the caller can show honest progress
+  // during the (otherwise silent) picture-generation phase.
+  onPicProgress?: (done: number, total: number) => void
 ): Promise<Buffer> {
   const acts = activities.filter((a) => isPro || !a.pro).slice(0, 6)
   const bodyX = MARGIN
@@ -1280,7 +1283,14 @@ export async function buildComposedSheet(
   const picMap = new Map<string, Buffer>()
   if (genPicture && picNeeds.size) {
     const names = [...picNeeds]
-    const results = await Promise.all(names.map((o) => genPicture(o).catch(() => null)))
+    let done = 0
+    const results = await Promise.all(
+      names.map(async (o) => {
+        const b = await genPicture(o).catch(() => null)
+        onPicProgress?.(++done, names.length)
+        return b
+      })
+    )
     names.forEach((o, i) => { if (results[i]) picMap.set(o, results[i]!) })
   }
   const picsFor = (a: Extract<Activity, { items: string[] }>): Buffer[] =>
