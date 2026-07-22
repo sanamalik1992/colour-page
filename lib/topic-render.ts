@@ -422,13 +422,18 @@ function gappedWordSvg(word: string, grapheme: string, centerX: number, top: num
 }
 
 // Place words in an N×N grid (right / down / diagonal), fill the rest randomly.
-function makeWordSearch(words: string[], size: number): string[][] {
+// Build a word-search and report which words were ACTUALLY placed, so the
+// "FIND" list can show only findable words (never list a word that isn't in the
+// grid). Words longer than the grid are skipped and reported as unplaced.
+function makeWordSearch(words: string[], size: number): { grid: string[][]; placed: string[] } {
   const G: string[][] = Array.from({ length: size }, () => Array(size).fill(''))
   const dirs = [[0, 1], [1, 0], [1, 1]]
+  const placed: string[] = []
   for (const raw of words) {
     const w = raw.toUpperCase().replace(/[^A-Z]/g, '')
     if (!w || w.length > size) continue
-    for (let tries = 0; tries < 300; tries++) {
+    let done = false
+    for (let tries = 0; tries < 400 && !done; tries++) {
       const [dr, dc] = dirs[Math.floor(Math.random() * dirs.length)]
       const r0 = Math.floor(Math.random() * (dr ? size - w.length + 1 : size))
       const c0 = Math.floor(Math.random() * (dc ? size - w.length + 1 : size))
@@ -439,12 +444,13 @@ function makeWordSearch(words: string[], size: number): string[][] {
       }
       if (!fits) continue
       for (let k = 0; k < w.length; k++) G[r0 + dr * k][c0 + dc * k] = w[k]
-      break
+      placed.push(w)
+      done = true
     }
   }
   const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
   for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (!G[r][c]) G[r][c] = A[Math.floor(Math.random() * 26)]
-  return G
+  return { grid: G, placed }
 }
 
 // A small activity heading with a short underline, returned as SVG. Returns the
@@ -528,8 +534,10 @@ function traceGraphemeRow(chars: string, x: number, top: number, w: number, h: n
 function miniWordSearchBlock(words: string[], x: number, top: number, w: number, h: number): string {
   const list = words.map((word) => word.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean).slice(0, 4)
   if (!list.length) return ''
-  const size = Math.max(7, Math.min(9, ...list.map((word) => word.length + 3), 9))
-  const grid = makeWordSearch(list, size)
+  // Size to the LONGEST word so every listed word fits and can be placed.
+  const maxLen = list.reduce((m, word) => Math.max(m, word.length), 0)
+  const size = Math.max(7, Math.min(10, maxLen + 2))
+  const { grid } = makeWordSearch(list, size)
   const gridMax = Math.min(w, h)
   const cell = Math.floor(gridMax / size)
   const gs = cell * size
@@ -643,9 +651,14 @@ export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string
  */
 export async function buildLetterPuzzleSheet(letter: string, words: string[], settings: PhotoJobSettings, isPro = false): Promise<Buffer> {
   const chars = letter.toUpperCase().slice(0, 3)
-  const list = words.map((w) => w.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean).slice(0, 6)
-  const size = Math.max(9, Math.min(12, ...list.map((w) => w.length + 4), 12))
-  const grid = makeWordSearch(list, size)
+  const requested = words.map((w) => w.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean).slice(0, 6)
+  // Size the grid to the LONGEST word (not the shortest) so every word fits.
+  const maxLen = requested.reduce((m, w) => Math.max(m, w.length), 0)
+  const size = Math.max(9, Math.min(14, maxLen + 2))
+  const { grid, placed } = makeWordSearch(requested, size)
+  // Only list words that were actually placed — never ask a child to find a
+  // word that isn't in the grid.
+  const list = placed.length ? placed : requested
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
   svg += `<rect width="${A4_W}" height="${A4_H}" fill="#ffffff"/>`
@@ -680,20 +693,28 @@ export async function buildLetterPuzzleSheet(letter: string, words: string[], se
     }
   }
 
-  // "FIND" list
+  // "FIND" list — wraps onto NEW lines when it runs out of width (the old code
+  // reset x on the same line, drawing words on top of each other).
   const listY = gridTop + gridSize + Math.round(A4_H * 0.03)
-  const labelH = 70
+  const labelH = 54
   svg += textSvg('FIND', MARGIN, listY, labelH, 12)
-  let wx = MARGIN + textWidth('FIND', labelH) + labelH
-  const wordH = 66
+  const listStartX = MARGIN + textWidth('FIND', labelH) + labelH * 0.6
+  const wordH = 48
+  const wordGap = wordH * 0.7
+  const lineGap = wordH * 1.55
+  const maxX = A4_W - MARGIN
+  let wx = listStartX
+  let wy = listY
   for (const w of list) {
-    svg += numberSvg(w, wx, listY + 2, wordH, 10)
-    wx += numberWidth(w, wordH) + wordH
-    if (wx > A4_W - MARGIN - 300) { wx = MARGIN + textWidth('FIND', labelH) + labelH; }
+    const ww = numberWidth(w, wordH)
+    if (wx > listStartX && wx + ww > maxX) { wx = listStartX; wy += lineGap } // wrap DOWN
+    svg += numberSvg(w, wx, wy + (labelH - wordH) / 2, wordH, 8)
+    wx += ww + wordGap
   }
+  const listBottom = wy + wordH
 
-  // Activity 2 (free + Pro): write a sentence.
-  const sentTop = listY + Math.round(A4_H * 0.05)
+  // Activity 2 (free + Pro): write a sentence — placed below the actual list end.
+  const sentTop = listBottom + Math.round(A4_H * 0.03)
   svg += textSvg('WRITE A SENTENCE', MARGIN, sentTop, 58, 11)
   const sentLines = isPro ? 2 : 3
   for (let i = 0; i < sentLines; i++) {
