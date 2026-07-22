@@ -57,6 +57,33 @@ async function uploadOutput(path: string, buf: Buffer, ct: string) {
   }
 }
 
+// Object line-art cache. The same nouns recur across sheets (cat, moon, lion…),
+// and singleObjectPrompt is settings-independent, so we key purely on the object
+// name and reuse a stored PNG — turning a multi-second Replicate call into an
+// instant download. The library warms itself as new objects are requested.
+function objectCacheKey(obj: string): string {
+  const slug = obj.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
+  return `object-cache/${slug || 'obj'}.png`
+}
+
+async function cachedObject(obj: string, settings: PhotoJobSettings): Promise<Buffer | null> {
+  const key = objectCacheKey(obj)
+  // Cache hit → instant.
+  try {
+    const { data } = await supabase.storage.from('outputs').download(key)
+    if (data) return Buffer.from(await data.arrayBuffer())
+  } catch { /* miss — fall through to generate */ }
+  // Miss → generate, then populate the cache (best-effort, non-blocking).
+  try {
+    const buf = await generateGoodObject(singleObjectPrompt(obj), settings)
+    supabase.storage.from('outputs').upload(key, buf, { contentType: 'image/png', upsert: true }).catch(() => {})
+    return buf
+  } catch (e) {
+    console.error(`object "${obj}" failed:`, e)
+    return null
+  }
+}
+
 export async function POST(request: NextRequest) {
   let jobId: string | undefined
 
@@ -125,10 +152,13 @@ export async function POST(request: NextRequest) {
         // about X"): a designed sequence of activity blocks. Any picture blocks
         // generate their objects via the model; the rest are deterministic.
         await updateJob(jobId, { progress: 20 })
-        const genPicture = hasReplicate
-          ? (obj: string) => generateGoodObject(singleObjectPrompt(obj), settings).catch((e) => { console.error(`object "${obj}" failed:`, e); return null })
-          : undefined
-        lineArtBuffer = await buildComposedSheet(settings.title, settings.activities as Activity[], settings, !!job.is_pro, genPicture)
+        const genPicture = hasReplicate ? (obj: string) => cachedObject(obj, settings) : undefined
+        // Honest progress across the picture-generation phase (20 → 78) so a
+        // slow sheet visibly advances instead of sitting frozen at a high %.
+        const onPicProgress = (done: number, total: number) => {
+          updateJob(jobId, { progress: 20 + Math.round((done / Math.max(1, total)) * 58) }).catch(() => {})
+        }
+        lineArtBuffer = await buildComposedSheet(settings.title, settings.activities as Activity[], settings, !!job.is_pro, genPicture, onPicProgress)
         await updateJob(jobId, { progress: 82 })
       } else if (settings.category === 'letter' && glyph?.kind === 'letter' && settings.objects?.length) {
         // Letter/phonics: the ACTIVITY TYPE changes with age band.
@@ -147,13 +177,14 @@ export async function POST(request: NextRequest) {
         } else {
           if (!hasReplicate) throw new Error('Text-to-image generation is not configured')
           await updateJob(jobId, { progress: 20 })
+          const letterObjs = settings.objects.slice(0, 6)
+          let picDone = 0
           const pics = (await Promise.all(
-            settings.objects.slice(0, 6).map((obj) =>
-              generateGoodObject(singleObjectPrompt(obj), settings).catch((e) => {
-                console.error(`object "${obj}" failed:`, e)
-                return null
-              })
-            )
+            letterObjs.map(async (obj) => {
+              const b = await cachedObject(obj, settings)
+              await updateJob(jobId, { progress: 20 + Math.round((++picDone / letterObjs.length) * 58) }).catch(() => {})
+              return b
+            })
           )).filter((b): b is Buffer => b != null)
           await updateJob(jobId, { progress: 78 })
 

@@ -288,19 +288,20 @@ export default function Home() {
     return () => clearInterval(interval)
   }, [jobId, sessionId, jobStatus])
 
-  // Ease the display progress forward while processing.
+  // Track the REAL server progress rather than racing to ~96% and sitting there
+  // (which is what made a slow job feel frozen and dishonest). The bar stays
+  // close to the actual server value, never more than ~6% ahead, and always
+  // inches a touch so it reads as alive — but if the server genuinely stalls, it
+  // holds near the true percentage instead of pretending it's almost done.
   useEffect(() => {
     const processing = jobStatus && jobStatus !== 'done' && jobStatus !== 'failed'
     if (!processing) return
     if (genStartRef.current == null) genStartRef.current = Date.now()
     const id = setInterval(() => {
-      const elapsed = (Date.now() - (genStartRef.current ?? Date.now())) / 1000
-      // Asymptotic creep toward ~93% (never reaches it on its own).
-      const target = 93 * (1 - Math.exp(-elapsed / 14))
       setDisplayPct((prev) => {
-        const floor = Math.max(prev, progress) // respect real server milestones
-        const next = Math.max(floor, Math.min(93, target), prev + 0.25) // always inch up
-        return Math.min(next, 96)
+        const ceiling = Math.min(96, Math.max(progress + 6, 10)) // never far past reality
+        const next = Math.max(prev, progress) + 0.2 // follow milestones + gentle drift
+        return Math.min(next, ceiling)
       })
     }, 200)
     return () => clearInterval(id)
