@@ -44,7 +44,15 @@ export default function Home() {
   // Upload state
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
+  const [fileName, setFileName] = useState('')
+  // 'preparing' while we downscale/convert in the background; 'ready' once set.
+  const [uploadState, setUploadState] = useState<'idle' | 'preparing' | 'ready'>('idle')
+  // True when the browser can't render the chosen file (e.g. HEIC on Chrome) —
+  // we show a clear "photo attached" card instead of a broken image.
+  const [previewError, setPreviewError] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const objectUrlsRef = useRef<string[]>([])
+  const uploadTokenRef = useRef(0)
 
   // Topic state ("What are they learning today?")
   const [topic, setTopic] = useState('')
@@ -101,21 +109,56 @@ export default function Home() {
       .catch(() => {})
   }, [sessionId])
 
+  const trackUrl = (u: string) => {
+    objectUrlsRef.current.push(u)
+    return u
+  }
+  const revokeUrls = () => {
+    objectUrlsRef.current.forEach((u) => URL.revokeObjectURL(u))
+    objectUrlsRef.current = []
+  }
+
   const handleFile = useCallback(async (f: File) => {
     setError('')
-    const prepared = await prepareImageForUpload(f)
-    setFile(prepared)
-    const reader = new FileReader()
-    reader.onloadend = () => setPreview(reader.result as string)
-    reader.readAsDataURL(prepared)
+    setPreviewError(false)
+    const token = ++uploadTokenRef.current
+    revokeUrls()
+
+    // Phase A — show the photo and attach it IMMEDIATELY, so the very first tap
+    // gives instant feedback. Upload works even if the background prep fails.
+    setFileName(f.name)
+    setFile(f)
+    setPreview(trackUrl(URL.createObjectURL(f)))
+    setUploadState('preparing')
+
+    // Phase B — downscale / re-encode to JPEG in the background: keeps uploads
+    // small (no 413s) and yields a preview that renders in every browser,
+    // including HEIC on Safari. If it's superseded by a newer pick, bail.
+    try {
+      const prepared = await prepareImageForUpload(f)
+      if (token !== uploadTokenRef.current) return
+      setFile(prepared)
+      if (prepared !== f && prepared.type === 'image/jpeg') {
+        setPreview(trackUrl(URL.createObjectURL(prepared)))
+        setPreviewError(false)
+      }
+    } catch {
+      // Keep the original file + preview; the server converts HEIC on its side.
+    } finally {
+      if (token === uploadTokenRef.current) setUploadState('ready')
+    }
   }, [])
+
+  // Release object URLs when leaving the page.
+  useEffect(() => () => revokeUrls(), [])
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault()
       setDragOver(false)
       const f = e.dataTransfer.files[0]
-      if (f && f.type.startsWith('image/')) handleFile(f)
+      // Accept HEIC/HEIF too (their MIME type is sometimes empty on drop).
+      if (f && (f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name))) handleFile(f)
     },
     [handleFile]
   )
@@ -269,8 +312,12 @@ export default function Home() {
   }, [jobStatus])
 
   const handleReset = () => {
+    revokeUrls()
     setFile(null)
     setPreview(null)
+    setPreviewError(false)
+    setUploadState('idle')
+    setFileName('')
     setTopic('')
     genStartRef.current = null
     setDisplayPct(0)
@@ -437,11 +484,33 @@ export default function Home() {
                     </div>
                   ) : (
                     <div className="space-y-5">
-                      <div className="relative rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={preview} alt="Preview" className="w-full max-h-64 object-contain" />
+                      <div className="relative rounded-xl overflow-hidden bg-gray-50 border border-gray-100 min-h-[9rem]">
+                        {previewError ? (
+                          // Browser can't render this file (e.g. HEIC on Chrome) —
+                          // confirm it's attached rather than showing a blank box.
+                          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                            <ImageIcon className="w-10 h-10 text-emerald-500 mb-2" />
+                            <p className="font-semibold text-gray-700">Photo attached</p>
+                            <p className="text-xs text-gray-400 mt-1 max-w-[15rem] truncate">{fileName}</p>
+                          </div>
+                        ) : (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={preview}
+                            alt="Preview"
+                            className="w-full max-h-64 object-contain"
+                            onError={() => setPreviewError(true)}
+                          />
+                        )}
+                        {uploadState === 'preparing' && (
+                          <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center">
+                            <span className="flex items-center gap-2 text-gray-700 text-sm font-medium bg-white/90 px-3 py-1.5 rounded-full shadow">
+                              <Loader2 className="w-4 h-4 animate-spin" /> Getting your photo ready…
+                            </span>
+                          </div>
+                        )}
                         <button
-                          onClick={(e) => { e.stopPropagation(); setFile(null); setPreview(null) }}
+                          onClick={(e) => { e.stopPropagation(); revokeUrls(); setFile(null); setPreview(null); setPreviewError(false); setUploadState('idle'); setFileName('') }}
                           className="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center shadow hover:bg-red-50 transition-colors"
                           aria-label="Remove photo"
                         >
@@ -511,11 +580,14 @@ export default function Home() {
 
                       <button
                         onClick={handleGenerate}
-                        disabled={limitReached}
+                        disabled={limitReached || uploadState === 'preparing'}
                         className="btn-primary w-full"
                       >
-                        <Sparkles className="w-5 h-5" />
-                        Generate Colouring Page
+                        {uploadState === 'preparing' ? (
+                          <><Loader2 className="w-5 h-5 animate-spin" /> Getting your photo ready…</>
+                        ) : (
+                          <><Sparkles className="w-5 h-5" /> Generate Colouring Page</>
+                        )}
                       </button>
 
                       {limitReached && (
