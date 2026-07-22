@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
+import { getServerUser } from '@/lib/supabase/auth-server'
 
 export const runtime = 'nodejs'
 
@@ -11,14 +12,16 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
-    const body = await request.json()
-    const email = String(body?.email || '').trim().toLowerCase()
-
-    if (!email || !email.includes('@')) {
-      return NextResponse.json({ error: 'Valid email required' }, { status: 400 })
+    // Only ever open the billing portal for the SIGNED-IN user's own account —
+    // never an email taken from the request (which would let anyone open another
+    // customer's billing).
+    const authUser = await getServerUser()
+    if (!authUser) {
+      return NextResponse.json({ error: 'Please sign in.' }, { status: 401 })
     }
+    const email = authUser.email
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.colour.page'
 

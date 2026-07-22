@@ -15,9 +15,11 @@ import {
   Lock,
   X,
 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 import { ProActivityPreviews } from '@/components/ui/pro-activity-previews'
+import { useMe } from '@/hooks/useMe'
 
 // An annual plan is only offered when a separate annual price is configured,
 // so the customer is always charged the amount they see.
@@ -38,23 +40,33 @@ const FEATURES = [
 ]
 
 export default function ProPage() {
-  const [email, setEmail] = useState('')
+  const router = useRouter()
+  const { me, loading: meLoading } = useMe()
   const [plan, setPlan] = useState<'monthly' | 'annual'>('monthly')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const loggedIn = !!me?.user
+  const accountEmail = me?.user?.email || ''
+
   const handleCheckout = async () => {
-    if (!email.trim()) { setError('Please enter your email to continue'); return }
-    if (!email.includes('@')) { setError('Please enter a valid email address'); return }
+    // Pro requires an account so the subscription follows the user across
+    // devices. Send logged-out visitors to sign up first (returning to /pro).
+    if (!loggedIn) {
+      router.push('/signup?next=/pro')
+      return
+    }
 
     setLoading(true)
     setError('')
 
     try {
+      // The server uses the VERIFIED session email — the body email is ignored
+      // for a logged-in user, so the Stripe customer always matches the account.
       const res = await fetch('/api/stripe/checkout-subscription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), plan }),
+        body: JSON.stringify({ plan }),
       })
       const data = await res.json()
 
@@ -123,24 +135,23 @@ export default function ProPage() {
                 <p className="text-sm text-gray-500 mt-1.5">{active.note}</p>
               </div>
 
-              {/* Email */}
-              <label htmlFor="pro-email" className="block text-sm font-semibold text-gray-700 mb-2">
-                Your email
-              </label>
-              <input
-                id="pro-email"
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => { setEmail(e.target.value); setError('') }}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleCheckout() }}
-                placeholder="you@example.com"
-                className="w-full h-14 px-4 text-base bg-gray-50 border-2 border-gray-200 rounded-2xl text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-brand-primary focus:bg-white transition-colors"
-              />
-              <p className="text-xs text-gray-400 mt-1.5">
-                We use this to link your subscription — no account needed.
-              </p>
+              {/* Account: Pro links to the signed-in account so it follows the
+                  user across devices. Logged-out visitors are asked to make a
+                  free account first. */}
+              {loggedIn ? (
+                <div className="mb-1">
+                  <span className="block text-sm font-semibold text-gray-700 mb-2">Your account</span>
+                  <div className="w-full h-14 px-4 flex items-center bg-gray-50 border-2 border-gray-200 rounded-2xl text-gray-900">
+                    <span className="truncate">{accountEmail}</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1.5">Your subscription links to this account.</p>
+                </div>
+              ) : (
+                <div className="mb-1 rounded-2xl bg-brand-primary/10 border border-brand-primary/30 p-4 text-center">
+                  <p className="text-sm text-gray-700 font-medium">Create a free account to subscribe</p>
+                  <p className="text-xs text-gray-500 mt-1">So your Pro follows you on every device.</p>
+                </div>
+              )}
 
               {error && (
                 <p className="text-sm text-red-500 mt-3 flex items-center gap-1.5">
@@ -151,16 +162,18 @@ export default function ProPage() {
               {/* CTA */}
               <button
                 onClick={handleCheckout}
-                disabled={loading}
+                disabled={loading || meLoading}
                 className="mt-5 w-full h-14 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 bg-gradient-to-r from-brand-primary to-brand-border text-white shadow-lg shadow-brand-primary/20 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-60 disabled:hover:translate-y-0"
               >
                 {loading ? (
                   <Loader2 className="w-6 h-6 animate-spin" />
-                ) : (
+                ) : loggedIn ? (
                   <>
                     <Crown className="w-5 h-5" />
                     Start Pro — {active.price}{active.per}
                   </>
+                ) : (
+                  <>Create account &amp; get Pro</>
                 )}
               </button>
 

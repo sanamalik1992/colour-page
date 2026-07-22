@@ -2,10 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Sparkles, ImagePlus, Crown, LayoutGrid, FolderHeart, Printer } from 'lucide-react'
+import { Sparkles, ImagePlus, Crown, LayoutGrid, FolderHeart, Printer, UserCircle2, LogIn } from 'lucide-react'
+import { useMe } from '@/hooks/useMe'
 
 interface NavHeaderProps {
   active?: 'create' | 'library' | 'print-pages' | 'dot-to-dot' | 'pro'
+  // Optional override; when omitted the header resolves Pro from the session.
   isPro?: boolean
 }
 
@@ -24,6 +26,10 @@ const NAV_ITEMS: {
 
 export function NavHeader({ active, isPro }: NavHeaderProps) {
   const pathname = usePathname()
+  const { me } = useMe()
+  const loggedIn = !!me?.user
+  // Session Pro wins; the prop is only a fallback for pages that pass it.
+  const effectivePro = me?.isPro ?? isPro ?? false
 
   // Clicking the wordmark always returns to a fresh landing page. When we're
   // already on home, a normal <Link> would only do a soft same-route navigation
@@ -63,7 +69,8 @@ export function NavHeader({ active, isPro }: NavHeaderProps) {
               </Link>
             ))}
 
-            {isPro ? (
+            {effectivePro ? (
+              // Pro subscriber → gold badge into the account page.
               <Link
                 href="/account"
                 className="ml-1 h-8 px-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold text-xs rounded-lg flex items-center hover:opacity-90 transition-opacity"
@@ -71,16 +78,39 @@ export function NavHeader({ active, isPro }: NavHeaderProps) {
                 <Crown className="w-3.5 h-3.5 sm:mr-1" />
                 <span className="hidden sm:inline">Pro</span>
               </Link>
+            ) : loggedIn ? (
+              // Logged in, free → account link + Pro upsell.
+              <>
+                <Link href="/account" className={linkClass('account')} aria-label="Account">
+                  <UserCircle2 className="w-5 h-5" />
+                </Link>
+                <Link
+                  href="/pro"
+                  className={`ml-1 h-8 px-3 font-bold text-xs rounded-lg flex items-center hover:opacity-90 transition-opacity text-[#2A1E00] ${
+                    active === 'pro' ? 'bg-brand-border' : 'bg-brand-primary'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 sm:mr-1" />
+                  <span className="hidden sm:inline">Pro</span>
+                </Link>
+              </>
             ) : (
-              <Link
-                href="/pro"
-                className={`ml-1 h-8 px-3 font-bold text-xs rounded-lg flex items-center hover:opacity-90 transition-opacity text-[#2A1E00] ${
-                  active === 'pro' ? 'bg-brand-border' : 'bg-brand-primary'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5 sm:mr-1" />
-                <span className="hidden sm:inline">Pro</span>
-              </Link>
+              // Logged out → Log in + Pro upsell (Pro requires an account).
+              <>
+                <Link href="/login" className={linkClass('login')}>
+                  <LogIn className="w-4 h-4" />
+                  <span className="hidden sm:inline">Log in</span>
+                </Link>
+                <Link
+                  href="/pro"
+                  className={`ml-1 h-8 px-3 font-bold text-xs rounded-lg flex items-center hover:opacity-90 transition-opacity text-[#2A1E00] ${
+                    active === 'pro' ? 'bg-brand-border' : 'bg-brand-primary'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 sm:mr-1" />
+                  <span className="hidden sm:inline">Pro</span>
+                </Link>
+              </>
             )}
           </nav>
         </div>

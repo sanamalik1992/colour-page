@@ -48,11 +48,14 @@ export async function POST(request: NextRequest) {
 
           console.log('Checkout completed for:', email, 'Customer:', customerId)
 
-          // Update or create customer record
+          // Update or create customer record, linking the auth user when the
+          // checkout carried one (so Pro follows the account, not just the email).
+          const userId = session.metadata?.userId
           if (email) {
             await supabase.from('stripe_customers').upsert({
               email: email.toLowerCase(),
               stripe_customer_id: customerId,
+              ...(userId ? { user_id: userId } : {}),
               is_pro: true,
               updated_at: new Date().toISOString()
             }, { onConflict: 'email' })
@@ -113,12 +116,15 @@ export async function POST(request: NextRequest) {
           updated_at: new Date().toISOString()
         }, { onConflict: 'stripe_subscription_id' })
 
-        // Update is_pro flag on customer
+        // Update is_pro flag on customer, and link the auth user if the
+        // subscription carried one in metadata.
+        const subUserId = subscription.metadata?.userId
         await supabase
           .from('stripe_customers')
-          .update({ 
-            is_pro: isActive, 
-            updated_at: new Date().toISOString() 
+          .update({
+            is_pro: isActive,
+            ...(subUserId ? { user_id: subUserId } : {}),
+            updated_at: new Date().toISOString()
           })
           .eq('stripe_customer_id', customerId)
 
