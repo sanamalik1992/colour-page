@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { preprocessImage, processWithReplicate, generateFromText, scoreObject, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
+import { preprocessImage, processWithReplicate, generateFromText, generateFromTextOnce, scoreObject, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
 import { verifyObjectImage } from '@/lib/object-verify'
 import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet, buildWordPracticeSheet, buildComposedSheet } from '@/lib/topic-render'
 import { singleObjectPrompt, type Activity } from '@/lib/topic-prompt'
@@ -69,6 +69,41 @@ function objectCacheKey(obj: string): string {
   return `object-cache/v2/${slug || 'obj'}.png`
 }
 
+// Hard per-object budget. Objects generate in parallel, so ANY single object
+// that stalls would freeze the whole sheet's progress — this caps each one and
+// drops it (renders without it) rather than letting it hang the job.
+const OBJECT_DEADLINE_MS = 42_000
+
+function withObjectDeadline<T>(work: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    work,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ])
+}
+
+// Generate one object: up to 2 SINGLE flux attempts (no nested retry storms),
+// cheap ink filter, then the vision recognisability check (self-timeouts,
+// fails open). Keep the first that passes; otherwise drop.
+async function generateOneObject(obj: string, settings: PhotoJobSettings, key: string): Promise<Buffer | null> {
+  const prompt = singleObjectPrompt(obj)
+  for (let i = 0; i < 2; i++) {
+    let buf: Buffer
+    try {
+      buf = await generateFromTextOnce(prompt, settings)
+    } catch (e) {
+      console.error(`object "${obj}" generation failed (attempt ${i + 1}):`, e)
+      continue
+    }
+    const { usable } = await scoreObject(buf)
+    if (!usable) continue // blank/blob — retry
+    const recognisable = await verifyObjectImage(buf, obj)
+    if (!recognisable) continue
+    supabase.storage.from('outputs').upload(key, buf, { contentType: 'image/png', upsert: true }).catch(() => {})
+    return buf
+  }
+  return null
+}
+
 async function cachedObject(obj: string, settings: PhotoJobSettings): Promise<Buffer | null> {
   const key = objectCacheKey(obj)
   // Cache hit → instant. (Only recognisable objects are ever cached.)
@@ -77,31 +112,11 @@ async function cachedObject(obj: string, settings: PhotoJobSettings): Promise<Bu
     if (data) return Buffer.from(await data.arrayBuffer())
   } catch { /* miss — fall through to generate */ }
 
-  // Miss → generate, filter gross blobs cheaply, then have the vision model
-  // confirm a child would actually recognise it (catches misplaced features /
-  // unrecognisable results that ink checks can't). Keep the first that passes;
-  // drop if none do, so a confusing picture never reaches the user.
-  const prompt = singleObjectPrompt(obj)
-  for (let i = 0; i < 3; i++) {
-    let buf: Buffer
-    try {
-      buf = await generateFromText(prompt, settings)
-    } catch (e) {
-      console.error(`object "${obj}" generation failed (attempt ${i + 1}):`, e)
-      continue
-    }
-    const { usable } = await scoreObject(buf)
-    if (!usable) continue // blank/blob — don't waste a vision call, just retry
-    const recognisable = await verifyObjectImage(buf, obj)
-    if (!recognisable) {
-      console.warn(`object "${obj}" not recognisable (attempt ${i + 1}) — retrying`)
-      continue
-    }
-    supabase.storage.from('outputs').upload(key, buf, { contentType: 'image/png', upsert: true }).catch(() => {})
-    return buf
-  }
-  console.warn(`object "${obj}" never came out recognisable — dropping`)
-  return null
+  // Miss → generate under a hard per-object deadline; drop on timeout so a slow
+  // object never freezes the sheet.
+  const buf = await withObjectDeadline(generateOneObject(obj, settings, key), OBJECT_DEADLINE_MS)
+  if (!buf) console.warn(`object "${obj}" not ready within budget — dropping`)
+  return buf
 }
 
 export async function POST(request: NextRequest) {
