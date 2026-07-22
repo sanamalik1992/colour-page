@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
+import { getServerUser } from '@/lib/supabase/auth-server'
 
 export const runtime = 'nodejs'
 
@@ -14,12 +15,17 @@ const supabase = createClient(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const email = String(body?.email || '').trim().toLowerCase()
     const plan = body?.plan || 'monthly'
 
-    if (!email || !email.includes('@')) {
-      return NextResponse.json({ error: 'Valid email required' }, { status: 400 })
+    // Pro requires a signed-in account. Use the VERIFIED session email (never a
+    // client-supplied one) so the Stripe customer always matches the account and
+    // Pro follows the user across devices.
+    const authUser = await getServerUser()
+    if (!authUser) {
+      return NextResponse.json({ error: 'Please sign in to subscribe.' }, { status: 401 })
     }
+    const email = authUser.email
+    const userId = authUser.id
 
     const monthlyPriceId =
       process.env.NEXT_PUBLIC_STRIPE_PRICE_MONTHLY ||
@@ -73,11 +79,16 @@ export async function POST(request: NextRequest) {
       await supabase.from('stripe_customers').upsert({
         email,
         stripe_customer_id: customerId,
+        user_id: userId,
         is_pro: false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }, { onConflict: 'email' })
     }
+
+    // Ensure the auth user link is stamped on the customer row (covers the
+    // existing-customer branches above too).
+    await supabase.from('stripe_customers').update({ user_id: userId }).eq('email', email)
 
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
@@ -87,9 +98,9 @@ export async function POST(request: NextRequest) {
       mode: 'subscription',
       success_url: `${appUrl}/pro/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/pro`,
-      metadata: { email, plan },
+      metadata: { email, plan, userId },
       subscription_data: {
-        metadata: { email, plan }
+        metadata: { email, plan, userId }
       },
       allow_promotion_codes: true
     })

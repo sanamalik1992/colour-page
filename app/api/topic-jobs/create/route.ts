@@ -4,6 +4,7 @@ import { checkUsage, recordUsage } from '@/lib/pro-gating'
 import { buildTopicPrompt } from '@/lib/topic-prompt'
 import { aiPlanTopic } from '@/lib/topic-ai'
 import { findBlockedTerm } from '@/lib/blocklist'
+import { getServerUser } from '@/lib/supabase/auth-server'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
 // Text-topic generation ("What are they learning today?"). Reuses the
@@ -22,7 +23,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const topic = String(body?.topic || '').trim()
     const sessionId = body?.sessionId ? String(body.sessionId) : ''
-    const email = body?.email ? String(body.email).toLowerCase() : null
+    // Prefer the VERIFIED session email so a logged-in Pro user's sheet is
+    // correctly Pro/unwatermarked without trusting a client-sent email.
+    const authed = await getServerUser()
+    const email = authed?.email || (body?.email ? String(body.email).toLowerCase() : null)
     const ageRaw = parseInt(String(body?.age), 10)
     const age = Number.isFinite(ageRaw) ? Math.max(3, Math.min(10, ageRaw)) : undefined
 

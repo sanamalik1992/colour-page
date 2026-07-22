@@ -4,6 +4,7 @@ import { checkUsage, recordUsage } from '@/lib/pro-gating'
 import { generateDotToDot } from '@/lib/dot-to-dot-engine'
 import { processWithReplicate } from '@/lib/image-processing'
 import { isHeic, convertHeicToPng } from '@/lib/heic-convert'
+import { getServerUser } from '@/lib/supabase/auth-server'
 import type { DotJobSettings } from '@/types/dot-job'
 
 // Dot-to-dot generation runs inline here instead of relying on a
@@ -48,7 +49,8 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const file = formData.get('file') as File | null
     const sessionId = formData.get('sessionId') as string
-    const email = formData.get('email') as string | null
+    const authed = await getServerUser()
+    const email = authed?.email || (formData.get('email') as string | null)
     const dotCount = parseInt(formData.get('dotCount') as string) || 100
     const showGuideLines = formData.get('showGuideLines') === 'true'
     const difficulty = (formData.get('difficulty') as string) || 'medium'

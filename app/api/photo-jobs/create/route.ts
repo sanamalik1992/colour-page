@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isHeic, convertHeicToPng } from '@/lib/heic-convert'
 import { USAGE_LIMITS_DISABLED } from '@/lib/pro-gating'
+import { getServerUser } from '@/lib/supabase/auth-server'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
 export const maxDuration = 60
@@ -18,7 +19,10 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const file = formData.get('file') as File
     const sessionId = formData.get('sessionId') as string
-    const email = (formData.get('email') as string)?.toLowerCase() || null
+    // Prefer the verified session email so a logged-in Pro user's page is
+    // correctly Pro/unwatermarked; fall back to the form value for guests.
+    const authed = await getServerUser()
+    const email = authed?.email || (formData.get('email') as string)?.toLowerCase() || null
 
     if (!file || !sessionId) {
       return NextResponse.json({ error: 'Missing file or session' }, { status: 400 })
