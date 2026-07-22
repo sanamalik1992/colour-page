@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { preprocessImage, processWithReplicate, generateFromText, generateFromTextOnce, scoreObject, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
 import { verifyObjectImage } from '@/lib/object-verify'
+import { verifySheet } from '@/lib/sheet-verify'
 import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet, buildWordPracticeSheet, buildComposedSheet } from '@/lib/topic-render'
 import { singleObjectPrompt, type Activity } from '@/lib/topic-prompt'
 import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
@@ -287,6 +288,17 @@ export async function POST(request: NextRequest) {
         const preprocessed = await preprocessImage(inputBuffer, settings)
         lineArtBuffer = await sharpCVFallback.generate(preprocessed, settings)
       }
+    }
+
+    // FINAL quality gate: look at the finished sheet and refuse to publish one
+    // with a clear defect (overlapping/garbled text, a blob picture, broken
+    // layout). Fail the job with a retry message rather than deliver it. Fails
+    // open if the QA service is unavailable, so it can't block all generation.
+    await updateJob(jobId, { progress: 85 })
+    const qa = await verifySheet(lineArtBuffer)
+    if (!qa.ok) {
+      console.warn(`sheet QA rejected job ${jobId}: ${qa.reason}`)
+      throw new Error('We spotted a small glitch on that sheet — please tap Try again, it usually comes out perfect.')
     }
 
     // Stage C: Render A4 outputs
