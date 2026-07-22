@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { isAdmin } from '@/lib/admin'
+import { requireAdmin } from '@/lib/admin'
 import { generatePrintPagePdf } from '@/lib/pdf-renderer'
 
 export const maxDuration = 60
@@ -13,10 +13,8 @@ const supabase = createClient(
 /**
  * GET /api/print-pages/admin – List all print pages (including unpublished) for admin.
  */
-export async function GET(request: NextRequest) {
-  const email = request.nextUrl.searchParams.get('email')
-
-  if (!(await isAdmin(email))) {
+export async function GET() {
+  if (!(await requireAdmin())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
@@ -41,12 +39,10 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData()
-    const email = formData.get('email') as string
-
-    if (!(await isAdmin(email))) {
+    if (!(await requireAdmin())) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
+    const formData = await request.formData()
 
     const file = formData.get('file') as File
     const title = formData.get('title') as string
@@ -132,12 +128,11 @@ export async function POST(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { email, pageId, ...updates } = body
-
-    if (!(await isAdmin(email))) {
+    if (!(await requireAdmin())) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
+    const body = await request.json()
+    const { pageId, ...updates } = body
 
     if (!pageId) {
       return NextResponse.json({ error: 'Page ID required' }, { status: 400 })
@@ -181,12 +176,11 @@ export async function PATCH(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { email, pageId } = body
-
-    if (!(await isAdmin(email))) {
+    if (!(await requireAdmin())) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
+    const body = await request.json()
+    const { pageId } = body
 
     if (!pageId) {
       return NextResponse.json({ error: 'Page ID required' }, { status: 400 })

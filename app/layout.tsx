@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Analytics } from "@vercel/analytics/next";
 import { OAuthCodeCatcher } from "@/components/auth/oauth-code-catcher";
+import { PresencePing } from "@/components/presence-ping";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -32,6 +33,8 @@ export default function RootLayout({
       >
         {/* Rescue a stray OAuth ?code= that landed off the callback route. */}
         <OAuthCodeCatcher />
+        {/* Anonymous presence heartbeat for the admin live view. */}
+        <PresencePing />
 
         {children}
 
