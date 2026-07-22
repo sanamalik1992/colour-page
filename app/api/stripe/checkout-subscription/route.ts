@@ -107,11 +107,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url: session.url })
   } catch (error) {
-    // Log the real error server-side, but never leak Stripe internals
-    // (keys, IDs) to the customer.
     console.error('Stripe checkout error:', error)
+    // TEMPORARY: surface the real Stripe reason so we can diagnose the price/mode
+    // issue. Revert to the generic message once checkout is confirmed working.
+    const detail = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { error: "We couldn't start checkout. Please try again in a moment." },
+      { error: `Checkout error: ${detail}` },
       { status: 500 }
     )
   }
