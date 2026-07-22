@@ -69,7 +69,12 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+          // Always show Google's account chooser so users (and testing) can pick
+          // WHICH Google account, instead of being silently auto-signed-in.
+          queryParams: { prompt: 'select_account' },
+        },
       })
       if (error) throw error
       // Redirects away to Google.
