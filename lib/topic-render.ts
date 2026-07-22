@@ -890,13 +890,15 @@ async function picturesRowBlock(
 ): Promise<{ svg: string; composites: sharp.OverlayOptions[] }> {
   const n = bufs.length
   if (!n) return { svg: '', composites: [] }
-  const cols = Math.min(n, 4)
+  // Fewer columns = bigger, clearer pictures. The common "colour & label 4
+  // things" case becomes a 2×2 grid rather than a cramped 1×4 row.
+  const cols = n === 4 ? 2 : Math.min(n, 3)
   const rows = Math.ceil(n / cols)
   const cellW = w / cols
   const cellH = h / rows
   // Fill the slice: pictures take most of the cell; a label line (write a word)
   // sits snug beneath each so the picture and its word read as one unit.
-  const picBoxH = label ? cellH * 0.78 : cellH * 0.96
+  const picBoxH = label ? cellH * 0.82 : cellH * 0.96
   let svg = ''
   const composites: sharp.OverlayOptions[] = []
   for (let i = 0; i < n; i++) {
@@ -904,8 +906,8 @@ async function picturesRowBlock(
     const r = Math.floor(i / cols)
     const cx = x + c * cellW
     const cy = top + r * cellH
-    const innerW = Math.round(cellW * 0.88)
-    const innerH = Math.round(picBoxH * 0.96)
+    const innerW = Math.round(cellW * 0.94)
+    const innerH = Math.round(picBoxH * 0.98)
     const pic = await sharp(bufs[i]).greyscale().resize(innerW, innerH, { fit: 'inside', background: '#ffffff' }).flatten({ background: '#ffffff' }).toBuffer()
     const pm = await sharp(pic).metadata()
     composites.push({ input: pic, left: Math.round(cx + (cellW - (pm.width || innerW)) / 2), top: Math.round(cy + (picBoxH - (pm.height || innerH)) / 2) })
@@ -1247,9 +1249,9 @@ function clocksBlock(
 }
 
 const ACTIVITY_WEIGHT: Record<string, number> = {
-  note: 0.6, pictures: 3, circleWords: 1.8, traceWords: 1.6,
+  note: 0.6, pictures: 4.4, circleWords: 1.8, traceWords: 1.6,
   wordSearch: 2.6, readWords: 1.8, writeLines: 1.4, sentence: 1.4, sums: 3.2,
-  countObjects: 2.6, countPictures: 2.4, traceNumbers: 1.8, clocks: 3.2,
+  countObjects: 2.6, countPictures: 3, traceNumbers: 1.8, clocks: 3.2,
 }
 
 /**

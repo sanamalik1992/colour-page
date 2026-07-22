@@ -343,27 +343,49 @@ async function inkFraction(buffer: Buffer): Promise<number> {
   }
 }
 
+// Ink-fraction bands for judging a single-object line drawing:
+//  • below BLANK           → an empty/near-white frame
+//  • GOOD_LO … GOOD_HI     → healthy line art (thin outlines)
+//  • above USABLE_HI       → a filled/solid blob (e.g. a headless mass)
+const INK_BLANK = 0.012
+const INK_GOOD_LO = 0.02
+const INK_GOOD_HI = 0.28
+const INK_USABLE_HI = 0.42
+
 /**
- * Generate a single-object picture and reject obvious failures (a blank frame,
- * or a solid black blob), retrying with a fresh seed. flux-schnell is fast and
- * cheap, so a couple of extra attempts rescue most malformed generations. If
- * every attempt is imperfect we keep the most reasonable-looking one.
+ * Judge a generated object. `usable` = safe to show; `good` = clean enough to
+ * cache and reuse. If the image can't be measured we don't block it.
+ */
+export async function scoreObject(buf: Buffer): Promise<{ ink: number; usable: boolean; good: boolean }> {
+  const ink = await inkFraction(buf)
+  if (ink < 0) return { ink, usable: true, good: true }
+  const usable = ink >= INK_BLANK && ink <= INK_USABLE_HI
+  const good = ink >= INK_GOOD_LO && ink <= INK_GOOD_HI
+  return { ink, usable, good }
+}
+
+/**
+ * Generate a single-object picture, retrying to avoid malformed results (blank
+ * frames, headless blobs). Returns as soon as one lands in the healthy band;
+ * otherwise keeps the closest-to-ideal attempt. Because good objects are cached
+ * and reused, spending a couple of extra attempts here is a one-time cost that
+ * pays off on every future sheet — so we can afford to be picky.
  */
 export async function generateGoodObject(
   prompt: string,
   settings: PhotoJobSettings,
-  extraTries = 1
+  extraTries = 2
 ): Promise<Buffer> {
-  // Only GROSS failures are rejected — a near-blank frame or a near-solid blob.
-  // Everything in between is accepted immediately so we don't multiply the
-  // generation time (and risk the function timing out) on healthy line art.
   let best: Buffer | null = null
+  let bestScore = -Infinity
   for (let i = 0; i <= extraTries; i++) {
     const buf = await generateFromText(prompt, settings) // throws only on hard API failure
-    best = buf
-    const ink = await inkFraction(buf)
-    if (ink < 0 || (ink > 0.008 && ink < 0.6)) return buf // healthy (or couldn't measure — keep it)
-    console.warn(`generateGoodObject: attempt ${i + 1} ink=${ink.toFixed(3)} (blank/blob), retrying`)
+    const { ink, good } = await scoreObject(buf)
+    if (good) return buf // healthy line art — done
+    // Prefer the attempt whose ink is closest to the ideal (~0.09).
+    const score = ink < 0 ? 1 : -Math.abs(ink - 0.09)
+    if (score > bestScore) { bestScore = score; best = buf }
+    console.warn(`generateGoodObject: attempt ${i + 1} ink=${ink.toFixed(3)} not ideal, retrying`)
   }
   return best!
 }
