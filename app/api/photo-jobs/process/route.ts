@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { preprocessImage, processWithReplicate, generateFromText, generateGoodObject, scoreObject, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
+import { preprocessImage, processWithReplicate, generateFromText, scoreObject, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
+import { verifyObjectImage } from '@/lib/object-verify'
 import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet, buildWordPracticeSheet, buildComposedSheet } from '@/lib/topic-render'
 import { singleObjectPrompt, type Activity } from '@/lib/topic-prompt'
 import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
@@ -63,34 +64,44 @@ async function uploadOutput(path: string, buf: Buffer, ct: string) {
 // instant download. The library warms itself as new objects are requested.
 function objectCacheKey(obj: string): string {
   const slug = obj.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
-  return `object-cache/${slug || 'obj'}.png`
+  // v2 namespace: forces a one-time re-generation of every object through the
+  // vision-recognisability gate, so pre-check cached blobs are left behind.
+  return `object-cache/v2/${slug || 'obj'}.png`
 }
 
 async function cachedObject(obj: string, settings: PhotoJobSettings): Promise<Buffer | null> {
   const key = objectCacheKey(obj)
-  // Cache hit → instant. (Only good objects are ever cached, see below.)
+  // Cache hit → instant. (Only recognisable objects are ever cached.)
   try {
     const { data } = await supabase.storage.from('outputs').download(key)
     if (data) return Buffer.from(await data.arrayBuffer())
   } catch { /* miss — fall through to generate */ }
-  // Miss → generate with retry, then judge it.
-  try {
-    // generateGoodObject already retried for a healthy render; judge the result.
-    const buf = await generateGoodObject(singleObjectPrompt(obj), settings)
-    const { usable } = await scoreObject(buf)
-    if (!usable) {
-      // Still a blob/blank after retries — drop it so a broken picture never
-      // reaches the user (the block renders without it) and never gets cached.
-      console.warn(`object "${obj}" came out malformed after retries — dropping`)
-      return null
+
+  // Miss → generate, filter gross blobs cheaply, then have the vision model
+  // confirm a child would actually recognise it (catches misplaced features /
+  // unrecognisable results that ink checks can't). Keep the first that passes;
+  // drop if none do, so a confusing picture never reaches the user.
+  const prompt = singleObjectPrompt(obj)
+  for (let i = 0; i < 3; i++) {
+    let buf: Buffer
+    try {
+      buf = await generateFromText(prompt, settings)
+    } catch (e) {
+      console.error(`object "${obj}" generation failed (attempt ${i + 1}):`, e)
+      continue
     }
-    // Cache the usable result so it's instant next time (blobs are never cached).
+    const { usable } = await scoreObject(buf)
+    if (!usable) continue // blank/blob — don't waste a vision call, just retry
+    const recognisable = await verifyObjectImage(buf, obj)
+    if (!recognisable) {
+      console.warn(`object "${obj}" not recognisable (attempt ${i + 1}) — retrying`)
+      continue
+    }
     supabase.storage.from('outputs').upload(key, buf, { contentType: 'image/png', upsert: true }).catch(() => {})
     return buf
-  } catch (e) {
-    console.error(`object "${obj}" failed:`, e)
-    return null
   }
+  console.warn(`object "${obj}" never came out recognisable — dropping`)
+  return null
 }
 
 export async function POST(request: NextRequest) {
