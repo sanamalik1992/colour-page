@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { preprocessImage, processWithReplicate, generateFromText, generateGoodObject, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
+import { preprocessImage, processWithReplicate, generateFromText, generateGoodObject, scoreObject, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
 import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet, buildWordPracticeSheet, buildComposedSheet } from '@/lib/topic-render'
 import { singleObjectPrompt, type Activity } from '@/lib/topic-prompt'
 import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
@@ -68,14 +68,23 @@ function objectCacheKey(obj: string): string {
 
 async function cachedObject(obj: string, settings: PhotoJobSettings): Promise<Buffer | null> {
   const key = objectCacheKey(obj)
-  // Cache hit → instant.
+  // Cache hit → instant. (Only good objects are ever cached, see below.)
   try {
     const { data } = await supabase.storage.from('outputs').download(key)
     if (data) return Buffer.from(await data.arrayBuffer())
   } catch { /* miss — fall through to generate */ }
-  // Miss → generate, then populate the cache (best-effort, non-blocking).
+  // Miss → generate with retry, then judge it.
   try {
+    // generateGoodObject already retried for a healthy render; judge the result.
     const buf = await generateGoodObject(singleObjectPrompt(obj), settings)
+    const { usable } = await scoreObject(buf)
+    if (!usable) {
+      // Still a blob/blank after retries — drop it so a broken picture never
+      // reaches the user (the block renders without it) and never gets cached.
+      console.warn(`object "${obj}" came out malformed after retries — dropping`)
+      return null
+    }
+    // Cache the usable result so it's instant next time (blobs are never cached).
     supabase.storage.from('outputs').upload(key, buf, { contentType: 'image/png', upsert: true }).catch(() => {})
     return buf
   } catch (e) {

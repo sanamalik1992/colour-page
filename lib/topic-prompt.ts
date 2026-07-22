@@ -141,10 +141,12 @@ export function objectsPrompt(objs: string[]): string {
 // picture is instantly recognisable and never merged with another (no puns).
 export function singleObjectPrompt(obj: string): string {
   const o = clarifyObject(obj)
-  return `Coloring book line art of one single ${o}. A whole ${o}, big and bold, ` +
-    `centred and filling the frame, with a simple, clean, unmistakable outline that a ` +
-    `small child could name at a glance, cheerful friendly cartoon style with a happy ` +
-    `face if it is a creature. Only one ${o} and nothing else in the picture. ${STYLE_SUFFIX}`
+  return `Coloring book line art of one single ${o}. A whole, complete, well-formed ${o} ` +
+    `shown in full — the entire ${o} clearly visible including its head, body and legs, ` +
+    `nothing cut off or cropped — big and bold, centred and filling the frame, with a simple, ` +
+    `clean, unmistakable outline that a small child could name at a glance, cheerful friendly ` +
+    `cartoon style with a happy face if it is a creature. Correct, recognisable anatomy; not ` +
+    `a blob. Only one ${o} and nothing else in the picture. ${STYLE_SUFFIX}`
 }
 
 // A pictorial colouring prompt for a set of concrete subjects.
