@@ -18,7 +18,9 @@ export async function verifyObjectImage(buf: Buffer, objectName: string): Promis
     // Small image keeps the vision call fast and cheap.
     const png = await sharp(buf).resize(512, 512, { fit: 'inside', background: '#ffffff' }).png().toBuffer()
     const client = new Anthropic({ apiKey })
-    const res = await client.messages.create({
+    // Bound the vision call so a slow model response can't stall generation.
+    const res = await Promise.race([
+      client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 60,
       messages: [
@@ -41,7 +43,9 @@ export async function verifyObjectImage(buf: Buffer, objectName: string): Promis
           ],
         },
       ],
-    })
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('vision timeout')), 6000)),
+    ])
 
     const text = res.content.find((c) => c.type === 'text')
     const raw = text && 'text' in text ? text.text : ''

@@ -235,6 +235,19 @@ export async function generateFromText(
   throw new Error("Sorry — the picture didn't come out. Please try again in a moment.")
 }
 
+/**
+ * A SINGLE flux-schnell attempt (no internal retry). Used by the per-object
+ * generator, which manages its own small retry budget and a hard per-object
+ * deadline — so retries are bounded in ONE place instead of multiplying
+ * (loop × generateFromText's 3× × the poll window = many minutes per object).
+ */
+export async function generateFromTextOnce(prompt: string, settings: PhotoJobSettings): Promise<Buffer> {
+  const token = process.env.REPLICATE_API_TOKEN
+  if (!token) throw new Error('REPLICATE_API_TOKEN not configured')
+  const aspectRatio = settings.orientation === 'landscape' ? '4:3' : '3:4'
+  return runFluxSchnell(token, prompt, aspectRatio)
+}
+
 // One flux-schnell generation attempt.
 async function runFluxSchnell(
   token: string,
@@ -250,7 +263,7 @@ async function runFluxSchnell(
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
-        Prefer: 'wait=55',
+        Prefer: 'wait=20',
       },
       body: JSON.stringify({
         input: {
@@ -264,7 +277,7 @@ async function runFluxSchnell(
         },
       }),
     },
-    60000 // Prefer: wait=55 holds the connection up to ~55s
+    25000 // Prefer: wait=20 holds the connection up to ~20s
   )
 
   if (!res.ok) {
@@ -276,11 +289,11 @@ async function runFluxSchnell(
   await onProgress?.(60)
 
   // Poll ceiling kept tight: schnell finishes in seconds, so if it hasn't
-  // completed in ~45s it's stuck — fail fast and let the caller retry rather
-  // than burning the whole function budget on one stalled prediction.
+  // completed soon it's stuck — fail fast and let the caller retry rather than
+  // burning the per-object budget on one stalled prediction.
   let result = prediction
   let attempts = 0
-  const maxAttempts = 30 // × 1.5s = 45s
+  const maxAttempts = 18 // × 1.5s = 27s
 
   while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
     await new Promise((r) => setTimeout(r, 1500))
@@ -288,7 +301,7 @@ async function runFluxSchnell(
     const pollRes = await fetchWithTimeout(
       `https://api.replicate.com/v1/predictions/${prediction.id}`,
       { headers: { Authorization: `Bearer ${token}` } },
-      15000
+      10000
     )
     result = await pollRes.json()
     await onProgress?.(Math.min(60 + Math.floor(attempts * 0.6), 80))
