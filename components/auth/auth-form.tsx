@@ -28,7 +28,8 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
-  const [error, setError] = useState('')
+  // Surface an error handed back by the OAuth callback (?error=...).
+  const [error, setError] = useState(params.get('error') || '')
   const [checkEmail, setCheckEmail] = useState(false)
 
   const isSignup = mode === 'signup'
