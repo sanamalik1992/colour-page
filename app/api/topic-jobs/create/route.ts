@@ -40,6 +40,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Session ID required' }, { status: 400 })
     }
 
+    // Analytics: record EVERY submitted topic (before gating, so blocked and
+    // abandoned ones count too). Fire-and-forget — never delays the sheet.
+    supabase.rpc('track_topic', { p_term: topic }).then(undefined, () => {})
+
     // Copyright / brand safety: reject blocked terms (Disney, Pokémon, etc.)
     // before spending a generation.
     const blocked = await findBlockedTerm(topic)
