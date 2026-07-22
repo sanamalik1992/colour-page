@@ -20,7 +20,12 @@ export async function prepareImageForUpload(file: File, maxDim = 1800): Promise<
       const img = new Image()
       img.decoding = 'async'
       img.src = url
-      await img.decode()
+      // Bound the decode so a slow/unsupported (e.g. HEIC on Chrome) file can't
+      // hang the "preparing" step — fall back to the original on timeout.
+      await Promise.race([
+        img.decode(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('decode timeout')), 8000)),
+      ])
 
       const w = img.naturalWidth
       const h = img.naturalHeight
