@@ -12,9 +12,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Master switch for daily usage limits. Limits are ENFORCED in production; an
-// env override can disable them without a deploy (for testing).
-export const USAGE_LIMITS_DISABLED = process.env.DISABLE_USAGE_LIMITS === 'true'
+// Master switch for daily usage limits.
+// TEMPORARY: limits are OFF for testing (the `true ||`). Remove the `true ||`
+// before launch to re-enable the 3/day photo · 30/day learning · 3/day dot-to-dot
+// allowances. The env override also disables them without a deploy.
+export const USAGE_LIMITS_DISABLED = true || process.env.DISABLE_USAGE_LIMITS === 'true'
 
 // Free daily allowances, enforced by counting rows (no RPC dependency). Pro is
 // unlimited. Tuned to cost: the image-model paths (photo, standalone dot-to-dot)
