@@ -323,10 +323,52 @@ function detectWordPractice(topic: string): { words: string[]; title: string } |
 // planner handles the long tail; this keeps the common ones working offline.
 // Connected 4-activity lessons: colour real examples → sort/apply → create.
 // The pictures and the word bank relate to each other so it reads as one lesson.
-const CONCEPTS: Record<string, { title: string; note: string; pics: string[]; mixed: string[]; word: string; verb: string }> = {
-  noun: { word: 'NOUN', verb: 'NAME', title: 'Nouns are naming words', note: 'A NOUN IS A PERSON PLACE OR THING', pics: ['dog', 'house', 'ball', 'apple'], mixed: ['dog', 'run', 'house', 'happy', 'ball', 'jump', 'apple', 'fast'] },
-  verb: { word: 'VERB', verb: 'NAME', title: 'Verbs are doing words', note: 'A VERB IS AN ACTION WORD', pics: ['running', 'jumping', 'swimming', 'hopping'], mixed: ['run', 'cat', 'jump', 'table', 'swim', 'happy', 'hop', 'tree'] },
-  adjective: { word: 'ADJECTIVE', verb: 'DESCRIBE', title: 'Adjectives describe things', note: 'AN ADJECTIVE IS A DESCRIBING WORD', pics: ['balloon', 'mouse', 'apple', 'tree'], mixed: ['big', 'dog', 'red', 'run', 'tall', 'jump', 'soft', 'shiny'] },
+// Each concept is a CONNECTED lesson: the picture set, the word bank and the
+// final writing task all reference each other. The labelling task tests the
+// actual concept (describe for adjectives, the action for verbs, the name for
+// nouns), and the circle word-bank is built from words that genuinely apply to
+// the pictured items (plus off-type distractors), so the activities reinforce
+// one another instead of being disconnected.
+const CONCEPTS: Record<string, {
+  title: string
+  note: string
+  pics: string[]
+  mixed: string[]
+  picInstruction: string
+  circleInstruction: string
+  writeInstruction: string
+}> = {
+  noun: {
+    title: 'Nouns are naming words',
+    note: 'A NOUN NAMES A PERSON PLACE OR THING',
+    picInstruction: 'Colour and name',
+    pics: ['dog', 'house', 'ball', 'apple'],
+    circleInstruction: 'Circle the nouns',
+    // the pictured nouns + verb/adjective distractors
+    mixed: ['dog', 'run', 'house', 'happy', 'ball', 'jump', 'apple', 'fast'],
+    writeInstruction: 'Write three naming words above',
+  },
+  verb: {
+    title: 'Verbs are doing words',
+    note: 'A VERB IS AN ACTION WORD',
+    picInstruction: 'Colour and label the action',
+    pics: ['running', 'jumping', 'swimming', 'hopping'],
+    circleInstruction: 'Circle the verbs',
+    // the pictured actions + noun distractors
+    mixed: ['run', 'cat', 'jump', 'table', 'swim', 'happy', 'hop', 'tree'],
+    writeInstruction: 'Write three action words above',
+  },
+  adjective: {
+    title: 'Adjectives describe things',
+    note: 'AN ADJECTIVE IS A DESCRIBING WORD',
+    picInstruction: 'Colour and describe',
+    pics: ['apple', 'mouse', 'tree', 'balloon'],
+    circleInstruction: 'Circle the adjectives',
+    // adjectives that describe the pictured items (red/shiny apple, tiny mouse,
+    // tall tree, soft/round balloon) + non-adjective distractors
+    mixed: ['red', 'run', 'tiny', 'dog', 'tall', 'jump', 'shiny', 'soft'],
+    writeInstruction: 'Describe a picture above',
+  },
 }
 function conceptKey(topic: string): string | null {
   const t = topic.toLowerCase()
@@ -432,10 +474,34 @@ function conceptActivities(key: string): Activity[] {
   const c = CONCEPTS[key]
   return [
     { type: 'note', text: c.note },
-    { type: 'pictures', instruction: `Colour and ${c.verb.toLowerCase()}`, items: c.pics, label: true },
-    { type: 'circleWords', instruction: `Circle the ${c.word.toLowerCase()}s`, words: c.mixed },
-    { type: 'sentence', instruction: 'Write a sentence', lines: 2 },
+    // Colour the pictures and write a word of the RIGHT type for each (describe
+    // for adjectives, the action for verbs, the name for nouns).
+    { type: 'pictures', instruction: c.picInstruction, items: c.pics, label: true },
+    // Circle the target type from a bank whose examples describe/relate to those
+    // pictures, mixed with off-type distractors.
+    { type: 'circleWords', instruction: c.circleInstruction, words: c.mixed },
+    // A contextual writing task that points back at the pictures above.
+    { type: 'writeLines', instruction: c.writeInstruction, count: 3 },
   ]
+}
+
+/**
+ * A reliable deterministic plan for the common grammar concepts (nouns, verbs,
+ * adjectives). Used BEFORE the AI planner so these always come out correct and
+ * connected — the planner previously mislabelled adjectives as "name" and used
+ * an unrelated word bank. Returns null for anything that isn't a known concept.
+ */
+export function conceptPlan(rawTopic: string, age?: number): TopicPlan | null {
+  const ck = conceptKey(clean(rawTopic))
+  if (!ck) return null
+  return {
+    category: 'composed',
+    subject: CONCEPTS[ck].title,
+    title: sheetTitle(CONCEPTS[ck].title),
+    activities: conceptActivities(ck),
+    prompt: '',
+    difficulty: difficultyForAge(age),
+  }
 }
 
 // Objects that begin with (or use) a grapheme.
@@ -560,17 +626,8 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   }
 
   // --- grammar / literacy concepts (nouns, verbs, adjectives…) ---
-  const ck = conceptKey(topic)
-  if (ck) {
-    return {
-      category: 'composed',
-      subject: CONCEPTS[ck].title,
-      title: sheetTitle(CONCEPTS[ck].title),
-      activities: conceptActivities(ck),
-      prompt: '',
-      difficulty,
-    }
-  }
+  const cp = conceptPlan(topic, age)
+  if (cp) return cp
 
   // --- simple sums (addition / subtraction), drawn deterministically ---
   const sums = detectSums(topic, difficulty)
