@@ -1144,6 +1144,132 @@ function multiplyGroupsBlock(table: number, upTo: number, x: number, top: number
   return s
 }
 
+// Render a row of "equation tokens" (numbers, operators, and blank boxes) at a
+// shared glyph height, left-to-right from x. Used by the number-bond block so a
+// blank can sit anywhere in the sentence ("7 + ▢ = 10", "▢ + 3 = 10", "10 − 4 = ▢").
+type EqTok = number | '+' | '-' | '=' | 'box'
+function equationTokens(tokens: EqTok[], x: number, midY: number, gh: number, st: number): { svg: string; width: number } {
+  const gap = gh * 0.3, opW = gh * 0.6, eqSym = gh * 0.66, box = gh * 1.15
+  const tokW = (t: EqTok): number => typeof t === 'number' ? numberWidth(String(t), gh) : t === 'box' ? box : t === '=' ? eqSym : opW
+  const width = tokens.reduce((acc: number, t, i) => acc + tokW(t) + (i < tokens.length - 1 ? gap : 0), 0)
+  let cx = x, s = ''
+  for (const t of tokens) {
+    if (typeof t === 'number') { s += numberSvg(String(t), cx, midY - gh / 2, gh, st); cx += numberWidth(String(t), gh) + gap }
+    else if (t === 'box') { s += `<rect x="${cx.toFixed(1)}" y="${(midY - gh / 2).toFixed(1)}" width="${box.toFixed(1)}" height="${gh.toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`; cx += box + gap }
+    else { const sym = t === '=' ? eqSym : opW; s += opGlyph(t, cx + sym / 2, midY, sym, st); cx += sym + gap }
+  }
+  return { svg: s, width }
+}
+
+// A ten-frame make-N visual: a 2×5 frame (two for 20) with `a` counters filled
+// and the rest empty, plus "▢ + ▢ = N" to write the two parts. Concrete support
+// for number bonds — the youngest can count the filled and empty cells.
+function tenFrameBlock(whole: number, count: number, x: number, top: number, w: number, h: number, salt = 0): string {
+  const W = Math.max(5, Math.min(20, Math.round(whole)))
+  const frames = W > 10 ? 2 : 1
+  const cellsPer = frames === 2 ? 10 : W
+  const n = Math.max(2, Math.min(5, Math.round(count)))
+  const rng = makeRng(W * 131 + n * 17 + salt * 7919)
+  const rowH = h / n
+  const availW = w * 0.54
+  const eqX = x + w * 0.58
+  const totalCols = frames * 5 + (frames - 1)
+  let cell = Math.min(availW / totalCols, (rowH * 0.72) / 2)
+  cell = Math.max(13, cell)
+  const r = cell * 0.3
+  const used = new Set<number>()
+  const pick = () => { let a = 1, g = 0; do { a = 1 + Math.floor(rng() * (W - 1)) } while (used.has(a) && used.size < W - 1 && g++ < 40); used.add(a); return a }
+  let s = ''
+  for (let i = 0; i < n; i++) {
+    const a = pick()
+    const rowTop = top + i * rowH
+    const gridTop = rowTop + (rowH - 2 * cell) / 2
+    let filled = 0
+    for (let f = 0; f < frames; f++) {
+      const fx = x + f * (5 * cell + cell)
+      const cells = frames === 2 ? 10 : cellsPer
+      for (let idx = 0; idx < cells; idx++) {
+        const cc = idx % 5, rr = Math.floor(idx / 5)
+        const cx = fx + cc * cell, cy = gridTop + rr * cell
+        s += `<rect x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="${cell.toFixed(1)}" height="${cell.toFixed(1)}" fill="none" stroke="#c9c4ba" stroke-width="2.5"/>`
+        if (filled < a) { s += `<circle cx="${(cx + cell / 2).toFixed(1)}" cy="${(cy + cell / 2).toFixed(1)}" r="${r.toFixed(1)}" fill="#111"/>`; filled++ }
+      }
+    }
+    const gh = Math.min(rowH * 0.42, 48)
+    const st = Math.max(6, gh * 0.14)
+    const midY = rowTop + rowH / 2
+    s += equationTokens(['box', '+', 'box', '=', W], eqX, midY, gh, st).svg
+  }
+  return s
+}
+
+// Part-whole ("cherry") model: whole on top joined by lines to two parts, one
+// given and one blank — the core number-bond model. `count` diagrams in a row.
+function partWholeBlock(whole: number, count: number, x: number, top: number, w: number, h: number, salt = 0): string {
+  const W = Math.max(5, Math.min(100, Math.round(whole)))
+  const n = Math.max(2, Math.min(4, Math.round(count)))
+  const rng = makeRng(W * 977 + n * 13 + salt * 131)
+  const cellW = w / n
+  const cr = Math.min(cellW * 0.19, h * 0.34, 58)
+  const numH = cr * 0.95
+  const st = Math.max(4, numH * 0.14)
+  const used = new Set<number>()
+  const pick = () => { let a = 1, g = 0; do { a = 1 + Math.floor(rng() * (W - 1)) } while (used.has(a) && used.size < W - 1 && g++ < 40); used.add(a); return a }
+  let s = ''
+  for (let i = 0; i < n; i++) {
+    const a = pick()
+    const cx0 = x + i * cellW + cellW / 2
+    // Centre the diagram vertically in the slice (total height ≈ 4.7·cr).
+    const topY = top + Math.max(0, (h - cr * 4.7) / 2) + cr
+    const botY = topY + cr * 2.7
+    const lx = cx0 - cellW * 0.24, rx = cx0 + cellW * 0.24
+    s += `<line x1="${cx0.toFixed(1)}" y1="${(topY + cr).toFixed(1)}" x2="${lx.toFixed(1)}" y2="${(botY - cr).toFixed(1)}" stroke="#c9c4ba" stroke-width="3"/>`
+    s += `<line x1="${cx0.toFixed(1)}" y1="${(topY + cr).toFixed(1)}" x2="${rx.toFixed(1)}" y2="${(botY - cr).toFixed(1)}" stroke="#c9c4ba" stroke-width="3"/>`
+    s += `<circle cx="${cx0.toFixed(1)}" cy="${topY.toFixed(1)}" r="${cr.toFixed(1)}" fill="none" stroke="#111" stroke-width="3.5"/>`
+    s += numberSvg(String(W), cx0 - numberWidth(String(W), numH) / 2, topY - numH / 2, numH, st)
+    s += `<circle cx="${lx.toFixed(1)}" cy="${botY.toFixed(1)}" r="${cr.toFixed(1)}" fill="none" stroke="#111" stroke-width="3.5"/>`
+    s += numberSvg(String(a), lx - numberWidth(String(a), numH) / 2, botY - numH / 2, numH, st)
+    s += `<circle cx="${rx.toFixed(1)}" cy="${botY.toFixed(1)}" r="${cr.toFixed(1)}" fill="none" stroke="#c9c4ba" stroke-width="3.5" stroke-dasharray="9 8"/>`
+  }
+  return s
+}
+
+// Number-fact sentences with a blank anywhere. 'missing' = addition bonds
+// ("a + ▢ = W", "▢ + b = W"); 'subtract' = the inverse ("W − a = ▢",
+// "W − ▢ = a"). All correct by construction.
+function bondsBlock(whole: number, count: number, style: 'missing' | 'subtract', x: number, top: number, w: number, h: number, salt = 0): string {
+  const W = Math.max(5, Math.min(100, Math.round(whole)))
+  const n = Math.max(2, Math.min(12, Math.round(count)))
+  const rng = makeRng(W * 131 + n * 17 + (style === 'subtract' ? 5 : 3) + salt * 7919)
+  const items: (number | '+' | '-' | '=' | 'box')[][] = []
+  const seen = new Set<string>()
+  let guard = 0
+  while (items.length < n && guard++ < n * 50) {
+    const a = 1 + Math.floor(rng() * (W - 1))
+    const forms: (number | '+' | '-' | '=' | 'box')[][] = style === 'subtract'
+      ? [[W, '-', a, '=', 'box'], [W, '-', 'box', '=', a]]
+      : [[a, '+', 'box', '=', W], ['box', '+', a, '=', W]]
+    const form = forms[Math.floor(rng() * forms.length)]
+    const key = form.join('|')
+    if (seen.has(key)) continue
+    seen.add(key)
+    items.push(form)
+  }
+  const cols = 2
+  const rows = Math.ceil(items.length / cols)
+  const cellW = w / cols
+  const rowPitch = h / rows
+  const gh = Math.max(26, Math.min(72, rowPitch / 1.7))
+  const st = Math.max(6, gh * 0.14)
+  return items.map((tokens, i) => {
+    const col = i % cols, row = Math.floor(i / cols)
+    const midY = top + row * rowPitch + rowPitch / 2
+    const { width } = equationTokens(tokens, 0, midY, gh, st)
+    const startX = x + col * cellW + (cellW - width) / 2
+    return equationTokens(tokens, startX, midY, gh, st).svg
+  }).join('')
+}
+
 // Countable dots under an operand (visual aid for the youngest children).
 function countDots(n: number, cx: number, top: number, r: number): string {
   if (n < 1) return ''
@@ -1460,6 +1586,7 @@ const ACTIVITY_WEIGHT: Record<string, number> = {
   wordSearch: 2.6, readWords: 1.8, writeLines: 1.4, sentence: 1.4, sums: 3.2,
   countObjects: 2.6, countPictures: 3, traceNumbers: 1.8, clocks: 3.2,
   timesTable: 3.6, multiplyGroups: 4.2,
+  tenFrame: 3.8, partWhole: 0.9, bonds: 3,
 }
 
 /**
@@ -1575,6 +1702,9 @@ export async function buildComposedSheet(
         case 'sums': overlay += sumsBlock(a.op, a.maxValue, a.count, !!a.dots, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'timesTable': overlay += timesTableBlock(a.table, a.upTo, a.op, a.shuffle, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'multiplyGroups': overlay += multiplyGroupsBlock(a.table, a.upTo, bodyX, nextY, bodyW, ch); break
+        case 'tenFrame': overlay += tenFrameBlock(a.whole, a.count, bodyX, nextY, bodyW, ch, blockIndex); break
+        case 'partWhole': overlay += partWholeBlock(a.whole, a.count, bodyX, nextY, bodyW, ch, blockIndex); break
+        case 'bonds': overlay += bondsBlock(a.whole, a.count, a.style, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'traceNumbers': overlay += traceNumbersBlock(a.upTo, bodyX, nextY, bodyW, ch); break
       }
