@@ -103,6 +103,11 @@ export async function processWithReplicate(
   const token = process.env.REPLICATE_API_TOKEN
   if (!token) throw new Error('REPLICATE_API_TOKEN not configured')
 
+  // The photo→line-art model. Overridable via env so a faster/cheaper variant
+  // (e.g. black-forest-labs/flux-kontext-dev) can be A/B-tested for quality vs
+  // speed without a code change; defaults to the current kontext-pro.
+  const model = process.env.REPLICATE_PHOTO_MODEL || 'black-forest-labs/flux-kontext-pro'
+
   // Build prompt based on settings
   const thickness =
     settings.lineThickness === 'thin'
@@ -120,19 +125,23 @@ export async function processWithReplicate(
 
   const prompt = `Convert this photo into a clean black-and-white line drawing for a children's colouring book. ${detail}. Use ${thickness} solid black outlines on a pure white background. Only clean black outlines — absolutely no shading, no grey tones, no colour and no fill. Keep every shape as a closed contour so it is easy to colour inside the lines. Smooth, confident, evenly weighted lines.`
 
-  await onProgress?.(20)
+  await onProgress?.(18)
 
-  // Create prediction. `Prefer: wait` asks Replicate to hold the connection
-  // and return the finished prediction directly (up to ~60s), which removes
-  // polling latency for the common fast case.
+  // Create the prediction with only a SHORT `Prefer: wait` — just long enough
+  // to return inline if the model happens to finish almost instantly. We do NOT
+  // hold the connection for the whole generation: kontext-pro takes ~30–55s, and
+  // a long wait froze the progress bar at its starting value the entire time
+  // (the "stuck at 26% then suddenly done" report). Returning quickly hands off
+  // to the poll loop below, which advances the bar honestly every ~1.5s.
+  const tCreate = Date.now()
   const res = await fetchWithTimeout(
-    'https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions',
+    `https://api.replicate.com/v1/models/${model}/predictions`,
     {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
-        Prefer: 'wait=55',
+        Prefer: 'wait=3',
       },
       body: JSON.stringify({
         input: {
@@ -144,7 +153,7 @@ export async function processWithReplicate(
         },
       }),
     },
-    60000
+    30000
   )
 
   if (!res.ok) {
@@ -152,29 +161,29 @@ export async function processWithReplicate(
     throw new Error(`Replicate API error: ${errorText}`)
   }
 
-  const prediction = await res.json()
-  await onProgress?.(60)
+  let result = await res.json()
+  console.log(`[timing photo] create+wait ${Date.now() - tCreate}ms status=${result.status}`)
+  await onProgress?.(result.status === 'succeeded' ? 80 : 25)
 
-  // If `Prefer: wait` already returned a finished prediction, skip polling.
-  // kontext-pro is slower than schnell, so allow a longer (but still bounded)
-  // poll window before giving up.
-  let result = prediction
+  // Poll until done, advancing the bar honestly (asymptotic toward 80 so a long
+  // generation keeps visibly moving rather than sitting frozen).
   let attempts = 0
-  const maxAttempts = 80 // × 1.5s = 120s
+  const maxAttempts = 80 // × 1.5s ≈ 120s
+  if (result.status !== 'succeeded' && result.status !== 'failed') {
+    const tPoll = Date.now()
+    while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
+      await new Promise((r) => setTimeout(r, 1500))
+      attempts++
 
-  while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
-    await new Promise((r) => setTimeout(r, 1500))
-    attempts++
-
-    const pollRes = await fetchWithTimeout(
-      `https://api.replicate.com/v1/predictions/${prediction.id}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-      15000
-    )
-    result = await pollRes.json()
-
-    const progress = Math.min(60 + Math.floor(attempts * 0.6), 80)
-    await onProgress?.(progress)
+      const pollRes = await fetchWithTimeout(
+        `https://api.replicate.com/v1/predictions/${result.id}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+        15000
+      )
+      result = await pollRes.json()
+      await onProgress?.(Math.min(80, 25 + Math.round(attempts * 1.6)))
+    }
+    console.log(`[timing photo] poll ${attempts}x ${Date.now() - tPoll}ms final=${result.status}`)
   }
 
   if (result.status === 'failed') throw new Error(result.error || 'Generation failed')
@@ -192,10 +201,12 @@ export async function processWithReplicate(
   await onProgress?.(85)
 
   // Download the result
+  const tDl = Date.now()
   const imgRes = await fetchWithTimeout(outputUrl, {}, 30000)
   if (!imgRes.ok) throw new Error('Failed to download generated image')
-
-  return Buffer.from(await imgRes.arrayBuffer())
+  const out = Buffer.from(await imgRes.arrayBuffer())
+  console.log(`[timing photo] download ${Date.now() - tDl}ms ${out.length}b`)
+  return out
 }
 
 /**
