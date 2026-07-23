@@ -9,7 +9,6 @@ import {
   Sparkles,
   Infinity as InfinityIcon,
   Stamp,
-  Zap,
   Palette,
   ShieldCheck,
   Lock,
@@ -34,9 +33,7 @@ const FEATURES = [
   { icon: InfinityIcon, color: 'text-emerald-500', bg: 'bg-emerald-50', title: 'Unlimited pages', desc: 'Make as many colouring pages as you like' },
   { icon: Stamp, color: 'text-rose-500', bg: 'bg-rose-50', title: 'No watermark', desc: 'Clean, print-ready pages every time' },
   { icon: Palette, color: 'text-violet-500', bg: 'bg-violet-50', title: 'Unlimited dot-to-dot', desc: 'Turn photos into number puzzles too' },
-  { icon: Zap, color: 'text-amber-500', bg: 'bg-amber-50', title: 'Priority speed', desc: 'Your pages jump to the front of the queue' },
-  { icon: Sparkles, color: 'text-sky-500', bg: 'bg-sky-50', title: 'HD A4 quality', desc: 'Sharp lines that print beautifully' },
-  { icon: Crown, color: 'text-orange-500', bg: 'bg-orange-50', title: 'Full gallery', desc: 'Every ready-made colouring sheet unlocked' },
+  { icon: Sparkles, color: 'text-sky-500', bg: 'bg-sky-50', title: 'Bonus activities', desc: 'An extra age-matched activity on every learning sheet' },
 ]
 
 export default function ProPage() {
@@ -213,8 +210,8 @@ export default function ProPage() {
               <h2 className="text-base font-bold text-white">Richer learning sheets</h2>
             </div>
             <p className="text-sm text-gray-400 mb-6">
-              Free gives one activity per topic. Pro packs in a second, age-matched activity —
-              tracing, letter hunts, word searches and writing — so every sheet keeps kids busy.
+              Free sheets are already full and varied — several activities per topic. Pro adds an
+              extra, age-matched activity on top: tracing, letter hunts, word searches and writing.
             </p>
             <ProActivityPreviews />
           </div>
@@ -227,9 +224,8 @@ export default function ProPage() {
               <div className="p-4 text-center font-bold text-brand-primary border-l border-zinc-700 bg-brand-primary/5">Pro</div>
               {[
                 ['Colouring pages', '3 / day', 'Unlimited'],
-                ['Learning activities', '1 per sheet', 'Full multi-activity sheets'],
+                ['Learning activities', 'Full varied sheet', 'Full sheet + a bonus activity'],
                 ['Watermark', 'Yes', 'None'],
-                ['Processing speed', 'Standard', 'Priority'],
               ].map(([label, free, pro], i) => (
                 <div key={label} className="contents">
                   <div className={`p-4 text-gray-300 ${i > 0 ? 'border-t border-zinc-700/60' : ''}`}>{label}</div>
