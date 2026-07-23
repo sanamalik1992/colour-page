@@ -1459,8 +1459,8 @@ function matchLinesBlock(left: string[], right: string[], x: number, top: number
   const yOff = Math.max(0, (h - rowH * n) / 2)
   const gh = Math.min(rowH * 0.4, 52)
   const dotR = 9
-  const leftDotX = x + w * 0.42
-  const rightDotX = x + w * 0.58
+  const leftDotX = x + w * 0.38
+  const rightDotX = x + w * 0.62
   let s = ''
   for (let i = 0; i < n; i++) {
     const midY = top + yOff + i * rowH + rowH / 2
@@ -2175,6 +2175,9 @@ export async function buildComposedSheet(
     if (a.type === 'matchLines') return Math.min(a.left.length, 6) * 150 + 150
     if (a.type === 'circleWords') { const items = Math.min(a.words.length, 8); const cols = items <= 4 ? items : 4; return Math.ceil(items / cols) * 170 + 150 }
     if (a.type === 'bonds') { const rows = Math.ceil(Math.min(a.count, 12) / 2); return rows * 150 + 150 }
+    // Write-in lines are tidy too — a few ruled lines, not a page-filling block.
+    if (a.type === 'writeLines') return Math.min(a.count, 6) * 150 + 150
+    if (a.type === 'sentence') return Math.min(a.lines, 5) * 160 + 150
     return Infinity
   }
 
