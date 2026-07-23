@@ -10,6 +10,11 @@ import type { PhotoJobSettings } from '@/types/photo-job'
 
 export const maxDuration = 300 // Vercel Pro: 5 minutes
 
+// Free and Pro sheets are identical in content now — every sheet renders the
+// full set of activities. The deterministic builders still take an "isPro"
+// layout flag; we always pass this so everyone gets the fuller layout.
+const FULL_SHEET = true
+
 // Internal deadline, kept safely below maxDuration. If the work isn't done by
 // this point we mark the job failed OURSELVES — otherwise Vercel hard-kills the
 // function at maxDuration, our catch block never runs, and the job is left in
@@ -225,7 +230,7 @@ export async function POST(request: NextRequest) {
       } else if (settings.category === 'words' && settings.objects?.length) {
         // Sight / tricky / specific words (there, then, that…) — a read-trace-
         // find-write practice sheet, drawn deterministically (no pictures).
-        lineArtBuffer = await buildWordPracticeSheet(settings.title, settings.objects, settings, !!job.is_pro)
+        lineArtBuffer = await buildWordPracticeSheet(settings.title, settings.objects, settings, FULL_SHEET)
         await updateJob(jobId, { progress: 82 })
       } else if (settings.category === 'composed' && settings.activities?.length) {
         // Open-ended / concept topics (nouns, verbs, "an interactive sheet
@@ -238,7 +243,7 @@ export async function POST(request: NextRequest) {
         const onPicProgress = (done: number, total: number) => {
           updateJob(jobId, { progress: 20 + Math.round((done / Math.max(1, total)) * 58) }).catch(() => {})
         }
-        lineArtBuffer = await buildComposedSheet(settings.title, settings.activities as Activity[], settings, !!job.is_pro, genPicture, onPicProgress)
+        lineArtBuffer = await buildComposedSheet(settings.title, settings.activities as Activity[], settings, genPicture, onPicProgress)
         await updateJob(jobId, { progress: 82 })
       } else if (settings.category === 'letter' && glyph?.kind === 'letter' && settings.objects?.length) {
         // Letter/phonics: the ACTIVITY TYPE changes with age band.
@@ -248,9 +253,9 @@ export async function POST(request: NextRequest) {
         //    then compose a sticker grid — recognise/colour (low) or
         //    write-the-missing-sound fill-gap (medium).
         const band = settings.detailLevel
-        // Pro sheets carry a second, age-matched activity (colour-every-letter,
-        // trace-the-words, write-a-sentence); free sheets are a single taster.
-        const isPro = !!job.is_pro
+        // Every sheet carries the full set of age-matched activities (the fuller
+        // layout the builders formerly reserved for Pro).
+        const isPro = FULL_SHEET
         if (band === 'high') {
           lineArtBuffer = await buildLetterPuzzleSheet(glyph.value, settings.objects, settings, isPro)
           await updateJob(jobId, { progress: 82 })
@@ -355,7 +360,10 @@ export async function POST(request: NextRequest) {
     const isLandscape = settings.orientation === 'landscape'
     const tRender = Date.now()
     const pdfBuffer = await renderA4Pdf(lineArtBuffer, {
-      watermark: job.is_watermarked,
+      // Free sheets are no longer watermarked — every shared sheet is
+      // distribution, so it must be clean and print-proud. Only the small
+      // centred colour.page footer credit remains (on all sheets, free + Pro).
+      watermark: false,
       footer: true,
       landscape: isLandscape,
     })

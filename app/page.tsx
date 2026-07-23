@@ -15,13 +15,13 @@ import {
   AlertCircle,
   RefreshCw,
   Lock,
+  Crown,
   BookOpen,
   Loader2,
 } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { Hero3D } from '@/components/ui/hero-3d'
 import { BeforeAfter } from '@/components/ui/before-after'
-import { ProActivityPreviews } from '@/components/ui/pro-activity-previews'
 import { Footer } from '@/components/sections/footer'
 import { useSessionId } from '@/hooks/useSessionId'
 import { prepareImageForUpload, readJsonSafe, friendlyError } from '@/lib/client-image'
@@ -58,10 +58,6 @@ export default function Home() {
   // Topic state ("What are they learning today?")
   const [topic, setTopic] = useState('')
   const [childAge, setChildAge] = useState<number | ''>('')
-  // What was actually searched, for the Pro-activity preview thumbnails.
-  const [previewToken, setPreviewToken] = useState('')
-  const [previewWords, setPreviewWords] = useState<string[]>([])
-  const [previewCategory, setPreviewCategory] = useState('')
 
   // Settings
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait')
@@ -85,7 +81,6 @@ export default function Home() {
   // Results
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [pngUrl, setPngUrl] = useState<string | null>(null)
-  const [isWatermarked, setIsWatermarked] = useState(true)
 
   // Dot-to-dot conversion (from the generated colouring page)
   const [dotState, setDotState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
@@ -93,28 +88,33 @@ export default function Home() {
   const [dotPdfUrl, setDotPdfUrl] = useState<string | null>(null)
   const [dotError, setDotError] = useState('')
 
-  // Limits
-  const [remaining, setRemaining] = useState(3)
+  // Limits. Photo and learning sheets have separate daily allowances, so we
+  // track each and show the one for the active mode. `null` = unlimited (Pro or
+  // limits off) → the counter is hidden rather than showing a placeholder.
+  const [photoRemaining, setPhotoRemaining] = useState<number | null>(null)
+  const [topicRemaining, setTopicRemaining] = useState<number | null>(null)
   const [isPro, setIsPro] = useState(false)
-  // Whether daily limits are actually being enforced. When they're off (testing
-  // / launch), we hide the "N free left" counter rather than show a placeholder.
   const [limitsEnforced, setLimitsEnforced] = useState(false)
+  // Set true when a create call is rejected because the daily cap is hit — turns
+  // the error into a positive upgrade moment rather than a dead end.
+  const [capReached, setCapReached] = useState(false)
 
   useEffect(() => { setMounted(true) }, [])
 
-  useEffect(() => {
+  const refreshLimits = useCallback(() => {
     if (!sessionId) return
     fetch(`/api/check-limits?sessionId=${sessionId}`)
       .then((r) => r.json())
       .then((d) => {
-        setRemaining(d.remaining ?? 3)
         setIsPro(d.isPro ?? false)
-        // Only show the counter when the server confirms limits are enforced
-        // (the disabled branch returns limitsEnforced:false).
-        setLimitsEnforced(d.limitsEnforced !== false)
+        setLimitsEnforced(d.limitsEnforced === true)
+        setPhotoRemaining(d.photo?.remaining ?? null)
+        setTopicRemaining(d.topic?.remaining ?? null)
       })
       .catch(() => {})
   }, [sessionId])
+
+  useEffect(() => { refreshLimits() }, [refreshLimits])
 
   const trackUrl = (u: string) => {
     objectUrlsRef.current.push(u)
@@ -174,6 +174,7 @@ export default function Home() {
     if (!file || !sessionId) return
     setIsSubmitting(true)
     setError('')
+    setCapReached(false)
     genStartRef.current = Date.now()
     setDisplayPct(0)
 
@@ -204,6 +205,13 @@ export default function Home() {
       }
 
       const data = await readJsonSafe(res)
+      if (res.status === 429 || data?.limitReached) {
+        setCapReached(true)
+        setError((data?.error as string) || "You've reached today's free limit.")
+        setIsSubmitting(false)
+        refreshLimits()
+        return
+      }
       if (!res.ok) throw new Error(friendlyError(res.status, data))
 
       setJobId(data.jobId as string)
@@ -228,6 +236,7 @@ export default function Home() {
     if (!useTopic || !sessionId) return
     setIsSubmitting(true)
     setError('')
+    setCapReached(false)
     genStartRef.current = Date.now()
     setDisplayPct(0)
 
@@ -243,14 +252,14 @@ export default function Home() {
       })
 
       const data = await readJsonSafe(res)
+      if (res.status === 429 || data?.limitReached) {
+        setCapReached(true)
+        setError((data?.error as string) || "You've reached today's free limit.")
+        setIsSubmitting(false)
+        refreshLimits()
+        return
+      }
       if (!res.ok) throw new Error(friendlyError(res.status, data))
-
-      // Remember what was searched so the Pro preview reflects it. Prefer the
-      // glyph (e.g. "SH"); otherwise a short token from the typed topic.
-      const derived = useTopic.toUpperCase().replace(/[^A-Z ]/g, '').split(' ').filter(Boolean).pop() || 'A'
-      setPreviewToken((data.glyph as string) || derived.slice(0, 8))
-      setPreviewWords(Array.isArray(data.words) ? (data.words as string[]) : [])
-      setPreviewCategory(typeof data.category === 'string' ? data.category : '')
 
       setJobId(data.jobId as string)
       setJobStatus('queued')
@@ -295,11 +304,11 @@ export default function Home() {
         if (data.job) {
           setJobStatus(data.job.status)
           setProgress(data.job.progress || 0)
-          setIsWatermarked(data.job.is_watermarked ?? true)
           if (data.job.status === 'done') {
             setPdfUrl(data.signedPdfUrl || null)
             setPngUrl(data.signedPngUrl || null)
             setIsSubmitting(false)
+            refreshLimits() // reflect the just-used generation in the counter
           }
           if (data.job.status === 'failed') {
             setError(data.job.error || 'Generation failed')
@@ -352,6 +361,7 @@ export default function Home() {
     setJobStatus(null)
     setProgress(0)
     setError('')
+    setCapReached(false)
     setPdfUrl(null)
     setPngUrl(null)
     setIsSubmitting(false)
@@ -366,6 +376,7 @@ export default function Home() {
   // then re-runs the generator for the current mode.
   const handleRetry = () => {
     setError('')
+    setCapReached(false)
     setJobId(null)
     setJobStatus(null)
     setProgress(0)
@@ -414,7 +425,12 @@ export default function Home() {
 
   const isProcessing = jobStatus && jobStatus !== 'done' && jobStatus !== 'failed'
   const isDone = jobStatus === 'done'
-  const limitReached = !isPro && remaining <= 0
+  // Counter reflects the ACTIVE mode's allowance (photo and learning sheets have
+  // separate daily limits). `null` remaining = unlimited → counter hidden.
+  const activeRemaining = genMode === 'photo' ? photoRemaining : topicRemaining
+  const activeNoun = genMode === 'photo' ? 'colouring page' : 'learning sheet'
+  const showCounter = !isPro && limitsEnforced && activeRemaining != null
+  const limitReached = showCounter && (activeRemaining as number) <= 0
 
   const pct = Math.round(displayPct)
   const elapsedSec = isProcessing && genStartRef.current != null
@@ -480,20 +496,18 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Limit indicator — only shown when limits are actually enforced,
-                  so a real visitor never sees a placeholder count. */}
-              {!isPro && limitsEnforced && !jobId && !isSubmitting && (
+              {/* Limit indicator — mode-aware, real count, only when limits are
+                  enforced (never a placeholder). Hidden entirely for Pro. */}
+              {showCounter && !jobId && !isSubmitting && (
                 <div className="flex items-center justify-between mb-5 pb-4 border-b border-gray-100">
                   <span className="text-sm text-gray-500">
-                    {remaining > 0
-                      ? `${remaining} free generation${remaining !== 1 ? 's' : ''} left today`
-                      : 'Daily free limit reached'}
+                    {(activeRemaining as number) > 0
+                      ? `${activeRemaining} free ${activeNoun}${activeRemaining !== 1 ? 's' : ''} left today`
+                      : `You've used today's free ${activeNoun}s`}
                   </span>
-                  {limitReached && (
-                    <Link href="/pro" className="text-sm font-semibold text-brand-primary hover:underline flex items-center gap-1">
-                      <Lock className="w-3.5 h-3.5" /> Upgrade
-                    </Link>
-                  )}
+                  <Link href="/pro" className="text-sm font-semibold text-brand-primary hover:underline flex items-center gap-1">
+                    <Crown className="w-3.5 h-3.5" /> {limitReached ? 'Go unlimited' : 'Pro'}
+                  </Link>
                 </div>
               )}
 
@@ -757,8 +771,25 @@ export default function Home() {
                 </div>
               )}
 
+              {/* Daily cap reached — a positive upgrade moment, not a dead end. */}
+              {capReached && (
+                <div className="rounded-xl border border-brand-primary/30 bg-zinc-900/60 p-5 mb-4 text-center">
+                  <div className="w-11 h-11 rounded-full bg-brand-primary/15 flex items-center justify-center mx-auto mb-3">
+                    <Crown className="w-5 h-5 text-brand-primary" />
+                  </div>
+                  <p className="text-sm font-bold text-white mb-1">You&apos;re on a roll! 🎨</p>
+                  <p className="text-xs text-gray-400 mb-4">{error}</p>
+                  <Link href="/pro" className="btn-primary w-full">
+                    <Crown className="w-4 h-4" /> Go unlimited with Pro
+                  </Link>
+                  <button onClick={handleReset} className="block mx-auto text-xs text-gray-500 hover:text-gray-300 mt-3">
+                    Maybe tomorrow
+                  </button>
+                </div>
+              )}
+
               {/* Error State */}
-              {error && (
+              {error && !capReached && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
                   <div className="flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
@@ -789,37 +820,6 @@ export default function Home() {
                     </div>
                   )}
 
-                  {isWatermarked && !isPro && genMode === 'topic' && (
-                    <div className="rounded-xl border border-brand-primary/30 bg-zinc-900/60 p-4">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Sparkles className="w-4 h-4 text-brand-primary" />
-                        <p className="text-sm font-bold text-white">Pro adds even more to every sheet</p>
-                      </div>
-                      <p className="text-xs text-gray-400 mb-4">
-                        Your sheet is already full and varied. Pro adds an extra age-matched activity
-                        on top — and removes the watermark.
-                      </p>
-                      {(previewCategory === 'letter' || previewCategory === 'words') && (
-                        <ProActivityPreviews token={previewToken} words={previewWords} />
-                      )}
-                      <Link href="/pro" className="btn-primary w-full mt-4">
-                        <Sparkles className="w-4 h-4" />
-                        Unlock full activity sheets with Pro
-                      </Link>
-                    </div>
-                  )}
-
-                  {isWatermarked && !isPro && genMode !== 'topic' && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-3">
-                      <Lock className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                      <p className="text-sm text-amber-700">
-                        Free downloads include a light watermark.{' '}
-                        <Link href="/pro" className="font-semibold underline">Upgrade to Pro</Link>{' '}
-                        for clean pages.
-                      </p>
-                    </div>
-                  )}
-
                   <div className="flex items-center gap-2 text-brand-primary">
                     <CheckCircle2 className="w-5 h-5" />
                     <span className="font-semibold">Your colouring page is ready!</span>
@@ -846,6 +846,14 @@ export default function Home() {
                       <BookOpen className="w-4 h-4" /> My Pages
                     </Link>
                   </div>
+
+                  {/* Gentle, honest nudge — no watermark, no nag; free sheets are
+                      complete. Pro's pitch is simply "make as many as you like". */}
+                  {!isPro && limitsEnforced && (
+                    <Link href="/pro" className="flex items-center justify-center gap-1.5 text-sm text-gray-400 hover:text-brand-primary transition-colors">
+                      <Crown className="w-3.5 h-3.5" /> Love it? Go unlimited with Pro
+                    </Link>
+                  )}
 
                   {/* Turn into a dot-to-dot (uses the clean line art we just made) */}
                   <div className="border-t border-gray-100 pt-5">

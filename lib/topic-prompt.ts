@@ -68,7 +68,8 @@ export type ActivityKind =
   // Deterministic clocks: correct analogue faces drawn in code (never the image model).
   | { type: 'clocks'; instruction: string; mode: 'read' | 'draw'; level: 'oclock' | 'half' | 'quarter' | 'five'; count: number }
 
-// `pro: true` blocks only render on Pro sheets; free sheets show the rest.
+// `pro` is retained on the type for schema stability but is no longer used to
+// gate content — every sheet renders all of its activities (free == Pro).
 export type Activity = ActivityKind & { pro?: boolean }
 
 export interface TopicPlan {
@@ -357,8 +358,8 @@ function detectSums(topic: string, d: Difficulty): Activity[] | null {
   const mainInstr = main === 'add' ? 'Addition' : 'Subtraction'
   const otherInstr = other === 'add' ? 'Addition' : 'Subtraction'
   const second: Activity = wantsAdd !== wantsSub
-    ? { type: 'sums', instruction: `More ${mainInstr.toLowerCase()}`, op: main, maxValue, count: n, pro: true }
-    : { type: 'sums', instruction: otherInstr, op: other, maxValue, count: n, pro: true }
+    ? { type: 'sums', instruction: `More ${mainInstr.toLowerCase()}`, op: main, maxValue, count: n }
+    : { type: 'sums', instruction: otherInstr, op: other, maxValue, count: n }
   return [note, warmUp, { type: 'sums', instruction: mainInstr, op: main, maxValue, count: n }, second]
 }
 
@@ -378,7 +379,7 @@ export function clockActivities(d: Difficulty): Activity[] {
     { type: 'clocks', instruction: 'What time is it?', mode: 'read', level, count: band === 'low' ? 4 : 6 },
   ]
   // Draw-the-hands: a Pro challenge for the oldest band.
-  if (band === 'high') acts.push({ type: 'clocks', instruction: 'Draw the hands on each clock', mode: 'draw', level, count: 6, pro: true })
+  if (band === 'high') acts.push({ type: 'clocks', instruction: 'Draw the hands on each clock', mode: 'draw', level, count: 6 })
   return acts
 }
 
@@ -396,7 +397,7 @@ export function pictorialActivities(objects: string[], d: Difficulty): Activity[
   } else {
     if (names.length >= 2) acts.push({ type: 'wordSearch', instruction: 'Find the words', words: names })
     else acts.push({ type: 'countPictures', instruction: 'Count and colour', items: objs })
-    acts.push({ type: 'sentence', instruction: 'Write a sentence', lines: 2, pro: true })
+    acts.push({ type: 'sentence', instruction: 'Write a sentence', lines: 2 })
   }
   return acts
 }
@@ -423,7 +424,7 @@ export function numberActivities(maxN: number): Activity[] {
     { type: 'note', text: 'Count, trace and add.' },
     { type: 'countObjects', instruction: 'Count and colour', count: n <= 5 ? 4 : 6, maxCount: n },
     { type: 'traceNumbers', instruction: 'Trace the numbers', upTo: n },
-    { type: 'sums', instruction: 'Add them up', op: 'add', maxValue: Math.min(10, n), count: 6, dots: n <= 10, pro: true },
+    { type: 'sums', instruction: 'Add them up', op: 'add', maxValue: Math.min(10, n), count: 6, dots: n <= 10 },
   ]
 }
 
@@ -433,7 +434,7 @@ function conceptActivities(key: string): Activity[] {
     { type: 'note', text: c.note },
     { type: 'pictures', instruction: `Colour and ${c.verb.toLowerCase()}`, items: c.pics, label: true },
     { type: 'circleWords', instruction: `Circle the ${c.word.toLowerCase()}s`, words: c.mixed },
-    { type: 'sentence', instruction: 'Write a sentence', lines: 2, pro: true },
+    { type: 'sentence', instruction: 'Write a sentence', lines: 2 },
   ]
 }
 
@@ -501,7 +502,7 @@ export function narrowBroadTopic(rawTopic: string, age?: number): TopicPlan | nu
       { type: 'note', text: 'Every letter from A to Z' },
       { type: 'traceWords', instruction: 'Trace the letters', words: ['ABCDEFG', 'HIJKLM', 'NOPQRS', 'TUVWXYZ'] },
       { type: 'circleWords', instruction: 'Circle every A', words: ['A', 'M', 'A', 'T', 'A', 'S', 'A', 'B'] },
-      { type: 'writeLines', instruction: 'Write your letters', count: 3, pro: true },
+      { type: 'writeLines', instruction: 'Write your letters', count: 3 },
     ]
     return { category: 'composed', subject: 'The Alphabet', title: sheetTitle('The Alphabet'), activities: acts, prompt: '', difficulty }
   }
@@ -519,7 +520,7 @@ export function narrowBroadTopic(rawTopic: string, age?: number): TopicPlan | nu
       { type: 'note', text: 'Sound out each word' },
       { type: 'traceWords', instruction: 'Trace the words', words: ['SAT', 'PIN', 'TAP', 'NIP'] },
       { type: 'wordSearch', instruction: 'Find the words', words: ['SAT', 'PIN', 'TAP', 'NIP'] },
-      { type: 'writeLines', instruction: 'Write a word', count: 3, pro: true },
+      { type: 'writeLines', instruction: 'Write a word', count: 3 },
     ]
     return { category: 'composed', subject: 'First Sounds', title: sheetTitle('First Sounds'), activities: acts, prompt: '', difficulty }
   }

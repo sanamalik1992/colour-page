@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isHeic, convertHeicToPng } from '@/lib/heic-convert'
-import { USAGE_LIMITS_DISABLED } from '@/lib/pro-gating'
+import { USAGE_LIMITS_DISABLED, FREE_LIMITS } from '@/lib/pro-gating'
 import { getServerUser } from '@/lib/supabase/auth-server'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
@@ -12,7 +12,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const FREE_DAILY_LIMIT = 3
+const FREE_DAILY_LIMIT = FREE_LIMITS.photo_coloring
 
 export async function POST(request: NextRequest) {
   try {
@@ -53,7 +53,12 @@ export async function POST(request: NextRequest) {
 
       if ((count || 0) >= FREE_DAILY_LIMIT) {
         return NextResponse.json(
-          { error: 'Daily limit reached. Upgrade to Pro for unlimited access.' },
+          {
+            error: `You've made your ${FREE_DAILY_LIMIT} free colouring pages for today — Pro unlocks unlimited.`,
+            isPro: false,
+            limitReached: true,
+            feature: 'photo_coloring',
+          },
           { status: 429 }
         )
       }
