@@ -1107,6 +1107,44 @@ export function daysMonthsPlan(rawTopic: string, age?: number): TopicPlan | null
   return { category: 'composed', subject: 'Months of the year', title: sheetTitle('Months of the year'), activities: acts, prompt: '', difficulty: difficultyForAge(age) }
 }
 
+// "multiples of 6" / "factors of 12" — a circle-the-numbers sheet (deterministic
+// and correct), not a skip-count sequence. Returns null if it isn't one.
+export function multiplesFactorsPlan(rawTopic: string, age?: number): TopicPlan | null {
+  const t = clean(rawTopic).toLowerCase()
+  const mult = t.match(/\bmultiples?\s+of\s+(\d{1,2})\b/)
+  const fact = t.match(/\bfactors?\s+of\s+(\d{1,3})\b/)
+  if (!mult && !fact) return null
+  if (mult) {
+    const k = parseInt(mult[1], 10)
+    if (k < 2 || k > 12) return null
+    // A mix of genuine multiples of k and near-misses to circle.
+    const rng = mkRng(k * 313 + 7)
+    const pool = new Set<number>()
+    for (let i = 1; i <= 8; i++) pool.add(k * i)
+    while (pool.size < 12) pool.add(2 + Math.floor(rng() * (k * 8)))
+    const nums = Array.from(pool).sort((a, b) => a - b).slice(0, 12).map(String)
+    const acts: Activity[] = [
+      { type: 'note', text: `A multiple of ${k} is in the ${k} times table` },
+      { type: 'circleWords', instruction: `Circle the multiples of ${k}`, words: nums.slice(0, 8) },
+      { type: 'numberTrack', instruction: `Count in ${k}s`, start: k, step: k, count: 18 },
+      { type: 'writeLines', instruction: `Write the first five multiples of ${k}`, count: 4 },
+    ]
+    return { category: 'composed', subject: `Multiples of ${k}`, title: sheetTitle(`Multiples of ${k}`), activities: acts, prompt: '', difficulty: difficultyForAge(age) }
+  }
+  const N = parseInt(fact![1], 10)
+  if (N < 4 || N > 100) return null
+  const factors = Array.from({ length: N }, (_, i) => i + 1).filter((d) => N % d === 0)
+  const nonFactors = Array.from({ length: N }, (_, i) => i + 1).filter((d) => N % d !== 0)
+  const rng = mkRng(N * 101 + 3)
+  const bank = [...factors, ...nonFactors.filter(() => rng() < 0.5)].slice(0, 8).sort((a, b) => a - b).map(String)
+  const acts: Activity[] = [
+    { type: 'note', text: `A factor of ${N} divides into ${N} exactly` },
+    { type: 'circleWords', instruction: `Circle the factors of ${N}`, words: bank.length >= 4 ? bank : factors.slice(0, 8).map(String) },
+    { type: 'writeLines', instruction: `Write all the factors of ${N}`, count: 3 },
+  ]
+  return { category: 'composed', subject: `Factors of ${N}`, title: sheetTitle(`Factors of ${N}`), activities: acts, prompt: '', difficulty: difficultyForAge(age) }
+}
+
 export function romanNumeralsPlan(rawTopic: string, age?: number): TopicPlan | null {
   if (!/\broman numerals?\b/i.test(clean(rawTopic))) return null
   const acts: Activity[] = [
@@ -1278,6 +1316,9 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   // --- rhyming & CVC words (Tier-1 phonics) ---
   const rhy = rhymingPlan(topic, age); if (rhy) return rhy
   const cvc = cvcPlan(topic, age); if (cvc) return cvc
+
+  // --- multiples / factors (circle sheet, before the skip-count sequence) ---
+  const mf = multiplesFactorsPlan(topic, age); if (mf) return mf
 
   // --- days / months / Roman numerals ---
   const dm = daysMonthsPlan(topic, age); if (dm) return dm
