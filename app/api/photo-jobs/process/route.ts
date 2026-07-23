@@ -105,25 +105,53 @@ async function generateOneObject(obj: string, settings: PhotoJobSettings, key: s
   return null
 }
 
-async function cachedObjectInner(obj: string, settings: PhotoJobSettings): Promise<Buffer | null> {
-  const key = objectCacheKey(obj)
-  // Cache hit → instant. (Only recognisable objects are ever cached.)
+// Limit how many objects GENERATE at once. A broad topic ("alphabet",
+// "phonics") can fan out into many pictures; firing them all in parallel floods
+// Replicate + the vision model, they queue on the providers, and the job stalls
+// near the end. A small pool keeps it flowing and bounds memory. Cache hits
+// bypass the pool entirely (they're instant).
+const GEN_CONCURRENCY = 3
+let genActive = 0
+const genWaiters: Array<() => void> = []
+function acquireGenSlot(): Promise<void> {
+  return new Promise((resolve) => {
+    const attempt = () => {
+      if (genActive < GEN_CONCURRENCY) { genActive++; resolve() }
+      else genWaiters.push(attempt)
+    }
+    attempt()
+  })
+}
+function releaseGenSlot() {
+  genActive = Math.max(0, genActive - 1)
+  const next = genWaiters.shift()
+  if (next) next()
+}
+
+async function downloadCachedObject(key: string): Promise<Buffer | null> {
   try {
     const { data } = await supabase.storage.from('outputs').download(key)
     if (data) return Buffer.from(await data.arrayBuffer())
-  } catch { /* miss — fall through to generate */ }
-  return generateOneObject(obj, settings, key)
+  } catch { /* miss */ }
+  return null
 }
 
 async function cachedObject(obj: string, settings: PhotoJobSettings): Promise<Buffer | null> {
-  // The ENTIRE per-object path — cache lookup AND generation — runs under one
-  // hard deadline. A slow Supabase storage read (the cache download has no
-  // timeout of its own) or a stalled generation drops the object rather than
-  // freezing the whole sheet.
   const t0 = Date.now()
-  const buf = await withObjectDeadline(cachedObjectInner(obj, settings), OBJECT_DEADLINE_MS)
-  console.log(`[timing] object "${obj}" ${Date.now() - t0}ms ${buf ? 'ok' : 'dropped'}`)
-  return buf
+  const key = objectCacheKey(obj)
+  // Cache read bounded on its own (the storage download has no timeout).
+  const hit = await withObjectDeadline(downloadCachedObject(key), 8000)
+  if (hit) { console.log(`[timing] object "${obj}" ${Date.now() - t0}ms cache-hit`); return hit }
+  // Generate under a concurrency slot: the queue wait is bounded by the whole-
+  // job deadline, the generation itself by the per-object deadline.
+  await acquireGenSlot()
+  try {
+    const buf = await withObjectDeadline(generateOneObject(obj, settings, key), OBJECT_DEADLINE_MS)
+    console.log(`[timing] object "${obj}" ${Date.now() - t0}ms ${buf ? 'gen-ok' : 'dropped'}`)
+    return buf
+  } finally {
+    releaseGenSlot()
+  }
 }
 
 export async function POST(request: NextRequest) {
