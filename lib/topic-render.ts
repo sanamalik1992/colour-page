@@ -791,9 +791,18 @@ export async function buildLetterPuzzleSheet(letter: string, words: string[], se
   {
     const { svg: hSvg, nextY } = headingSvg('WRITE IN ABC ORDER', bodyX, y)
     svg += hSvg
-    const h3 = isPro ? remaining * fr[2] - (nextY - y) : bottom - nextY
-    svg += abcOrderBlock(requested, bodyX, nextY, bodyW, h3)
-    y = nextY + h3 + gap
+    // One-line instruction so the task is self-explanatory (the heading alone
+    // wasn't clear). Punctuation-free — the glyph font only draws A-Z/0-9.
+    const instr = 'WRITE THE WORDS IN ALPHABETICAL ORDER FROM A TO Z'
+    let iH = 34
+    const iw = textWidth(instr, iH)
+    const maxIW = bodyW * 0.95
+    if (iw > maxIW) iH = Math.floor(iH * (maxIW / iw))
+    svg += textSvg(instr, bodyX, nextY, iH, 8, { color: '#8a8f96' })
+    const blockTop = nextY + iH + 24
+    const h3 = (isPro ? remaining * fr[2] - (blockTop - y) : bottom - blockTop)
+    svg += abcOrderBlock(requested, bodyX, blockTop, bodyW, h3)
+    y = blockTop + h3 + gap
   }
 
   // --- Activity 4 (Pro): write a sentence ------------------------------------
