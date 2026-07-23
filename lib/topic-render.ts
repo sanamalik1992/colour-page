@@ -1036,14 +1036,67 @@ function makeRng(seed: number): () => number {
 }
 
 // The glyph font has no +, −, or =, so draw them as plain strokes.
-function opGlyph(kind: '+' | '-' | '=', cx: number, cy: number, size: number, stroke: number): string {
+function opGlyph(kind: '+' | '-' | '=' | '×' | '÷', cx: number, cy: number, size: number, stroke: number): string {
   const h = size / 2
   const L = (x1: number, y1: number, x2: number, y2: number) =>
     `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#111" stroke-width="${stroke}" stroke-linecap="round"/>`
   if (kind === '-') return L(cx - h, cy, cx + h, cy)
   if (kind === '+') return L(cx - h, cy, cx + h, cy) + L(cx, cy - h, cx, cy + h)
+  if (kind === '×') { const d = h * 0.72; return L(cx - d, cy - d, cx + d, cy + d) + L(cx - d, cy + d, cx + d, cy - d) }
+  if (kind === '÷') {
+    const g = size * 0.36
+    const rr = Math.max(2.5, stroke * 0.62)
+    const dot = (yy: number) => `<circle cx="${cx.toFixed(1)}" cy="${yy.toFixed(1)}" r="${rr.toFixed(1)}" fill="#111"/>`
+    return L(cx - h * 0.9, cy, cx + h * 0.9, cy) + dot(cy - g) + dot(cy + g)
+  }
   const g = size * 0.24
   return L(cx - h, cy - g, cx + h, cy - g) + L(cx - h, cy + g, cx + h, cy + g)
+}
+
+// A times-table block: `table × k = [box]` for k = 1..upTo, in order (a ladder to
+// learn) or shuffled (mixed practice); `op:'divide'` renders the inverse
+// `(table·k) ÷ table = [box]`. All facts are correct by construction.
+function timesTableBlock(table: number, upTo: number, op: 'multiply' | 'divide', shuffle: boolean, x: number, top: number, w: number, h: number, salt = 0): string {
+  const n = Math.max(2, Math.min(12, Math.round(upTo)))
+  const ks = Array.from({ length: n }, (_, i) => i + 1)
+  if (shuffle) {
+    const rng = makeRng(table * 97 + n * 13 + (op === 'divide' ? 5 : 3) + salt * 131)
+    for (let i = ks.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [ks[i], ks[j]] = [ks[j], ks[i]] }
+  }
+  const items = ks.map((k) => op === 'divide'
+    ? { a: table * k, b: table, sign: '÷' as const }
+    : { a: table, b: k, sign: '×' as const })
+
+  const cols = items.length > 6 ? 2 : 1
+  const rows = Math.ceil(items.length / cols)
+  const cellW = w / cols
+  const rowPitch = h / rows
+
+  const eqW = (it: { a: number; b: number }, gh: number) => {
+    const gap = gh * 0.34, opW = gh * 0.62, eqSym = gh * 0.7
+    return numberWidth(String(it.a), gh) + gap + opW + gap + numberWidth(String(it.b), gh) + gap + eqSym + gap + gh * 1.15
+  }
+  let gh = Math.min(84, rowPitch / 1.7)
+  const widest = () => Math.max(...items.map((it) => eqW(it, gh)))
+  if (widest() > cellW * 0.9) gh = gh * (cellW * 0.9 / widest())
+  gh = Math.max(24, gh)
+
+  return items.map((it, i) => {
+    const col = i % cols, row = Math.floor(i / cols)
+    const cellX = x + col * cellW
+    const rowTop = top + row * rowPitch + Math.max(0, (rowPitch - gh) / 2)
+    const gap = gh * 0.34, opW = gh * 0.62, eqSym = gh * 0.7
+    const midY = rowTop + gh / 2
+    let cx = cellX + (cellW - eqW(it, gh)) / 2
+    const st = Math.max(6, gh * 0.14)
+    let s = ''
+    s += numberSvg(String(it.a), cx, rowTop, gh, st); cx += numberWidth(String(it.a), gh) + gap
+    s += opGlyph(it.sign, cx + opW / 2, midY, opW, st); cx += opW + gap
+    s += numberSvg(String(it.b), cx, rowTop, gh, st); cx += numberWidth(String(it.b), gh) + gap
+    s += opGlyph('=', cx + eqSym / 2, midY, eqSym, st); cx += eqSym + gap
+    s += `<rect x="${cx.toFixed(1)}" y="${rowTop.toFixed(1)}" width="${(gh * 1.15).toFixed(1)}" height="${gh.toFixed(1)}" rx="10" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    return s
+  }).join('')
 }
 
 // Countable dots under an operand (visual aid for the youngest children).
@@ -1361,6 +1414,7 @@ const ACTIVITY_WEIGHT: Record<string, number> = {
   note: 0.6, pictures: 4.4, circleWords: 1.8, traceWords: 1.6,
   wordSearch: 2.6, readWords: 1.8, writeLines: 1.4, sentence: 1.4, sums: 3.2,
   countObjects: 2.6, countPictures: 3, traceNumbers: 1.8, clocks: 3.2,
+  timesTable: 3.6,
 }
 
 /**
@@ -1474,6 +1528,7 @@ export async function buildComposedSheet(
         case 'writeLines': overlay += writeLinesBlock(a.count, bodyX, nextY, bodyW, ch); break
         case 'sentence': overlay += sentenceLinesBlock(a.lines, bodyX, nextY, bodyW, ch); break
         case 'sums': overlay += sumsBlock(a.op, a.maxValue, a.count, !!a.dots, bodyX, nextY, bodyW, ch, blockIndex); break
+        case 'timesTable': overlay += timesTableBlock(a.table, a.upTo, a.op, a.shuffle, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'traceNumbers': overlay += traceNumbersBlock(a.upTo, bodyX, nextY, bodyW, ch); break
       }

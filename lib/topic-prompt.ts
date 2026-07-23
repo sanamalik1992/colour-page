@@ -67,6 +67,8 @@ export type ActivityKind =
   | { type: 'traceNumbers'; instruction: string; upTo: number } // trace dotted numerals 1..N
   // Deterministic clocks: correct analogue faces drawn in code (never the image model).
   | { type: 'clocks'; instruction: string; mode: 'read' | 'draw'; level: 'oclock' | 'half' | 'quarter' | 'five'; count: number }
+  // Deterministic times table: `table × k = ?` (or ÷), correct by construction.
+  | { type: 'timesTable'; instruction: string; table: number; upTo: number; op: 'multiply' | 'divide'; shuffle: boolean }
 
 // `pro` is retained on the type for schema stability but is no longer used to
 // gate content — every sheet renders all of its activities (free == Pro).
@@ -504,6 +506,49 @@ export function conceptPlan(rawTopic: string, age?: number): TopicPlan | null {
   }
 }
 
+// A specific times table ("3 times table", "times table of 4", "6x table",
+// "multiplication of 7", "multiply by 8"). Returns the table (2–12) or null.
+// Deliberately does NOT match "counting in 3s" / "multiples of 3" — those stay
+// skip-counting sequences.
+function detectTimesTable(topic: string): number | null {
+  const t = topic.toLowerCase()
+  const m =
+    t.match(/\b(\d{1,2})\s*(?:x|times?)\s*tables?\b/) ||
+    t.match(/\btimes?\s*tables?\s*(?:of|for)?\s*(\d{1,2})\b/) ||
+    t.match(/\bmultiplication\s*(?:table\s*)?(?:of\s*)?(\d{1,2})\b/) ||
+    t.match(/\bmultiply(?:ing)?\s*by\s*(\d{1,2})\b/) ||
+    t.match(/\b(\d{1,2})\s*times?\s*tables?\b/)
+  if (!m) return null
+  const n = parseInt(m[1], 10)
+  return n >= 2 && n <= 12 ? n : null
+}
+
+/**
+ * A deterministic times-table sheet: the table in order to learn, mixed
+ * multiplication practice, and (for the oldest) the inverse division facts —
+ * NOT skip-counting. Age-scaled. Returns null if the topic isn't a times table.
+ */
+export function timesTablePlan(rawTopic: string, age?: number): TopicPlan | null {
+  const table = detectTimesTable(clean(rawTopic))
+  if (table == null) return null
+  const d = difficultyForAge(age)
+  const upTo = d.detailLevel === 'low' ? 6 : 12
+  const acts: Activity[] = [
+    { type: 'note', text: 'Multiply to find each answer' },
+    { type: 'timesTable', instruction: 'Multiply', table, upTo, op: 'multiply', shuffle: false },
+  ]
+  if (d.detailLevel !== 'low') acts.push({ type: 'timesTable', instruction: 'Mixed practice', table, upTo: 12, op: 'multiply', shuffle: true })
+  if (d.detailLevel === 'high') acts.push({ type: 'timesTable', instruction: 'Division facts', table, upTo: 12, op: 'divide', shuffle: true })
+  return {
+    category: 'composed',
+    subject: `${table} times table`,
+    title: sheetTitle(`${table} times table`),
+    activities: acts,
+    prompt: '',
+    difficulty: d,
+  }
+}
+
 // Objects that begin with (or use) a grapheme.
 function objectsForGrapheme(g: string): string[] {
   if (g.length === 1) return LETTER_OBJECTS[g] || []
@@ -628,6 +673,10 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   // --- grammar / literacy concepts (nouns, verbs, adjectives…) ---
   const cp = conceptPlan(topic, age)
   if (cp) return cp
+
+  // --- times tables (× / ÷ facts) — before the skip-count sequence detector ---
+  const tt = timesTablePlan(topic, age)
+  if (tt) return tt
 
   // --- simple sums (addition / subtraction), drawn deterministically ---
   const sums = detectSums(topic, difficulty)
