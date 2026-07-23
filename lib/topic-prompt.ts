@@ -71,6 +71,10 @@ export type ActivityKind =
   | { type: 'timesTable'; instruction: string; table: number; upTo: number; op: 'multiply' | 'divide'; shuffle: boolean }
   // Visual multiplication for the youngest: k groups of `table` countable circles.
   | { type: 'multiplyGroups'; instruction: string; table: number; upTo: number }
+  // Number bonds — deterministic, correct by construction.
+  | { type: 'tenFrame'; instruction: string; whole: number; count: number } // make-N ten-frame visual
+  | { type: 'partWhole'; instruction: string; whole: number; count: number } // part-whole model
+  | { type: 'bonds'; instruction: string; whole: number; count: number; style: 'missing' | 'subtract' } // missing-number / inverse sentences
 
 // `pro` is retained on the type for schema stability but is no longer used to
 // gate content — every sheet renders all of its activities (free == Pro).
@@ -575,6 +579,59 @@ export function timesTablePlan(rawTopic: string, age?: number): TopicPlan | null
   }
 }
 
+// Number bonds ("number bonds to 10", "bonds to 20", "ways to make 10",
+// "make ten"). Returns the whole (5/10/20/100), or null. Must be checked BEFORE
+// detectSums (which also matches "number bonds").
+function detectNumberBonds(topic: string): number | null {
+  const t = topic.toLowerCase()
+  if (!/\b(number\s*bonds?|bonds?\s+(?:to|of|within|for)\b|ways?\s+to\s+make|make\s+(?:a\s+)?(?:ten|\d{1,3})\b)\b/.test(t)) return null
+  const m = t.match(/\b(?:to|of|within|for|make)\s+(?:a\s+)?(\d{1,3})\b/)
+  if (m) { const v = parseInt(m[1], 10); return v <= 7 ? Math.max(5, v) : v <= 12 ? 10 : v <= 20 ? 20 : 100 }
+  if (/\bten\b/.test(t)) return 10
+  return 10
+}
+
+/**
+ * A deterministic number-bonds sheet — the part-whole pairs that make N, NOT
+ * generic addition. Age-shaped: 5–7 gets a visual make-N (ten-frame + part-whole
+ * model), 8–9 gets the model + missing-number sentences, 10+ gets fact families.
+ */
+export function numberBondsPlan(rawTopic: string, age?: number): TopicPlan | null {
+  const W = detectNumberBonds(clean(rawTopic))
+  if (W == null) return null
+  const d = difficultyForAge(age)
+  const band = age == null ? 'mid' : age <= 7 ? 'young' : age <= 9 ? 'mid' : 'old'
+  let acts: Activity[]
+  if (band === 'young') {
+    const w = Math.min(W, 20)
+    acts = [
+      { type: 'note', text: 'Fill the pairs that make the whole' },
+      { type: 'tenFrame', instruction: 'How many make the whole', whole: w, count: 4 },
+      { type: 'partWhole', instruction: 'Write the missing part', whole: w, count: 3 },
+    ]
+  } else if (band === 'mid') {
+    acts = [
+      { type: 'note', text: 'Find the missing part' },
+      { type: 'partWhole', instruction: 'Write the missing part', whole: W, count: 3 },
+      { type: 'bonds', instruction: 'Find the missing number', whole: W, count: 10, style: 'missing' },
+    ]
+  } else {
+    acts = [
+      { type: 'note', text: 'Complete the number facts' },
+      { type: 'bonds', instruction: 'Missing numbers', whole: W, count: 8, style: 'missing' },
+      { type: 'bonds', instruction: 'Subtraction facts', whole: W, count: 8, style: 'subtract' },
+    ]
+  }
+  return {
+    category: 'composed',
+    subject: `Number bonds to ${W}`,
+    title: sheetTitle(`Number bonds to ${W}`),
+    activities: acts,
+    prompt: '',
+    difficulty: d,
+  }
+}
+
 // Objects that begin with (or use) a grapheme.
 function objectsForGrapheme(g: string): string[] {
   if (g.length === 1) return LETTER_OBJECTS[g] || []
@@ -703,6 +760,10 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   // --- times tables (× / ÷ facts) — before the skip-count sequence detector ---
   const tt = timesTablePlan(topic, age)
   if (tt) return tt
+
+  // --- number bonds (part-whole pairs) — before generic sums ---
+  const nb = numberBondsPlan(topic, age)
+  if (nb) return nb
 
   // --- simple sums (addition / subtraction), drawn deterministically ---
   const sums = detectSums(topic, difficulty)
