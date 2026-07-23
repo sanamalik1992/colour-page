@@ -11,7 +11,8 @@
   ],
   "functions": {
     "app/api/photo-jobs/process/route.ts": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "memory": 3009
     },
     "app/api/photo-jobs/webhook/route.ts": {
       "maxDuration": 300

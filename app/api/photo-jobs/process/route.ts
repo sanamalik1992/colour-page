@@ -120,8 +120,9 @@ async function cachedObject(obj: string, settings: PhotoJobSettings): Promise<Bu
   // hard deadline. A slow Supabase storage read (the cache download has no
   // timeout of its own) or a stalled generation drops the object rather than
   // freezing the whole sheet.
+  const t0 = Date.now()
   const buf = await withObjectDeadline(cachedObjectInner(obj, settings), OBJECT_DEADLINE_MS)
-  if (!buf) console.warn(`object "${obj}" not ready within budget — dropping`)
+  console.log(`[timing] object "${obj}" ${Date.now() - t0}ms ${buf ? 'ok' : 'dropped'}`)
   return buf
 }
 
@@ -168,6 +169,7 @@ export async function POST(request: NextRequest) {
     // All generation + rendering runs under an internal deadline so a stalled
     // job fails cleanly instead of hanging at 99% until Vercel kills it.
     await withDeadline((async (jobId: string) => {
+    const tStart = Date.now()
     let lineArtBuffer: Buffer
 
     if (isTopic) {
@@ -295,29 +297,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    console.log(`[timing ${jobId}] generation ${Date.now() - tStart}ms`)
+
     // FINAL quality gate: look at the finished sheet and refuse to publish one
     // with a clear defect (overlapping/garbled text, a blob picture, broken
     // layout). Fail the job with a retry message rather than deliver it. Fails
     // open if the QA service is unavailable, so it can't block all generation.
     await updateJob(jobId, { progress: 85 })
+    const tQa = Date.now()
     const qa = await verifySheet(lineArtBuffer)
+    console.log(`[timing ${jobId}] sheet QA ${Date.now() - tQa}ms → ${qa.ok ? 'ok' : 'reject:' + qa.reason}`)
     if (!qa.ok) {
       console.warn(`sheet QA rejected job ${jobId}: ${qa.reason}`)
       throw new Error('We spotted a small glitch on that sheet — please tap Try again, it usually comes out perfect.')
     }
 
-    // Stage C: Render A4 outputs
+    // Stage C: Render A4 outputs. Sequential (not parallel) so we don't hold two
+    // full-page ~35MB bitmaps decoded at once — keeps peak memory down.
     await updateJob(jobId, { status: 'rendering', progress: 88 })
     const isLandscape = settings.orientation === 'landscape'
-
-    const [pdfBuffer, previewBuffer] = await Promise.all([
-      renderA4Pdf(lineArtBuffer, {
-        watermark: job.is_watermarked,
-        footer: true,
-        landscape: isLandscape,
-      }),
-      renderA4Preview(lineArtBuffer, isLandscape),
-    ])
+    const tRender = Date.now()
+    const pdfBuffer = await renderA4Pdf(lineArtBuffer, {
+      watermark: job.is_watermarked,
+      footer: true,
+      landscape: isLandscape,
+    })
+    const previewBuffer = await renderA4Preview(lineArtBuffer, isLandscape)
+    console.log(`[timing ${jobId}] render ${Date.now() - tRender}ms`)
 
     await updateJob(jobId, { progress: 93 })
 

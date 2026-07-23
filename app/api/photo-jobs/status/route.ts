@@ -33,7 +33,8 @@ export async function GET(request: NextRequest) {
   // report its own failure — so it would sit at 99% forever. Mark it failed on
   // read so the UI unsticks. Uses processing_started_at (set when the job locks)
   // and falls back to created_at.
-  const STALE_MS = 240_000 // 4 minutes — beyond the 180s work deadline + margin
+  const STALE_MS = 150_000 // 2.5 minutes — beyond the 120s work deadline; also
+  // catches a function that was killed (e.g. OOM) before its own deadline fired.
   if (job.status !== 'done' && job.status !== 'failed') {
     const startedAt = job.processing_started_at || job.created_at
     if (startedAt && Date.now() - new Date(startedAt).getTime() > STALE_MS) {
