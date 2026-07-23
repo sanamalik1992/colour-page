@@ -1305,7 +1305,11 @@ export async function buildComposedSheet(
 
   const picMap = new Map<string, Buffer>()
   if (genPicture && picNeeds.size) {
-    const names = [...picNeeds]
+    // Hard cap on how many pictures we ever generate for one sheet. A broad
+    // topic (e.g. "alphabet") can otherwise fan out into a dozen parallel model
+    // calls and stall the job near the end — a sheet never needs more than this.
+    const MAX_OBJECTS = 6
+    const names = [...picNeeds].slice(0, MAX_OBJECTS)
     let done = 0
     const results = await Promise.all(
       names.map(async (o) => {
