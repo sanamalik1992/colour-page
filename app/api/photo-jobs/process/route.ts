@@ -14,7 +14,7 @@ export const maxDuration = 300 // Vercel Pro: 5 minutes
 // this point we mark the job failed OURSELVES — otherwise Vercel hard-kills the
 // function at maxDuration, our catch block never runs, and the job is left in
 // "processing" forever (the client bar sits at 99% with no error).
-const WORK_DEADLINE_MS = 180_000
+const WORK_DEADLINE_MS = 120_000
 
 class DeadlineError extends Error {
   constructor() {
@@ -105,17 +105,22 @@ async function generateOneObject(obj: string, settings: PhotoJobSettings, key: s
   return null
 }
 
-async function cachedObject(obj: string, settings: PhotoJobSettings): Promise<Buffer | null> {
+async function cachedObjectInner(obj: string, settings: PhotoJobSettings): Promise<Buffer | null> {
   const key = objectCacheKey(obj)
   // Cache hit → instant. (Only recognisable objects are ever cached.)
   try {
     const { data } = await supabase.storage.from('outputs').download(key)
     if (data) return Buffer.from(await data.arrayBuffer())
   } catch { /* miss — fall through to generate */ }
+  return generateOneObject(obj, settings, key)
+}
 
-  // Miss → generate under a hard per-object deadline; drop on timeout so a slow
-  // object never freezes the sheet.
-  const buf = await withObjectDeadline(generateOneObject(obj, settings, key), OBJECT_DEADLINE_MS)
+async function cachedObject(obj: string, settings: PhotoJobSettings): Promise<Buffer | null> {
+  // The ENTIRE per-object path — cache lookup AND generation — runs under one
+  // hard deadline. A slow Supabase storage read (the cache download has no
+  // timeout of its own) or a stalled generation drops the object rather than
+  // freezing the whole sheet.
+  const buf = await withObjectDeadline(cachedObjectInner(obj, settings), OBJECT_DEADLINE_MS)
   if (!buf) console.warn(`object "${obj}" not ready within budget — dropping`)
   return buf
 }
