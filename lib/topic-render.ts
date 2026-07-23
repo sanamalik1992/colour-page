@@ -1099,6 +1099,51 @@ function timesTableBlock(table: number, upTo: number, op: 'multiply' | 'divide',
   }).join('')
 }
 
+// Visual multiplication for the youngest: each fact drawn as `k` groups of
+// `table` countable circles (k lots of `table`), with the equation and an answer
+// box. Shows what multiplication MEANS (repeated groups) the way the sums block
+// uses countable dots — so a 5–7 year old can count the groups to find each answer.
+function multiplyGroupsBlock(table: number, upTo: number, x: number, top: number, w: number, h: number): string {
+  const kMax = Math.max(2, Math.min(6, Math.round(upTo)))
+  const ks = Array.from({ length: kMax }, (_, i) => i + 1)
+  const rowH = h / ks.length
+  const perGroupCols = Math.min(Math.max(1, table), 5)
+  const groupRows = Math.ceil(Math.max(1, table) / perGroupCols)
+  const availW = w * 0.56
+  const eqX = x + w * 0.6
+  const unitsW = kMax * perGroupCols + (kMax - 1) // circle-columns incl 1-col gap between groups
+  let cs = Math.min(availW / unitsW, (rowH * 0.72) / Math.max(1, groupRows))
+  cs = Math.max(9, cs)
+  const r = cs * 0.4
+
+  let s = ''
+  ks.forEach((k, idx) => {
+    const rowMid = top + idx * rowH + rowH / 2
+    const cy0 = rowMid - (groupRows - 1) * cs / 2
+    let gx = x
+    for (let g = 0; g < k; g++) {
+      for (let c = 0; c < table; c++) {
+        const rr = Math.floor(c / perGroupCols), cc = c % perGroupCols
+        const cxx = gx + cc * cs + cs / 2
+        const cyy = cy0 + rr * cs
+        s += `<circle cx="${cxx.toFixed(1)}" cy="${cyy.toFixed(1)}" r="${r.toFixed(1)}" fill="none" stroke="#111" stroke-width="3"/>`
+      }
+      gx += perGroupCols * cs + cs
+    }
+    // Equation: table × k = [box], aligned across rows.
+    const gh = Math.min(rowH * 0.5, 52)
+    const st = Math.max(6, gh * 0.14)
+    const gap = gh * 0.3, opW = gh * 0.6, eqSym = gh * 0.68
+    let cx = eqX
+    s += numberSvg(String(table), cx, rowMid - gh / 2, gh, st); cx += numberWidth(String(table), gh) + gap
+    s += opGlyph('×', cx + opW / 2, rowMid, opW, st); cx += opW + gap
+    s += numberSvg(String(k), cx, rowMid - gh / 2, gh, st); cx += numberWidth(String(k), gh) + gap
+    s += opGlyph('=', cx + eqSym / 2, rowMid, eqSym, st); cx += eqSym + gap
+    s += `<rect x="${cx.toFixed(1)}" y="${(rowMid - gh / 2).toFixed(1)}" width="${(gh * 1.15).toFixed(1)}" height="${gh.toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+  })
+  return s
+}
+
 // Countable dots under an operand (visual aid for the youngest children).
 function countDots(n: number, cx: number, top: number, r: number): string {
   if (n < 1) return ''
@@ -1414,7 +1459,7 @@ const ACTIVITY_WEIGHT: Record<string, number> = {
   note: 0.6, pictures: 4.4, circleWords: 1.8, traceWords: 1.6,
   wordSearch: 2.6, readWords: 1.8, writeLines: 1.4, sentence: 1.4, sums: 3.2,
   countObjects: 2.6, countPictures: 3, traceNumbers: 1.8, clocks: 3.2,
-  timesTable: 3.6,
+  timesTable: 3.6, multiplyGroups: 4.2,
 }
 
 /**
@@ -1529,6 +1574,7 @@ export async function buildComposedSheet(
         case 'sentence': overlay += sentenceLinesBlock(a.lines, bodyX, nextY, bodyW, ch); break
         case 'sums': overlay += sumsBlock(a.op, a.maxValue, a.count, !!a.dots, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'timesTable': overlay += timesTableBlock(a.table, a.upTo, a.op, a.shuffle, bodyX, nextY, bodyW, ch, blockIndex); break
+        case 'multiplyGroups': overlay += multiplyGroupsBlock(a.table, a.upTo, bodyX, nextY, bodyW, ch); break
         case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'traceNumbers': overlay += traceNumbersBlock(a.upTo, bodyX, nextY, bodyW, ch); break
       }

@@ -69,6 +69,8 @@ export type ActivityKind =
   | { type: 'clocks'; instruction: string; mode: 'read' | 'draw'; level: 'oclock' | 'half' | 'quarter' | 'five'; count: number }
   // Deterministic times table: `table × k = ?` (or ÷), correct by construction.
   | { type: 'timesTable'; instruction: string; table: number; upTo: number; op: 'multiply' | 'divide'; shuffle: boolean }
+  // Visual multiplication for the youngest: k groups of `table` countable circles.
+  | { type: 'multiplyGroups'; instruction: string; table: number; upTo: number }
 
 // `pro` is retained on the type for schema stability but is no longer used to
 // gate content — every sheet renders all of its activities (free == Pro).
@@ -532,13 +534,37 @@ export function timesTablePlan(rawTopic: string, age?: number): TopicPlan | null
   const table = detectTimesTable(clean(rawTopic))
   if (table == null) return null
   const d = difficultyForAge(age)
-  const upTo = d.detailLevel === 'low' ? 6 : 12
-  const acts: Activity[] = [
-    { type: 'note', text: 'Multiply to find each answer' },
-    { type: 'timesTable', instruction: 'Multiply', table, upTo, op: 'multiply', shuffle: false },
-  ]
-  if (d.detailLevel !== 'low') acts.push({ type: 'timesTable', instruction: 'Mixed practice', table, upTo: 12, op: 'multiply', shuffle: true })
-  if (d.detailLevel === 'high') acts.push({ type: 'timesTable', instruction: 'Division facts', table, upTo: 12, op: 'divide', shuffle: true })
+
+  // Age bands change the whole SHAPE, not just which section is present:
+  //  • 5–7 (young): short + VISUAL — groups of countable circles show what
+  //    multiplication means, over a small range (×1–5, or ×1–3 for big tables),
+  //    then a short write-the-answer ladder. No abstract shuffled drill.
+  //  • 8–9 (mid): the ladder to ×12 + modest mixed practice. No division.
+  //  • 10+ (old): full ladder + full mixed practice + inverse division.
+  const band = age == null ? 'mid' : age <= 7 ? 'young' : age <= 9 ? 'mid' : 'old'
+
+  let acts: Activity[]
+  if (band === 'young') {
+    const upTo = table >= 6 ? 3 : 5
+    acts = [
+      { type: 'note', text: 'Count the groups to multiply' },
+      { type: 'multiplyGroups', instruction: 'Count the groups', table, upTo },
+      { type: 'timesTable', instruction: 'Write the answers', table, upTo, op: 'multiply', shuffle: false },
+    ]
+  } else if (band === 'mid') {
+    acts = [
+      { type: 'note', text: 'Multiply to find each answer' },
+      { type: 'timesTable', instruction: 'The table in order', table, upTo: 12, op: 'multiply', shuffle: false },
+      { type: 'timesTable', instruction: 'Mixed practice', table, upTo: 8, op: 'multiply', shuffle: true },
+    ]
+  } else {
+    acts = [
+      { type: 'note', text: 'Multiply and divide' },
+      { type: 'timesTable', instruction: 'The table in order', table, upTo: 12, op: 'multiply', shuffle: false },
+      { type: 'timesTable', instruction: 'Mixed practice', table, upTo: 12, op: 'multiply', shuffle: true },
+      { type: 'timesTable', instruction: 'Division facts', table, upTo: 12, op: 'divide', shuffle: true },
+    ]
+  }
   return {
     category: 'composed',
     subject: `${table} times table`,
