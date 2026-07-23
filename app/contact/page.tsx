@@ -5,7 +5,7 @@ import { Send, Mail, MessageSquare, Loader2, CheckCircle } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 
-const CONTACT_EMAIL = 'hello@colour.page'
+const CONTACT_EMAIL = 'colour.page123@gmail.com'
 
 export default function ContactPage() {
   const [name, setName] = useState('')

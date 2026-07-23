@@ -3,7 +3,10 @@ import { Resend } from 'resend'
 
 export const runtime = 'nodejs'
 
-const CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'hello@colour.page'
+// Where contact-form messages are delivered.
+const CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'colour.page123@gmail.com'
+// Resend SENDER — must be a verified domain (Resend rejects a gmail "from"),
+// so this stays on colour.page; replies are routed to the visitor's own email.
 const FROM_EMAIL = process.env.RESEND_FROM || 'colour.page <noreply@colour.page>'
 
 export async function POST(request: NextRequest) {
