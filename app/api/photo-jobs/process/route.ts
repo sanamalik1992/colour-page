@@ -72,8 +72,10 @@ function objectCacheKey(obj: string): string {
 
 // Hard per-object budget. Objects generate in parallel, so ANY single object
 // that stalls would freeze the whole sheet's progress — this caps each one and
-// drops it (renders without it) rather than letting it hang the job.
-const OBJECT_DEADLINE_MS = 42_000
+// drops it (renders without it) rather than letting it hang the job. Kept tight
+// (not 40s+): one slow object should drop and let the sheet finish, not hold the
+// progress bar near the top for the better part of a minute.
+const OBJECT_DEADLINE_MS = 24_000
 
 function withObjectDeadline<T>(work: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([
@@ -82,11 +84,16 @@ function withObjectDeadline<T>(work: Promise<T>, ms: number): Promise<T | null> 
   ])
 }
 
-// Generate one object: up to 2 SINGLE flux attempts (no nested retry storms),
-// cheap ink filter, then the vision recognisability check (self-timeouts,
-// fails open). Keep the first that passes; otherwise drop.
+// Generate one object. Retries are driven ONLY by the cheap, deterministic ink
+// filter (blank/blob) — up to 2 single flux attempts, no nested retry storms.
+// The vision recognisability check then runs ONCE on the chosen image and, on a
+// miss, DROPS the picture (the sheet renders without it) rather than paying for
+// another full Flux round. That removes the hidden 2×-Flux latency multiplier
+// that made broad topics crawl, while still keeping garbled pictures off the
+// sheet. Vision self-timeouts and fails open, so a QA outage can't block gen.
 async function generateOneObject(obj: string, settings: PhotoJobSettings, key: string): Promise<Buffer | null> {
   const prompt = singleObjectPrompt(obj)
+  let chosen: Buffer | null = null
   for (let i = 0; i < 2; i++) {
     let buf: Buffer
     try {
@@ -96,21 +103,23 @@ async function generateOneObject(obj: string, settings: PhotoJobSettings, key: s
       continue
     }
     const { usable } = await scoreObject(buf)
-    if (!usable) continue // blank/blob — retry
-    const recognisable = await verifyObjectImage(buf, obj)
-    if (!recognisable) continue
-    supabase.storage.from('outputs').upload(key, buf, { contentType: 'image/png', upsert: true }).catch(() => {})
-    return buf
+    if (!usable) continue // blank/blob — cheap retry
+    chosen = buf
+    break
   }
-  return null
+  if (!chosen) return null
+  const recognisable = await verifyObjectImage(chosen, obj)
+  if (!recognisable) { console.log(`object "${obj}" failed vision — dropping (no re-gen)`); return null }
+  supabase.storage.from('outputs').upload(key, chosen, { contentType: 'image/png', upsert: true }).catch(() => {})
+  return chosen
 }
 
-// Limit how many objects GENERATE at once. A broad topic ("alphabet",
-// "phonics") can fan out into many pictures; firing them all in parallel floods
-// Replicate + the vision model, they queue on the providers, and the job stalls
-// near the end. A small pool keeps it flowing and bounds memory. Cache hits
-// bypass the pool entirely (they're instant).
-const GEN_CONCURRENCY = 3
+// Limit how many objects GENERATE at once. Firing every object in parallel
+// floods Replicate + the vision model, they queue on the providers, and the job
+// stalls near the end. A pool of 4 matches the 4-object sheet cap so a typical
+// sheet runs as ONE wave (object PNGs are small, so this is memory-safe), while
+// still bounding a pathological fan-out. Cache hits bypass the pool (instant).
+const GEN_CONCURRENCY = 4
 let genActive = 0
 const genWaiters: Array<() => void> = []
 function acquireGenSlot(): Promise<void> {
@@ -370,6 +379,7 @@ export async function POST(request: NextRequest) {
       output_png_path: pngPath,
       completed_at: new Date().toISOString(),
     })
+    console.log(`[timing ${jobId}] TOTAL ${Date.now() - tStart}ms (${settings.category})`)
     })(jobId)) // end withDeadline
 
     return NextResponse.json({ success: true, status: 'done' })

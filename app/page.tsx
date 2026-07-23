@@ -354,6 +354,23 @@ export default function Home() {
     setDotError('')
   }
 
+  // Retry the SAME sheet after a failure/timeout, without making the parent
+  // re-type the topic or re-pick the photo. Clears only the job/error state,
+  // then re-runs the generator for the current mode.
+  const handleRetry = () => {
+    setError('')
+    setJobId(null)
+    setJobStatus(null)
+    setProgress(0)
+    setDisplayPct(0)
+    genStartRef.current = null
+    setPdfUrl(null)
+    setPngUrl(null)
+    if (genMode === 'topic') handleGenerateTopic()
+    else handleGenerate()
+  }
+  const canRetry = genMode === 'topic' ? !!topic.trim() : !!file
+
   const handleMakeDotToDot = async () => {
     if (!jobId) return
     setDotState('loading')
@@ -727,9 +744,16 @@ export default function Home() {
                     <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                     <div>
                       <p className="text-sm font-semibold text-red-700">{error}</p>
-                      <button onClick={handleReset} className="text-sm text-red-600 hover:underline mt-1 flex items-center gap-1">
-                        <RefreshCw className="w-3.5 h-3.5" /> Try again
-                      </button>
+                      <div className="flex items-center gap-4 mt-1">
+                        <button onClick={canRetry ? handleRetry : handleReset} className="text-sm font-semibold text-red-700 hover:underline flex items-center gap-1">
+                          <RefreshCw className="w-3.5 h-3.5" /> Try again
+                        </button>
+                        {canRetry && (
+                          <button onClick={handleReset} className="text-sm text-red-600 hover:underline">
+                            Start over
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

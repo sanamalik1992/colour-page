@@ -471,6 +471,63 @@ function detectNumberMax(topic: string): number | null {
 }
 
 /**
+ * Vague, catch-all topics a parent might type ("alphabet", "phonics",
+ * "letters") name a whole curriculum AREA, not one lesson. Left to the AI
+ * planner they become a busy picture sheet (many model-generated objects) that
+ * is slow and unfocused — the exact topics reported as stalling at ~86%.
+ *
+ * Narrow them to a FOCUSED, fully DETERMINISTIC sheet (no image model at all,
+ * so zero Flux/vision calls) that teaches one clear thing — a few letters or
+ * the first sounds, not all 26. These generate as fast as "letter b".
+ *
+ * Returns null for anything that isn't a recognised vague topic, so the normal
+ * AI-planner / keyword path handles everything else unchanged. Runs BEFORE the
+ * AI planner so it also saves that (blocking) model round-trip.
+ */
+export function narrowBroadTopic(rawTopic: string, age?: number): TopicPlan | null {
+  const t = clean(rawTopic).toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim()
+  const difficulty = difficultyForAge(age)
+
+  // "alphabet" / "abc" / "abcs" / "the alphabet" / "learn the alphabet" / bare
+  // "letters". (A SPECIFIC "letter b" is caught by detectLetter downstream and
+  // never reaches here.)
+  const isAlphabet =
+    /\balphabet\b/.test(t) ||
+    /^(the\s+)?a\s*b\s*c\s*s?$/.test(t) ||
+    /^letters$/.test(t) ||
+    /^learn(ing)?\s+(the\s+)?(alphabet|letters|abc)s?$/.test(t)
+  if (isAlphabet) {
+    const acts: Activity[] = [
+      { type: 'note', text: 'Every letter from A to Z' },
+      { type: 'traceWords', instruction: 'Trace the letters', words: ['ABCDEFG', 'HIJKLM', 'NOPQRS', 'TUVWXYZ'] },
+      { type: 'circleWords', instruction: 'Circle every A', words: ['A', 'M', 'A', 'T', 'A', 'S', 'A', 'B'] },
+      { type: 'writeLines', instruction: 'Write your letters', count: 3, pro: true },
+    ]
+    return { category: 'composed', subject: 'The Alphabet', title: sheetTitle('The Alphabet'), activities: acts, prompt: '', difficulty }
+  }
+
+  // Bare "phonics" / "letter sounds" / "initial sounds" with NO specific
+  // grapheme. (A specific "phonics sh" is caught by detectPhonics downstream.)
+  const isPhonics =
+    /^(phonics|phonic)$/.test(t) ||
+    /^(letter|initial|first|beginning)\s+sounds?$/.test(t) ||
+    /^phonics\s+sounds?$/.test(t) ||
+    /^(learn(ing)?\s+)?phonics$/.test(t)
+  if (isPhonics) {
+    // Focus on the first sounds taught in UK reception (s a t p i n).
+    const acts: Activity[] = [
+      { type: 'note', text: 'Sound out each word' },
+      { type: 'traceWords', instruction: 'Trace the words', words: ['SAT', 'PIN', 'TAP', 'NIP'] },
+      { type: 'wordSearch', instruction: 'Find the words', words: ['SAT', 'PIN', 'TAP', 'NIP'] },
+      { type: 'writeLines', instruction: 'Write a word', count: 3, pro: true },
+    ]
+    return { category: 'composed', subject: 'First Sounds', title: sheetTitle('First Sounds'), activities: acts, prompt: '', difficulty }
+  }
+
+  return null
+}
+
+/**
  * Build the full topic plan (prompt + metadata) from a typed topic and age.
  */
 export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkUsage, recordUsage } from '@/lib/pro-gating'
-import { buildTopicPrompt } from '@/lib/topic-prompt'
+import { buildTopicPrompt, narrowBroadTopic } from '@/lib/topic-prompt'
 import { aiPlanTopic } from '@/lib/topic-ai'
 import { findBlockedTerm } from '@/lib/blocklist'
 import { getServerUser } from '@/lib/supabase/auth-server'
@@ -67,10 +67,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Interpret the topic with AI when available (handles the long tail like
-    // "multiples of 10" or "life cycle of a frog"); fall back to the
-    // deterministic keyword builder otherwise.
-    const plan = (await aiPlanTopic(topic, age)) || buildTopicPrompt(topic, age)
+    // Vague catch-all topics ("alphabet", "phonics") → a focused, fully
+    // deterministic sheet (no image model), FIRST — so they generate instantly
+    // and skip the blocking AI-planner round-trip. Everything else: interpret
+    // with AI when available (long tail like "multiples of 10"), else the
+    // deterministic keyword builder.
+    const tPlan = Date.now()
+    const plan =
+      narrowBroadTopic(topic, age) || (await aiPlanTopic(topic, age)) || buildTopicPrompt(topic, age)
+    console.log(`[timing] plan "${topic}" ${Date.now() - tPlan}ms → ${plan.category}`)
 
     // Topic metadata lives in the settings JSON (no schema migration needed).
     const settings: PhotoJobSettings = {
