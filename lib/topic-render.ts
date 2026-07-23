@@ -1270,6 +1270,138 @@ function bondsBlock(whole: number, count: number, style: 'missing' | 'subtract',
   }).join('')
 }
 
+// ---------------------------------------------------------------------------
+// Shapes: draw 2D and 3D shapes deterministically + property/sort blocks.
+// ---------------------------------------------------------------------------
+
+// Draw a shape as clean colour-in line art, centred at (cx, cy) within a box of
+// side `s`. 2D shapes are exact polygons; 3D shapes are simple, recognisable
+// wireframe representations.
+function drawShapeSvg(name: string, cx: number, cy: number, s: number): string {
+  const r = s / 2
+  const A = 'fill="none" stroke="#111" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"'
+  const line = (x1: number, y1: number, x2: number, y2: number) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#111" stroke-width="4" stroke-linecap="round"/>`
+  const poly = (pts: number[][]) => `<polygon points="${pts.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')}" ${A}/>`
+  const regular = (nn: number, rot: number) => { const pts: number[][] = []; for (let i = 0; i < nn; i++) { const a = rot + i * 2 * Math.PI / nn; pts.push([cx + Math.sin(a) * r, cy - Math.cos(a) * r]) } return poly(pts) }
+  switch (name) {
+    case 'circle': return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" ${A}/>`
+    case 'oval': return `<ellipse cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" rx="${r.toFixed(1)}" ry="${(r * 0.68).toFixed(1)}" ${A}/>`
+    case 'square': return `<rect x="${(cx - r).toFixed(1)}" y="${(cy - r).toFixed(1)}" width="${s.toFixed(1)}" height="${s.toFixed(1)}" rx="4" ${A}/>`
+    case 'rectangle': return `<rect x="${(cx - r).toFixed(1)}" y="${(cy - r * 0.64).toFixed(1)}" width="${s.toFixed(1)}" height="${(s * 0.64).toFixed(1)}" rx="4" ${A}/>`
+    case 'triangle': return regular(3, 0)
+    case 'pentagon': return regular(5, 0)
+    case 'hexagon': return regular(6, Math.PI / 6)
+    case 'sphere': return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" ${A}/><ellipse cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" rx="${r.toFixed(1)}" ry="${(r * 0.32).toFixed(1)}" fill="none" stroke="#111" stroke-width="2.5" stroke-dasharray="7 6"/>`
+    case 'cube':
+    case 'cuboid': {
+      const L = name === 'cuboid' ? s * 0.6 : s * 0.56
+      const Lh = name === 'cuboid' ? L * 0.66 : L
+      const d = s * 0.24
+      const bx = cx - (L + d) / 2, by = cy - (Lh + d) / 2
+      const fx = bx, fy = by + d, gx = bx + d, gy = by
+      let o = `<rect x="${fx.toFixed(1)}" y="${fy.toFixed(1)}" width="${L.toFixed(1)}" height="${Lh.toFixed(1)}" ${A}/>`
+      o += `<rect x="${gx.toFixed(1)}" y="${gy.toFixed(1)}" width="${L.toFixed(1)}" height="${Lh.toFixed(1)}" ${A}/>`
+      o += line(fx, fy, gx, gy) + line(fx + L, fy, gx + L, gy) + line(fx, fy + Lh, gx, gy + Lh) + line(fx + L, fy + Lh, gx + L, gy + Lh)
+      return o
+    }
+    case 'cylinder': {
+      const rw = s * 0.36, rh = s * 0.13, bh = s * 0.62
+      const tY = cy - bh / 2, bY = cy + bh / 2
+      let o = `<ellipse cx="${cx.toFixed(1)}" cy="${bY.toFixed(1)}" rx="${rw.toFixed(1)}" ry="${rh.toFixed(1)}" ${A}/>`
+      o += line(cx - rw, tY, cx - rw, bY) + line(cx + rw, tY, cx + rw, bY)
+      o += `<ellipse cx="${cx.toFixed(1)}" cy="${tY.toFixed(1)}" rx="${rw.toFixed(1)}" ry="${rh.toFixed(1)}" ${A}/>`
+      return o
+    }
+    case 'cone': {
+      const rw = s * 0.36, rh = s * 0.12, apexY = cy - s * 0.42, baseY = cy + s * 0.34
+      let o = `<ellipse cx="${cx.toFixed(1)}" cy="${baseY.toFixed(1)}" rx="${rw.toFixed(1)}" ry="${rh.toFixed(1)}" ${A}/>`
+      o += line(cx, apexY, cx - rw, baseY) + line(cx, apexY, cx + rw, baseY)
+      return o
+    }
+    case 'pyramid': {
+      const apexY = cy - s * 0.4
+      const fl = [cx - s * 0.38, cy + s * 0.3], fr = [cx + s * 0.38, cy + s * 0.3]
+      const br = [cx + s * 0.16, cy + s * 0.14], bl = [cx - s * 0.16, cy + s * 0.14]
+      let o = poly([fl, fr, br, bl])
+      o += line(cx, apexY, fl[0], fl[1]) + line(cx, apexY, fr[0], fr[1]) + line(cx, apexY, br[0], br[1])
+      return o
+    }
+    default: return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" ${A}/>`
+  }
+}
+
+// Grid of shapes to name (write-line under) and/or colour.
+function shapeGalleryBlock(names: string[], label: boolean, x: number, top: number, w: number, h: number): string {
+  const list = names.slice(0, 4)
+  const cols = list.length <= 2 ? list.length : list.length === 3 ? 3 : 2
+  const rows = Math.ceil(list.length / cols)
+  const cellW = w / cols, cellH = h / rows
+  const shapeSize = Math.min(cellW * 0.5, cellH * (label ? 0.56 : 0.72))
+  let s = ''
+  list.forEach((name, i) => {
+    const c = i % cols, rr = Math.floor(i / cols)
+    const cx = x + c * cellW + cellW / 2
+    const cy = top + rr * cellH + (label ? cellH * 0.42 : cellH * 0.5)
+    s += drawShapeSvg(name, cx, cy, shapeSize)
+    if (label) {
+      const ly = top + rr * cellH + cellH * 0.86
+      s += `<line x1="${(cx - cellW * 0.32).toFixed(1)}" y1="${ly.toFixed(1)}" x2="${(cx + cellW * 0.32).toFixed(1)}" y2="${ly.toFixed(1)}" stroke="#d0cabf" stroke-width="3"/>`
+    }
+  })
+  return s
+}
+
+// Each row: a shape, then its properties to fill in ("SIDES ▢", "CORNERS ▢",
+// or "FACES ▢ / EDGES ▢ / VERTICES ▢"), stacked beside the shape.
+function shapePropsBlock(names: string[], dims: string[], x: number, top: number, w: number, h: number): string {
+  const list = names.slice(0, 5)
+  const rowH = h / list.length
+  const shapeSize = Math.min(rowH * 0.72, w * 0.2)
+  let s = ''
+  list.forEach((name, i) => {
+    const rowMid = top + i * rowH + rowH / 2
+    s += drawShapeSvg(name, x + shapeSize * 0.6 + 8, rowMid, shapeSize)
+    const lineH = Math.min(rowH / (dims.length + 0.6), 46)
+    const labelH = Math.min(lineH * 0.62, 34)
+    const boxH = labelH * 1.15
+    const px = x + w * 0.34
+    const startY = rowMid - (dims.length - 1) * lineH / 2
+    dims.forEach((dim, j) => {
+      const ly = startY + j * lineH
+      const lbl = dim.toUpperCase()
+      s += textSvg(lbl, px, ly - labelH / 2, labelH, 8)
+      const bx = px + textWidth(lbl, labelH) + labelH * 0.5
+      s += `<rect x="${bx.toFixed(1)}" y="${(ly - boxH / 2).toFixed(1)}" width="${(boxH * 1.2).toFixed(1)}" height="${boxH.toFixed(1)}" rx="7" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    })
+  })
+  return s
+}
+
+// Sort shapes into 2D and 3D: a word bank on top, two labelled boxes to write
+// each shape name into the right group.
+function shapeSortBlock(names: string[], x: number, top: number, w: number, h: number): string {
+  const bank = names.map((n) => n.toUpperCase()).join('   ')
+  const bankH = Math.min(h * 0.14, 46)
+  let bw = textWidth(bank, bankH)
+  if (bw > w * 0.96) { /* shrink */ }
+  let bankH2 = bankH
+  while (textWidth(bank, bankH2) > w * 0.96 && bankH2 > 22) bankH2 -= 2
+  bw = textWidth(bank, bankH2)
+  let s = textSvg(bank, x + Math.max(0, (w - bw) / 2), top, bankH2, 9, { color: '#9aa0a6' })
+  const boxTop = top + bankH2 + h * 0.08
+  const boxH = h - (bankH2 + h * 0.08) - 10
+  const gap = w * 0.05
+  const boxW = (w - gap) / 2
+  const labelH = Math.min(boxH * 0.16, 40)
+  const mk = (bx: number, lbl: string) => {
+    let o = `<rect x="${bx.toFixed(1)}" y="${boxTop.toFixed(1)}" width="${boxW.toFixed(1)}" height="${boxH.toFixed(1)}" rx="18" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    o += textSvg(lbl, bx + 24, boxTop + 16, labelH, 9, { color: '#111' })
+    return o
+  }
+  s += mk(x, '2D') + mk(x + boxW + gap, '3D')
+  return s
+}
+
 // Countable dots under an operand (visual aid for the youngest children).
 function countDots(n: number, cx: number, top: number, r: number): string {
   if (n < 1) return ''
@@ -1587,6 +1719,7 @@ const ACTIVITY_WEIGHT: Record<string, number> = {
   countObjects: 2.6, countPictures: 3, traceNumbers: 1.8, clocks: 3.2,
   timesTable: 3.6, multiplyGroups: 4.2,
   tenFrame: 3.8, partWhole: 0.9, bonds: 3,
+  shapeGallery: 3.4, shapeProps: 3.6, shapeSort: 3.2,
 }
 
 /**
@@ -1705,6 +1838,9 @@ export async function buildComposedSheet(
         case 'tenFrame': overlay += tenFrameBlock(a.whole, a.count, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'partWhole': overlay += partWholeBlock(a.whole, a.count, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'bonds': overlay += bondsBlock(a.whole, a.count, a.style, bodyX, nextY, bodyW, ch, blockIndex); break
+        case 'shapeGallery': overlay += shapeGalleryBlock(a.shapes, a.label, bodyX, nextY, bodyW, ch); break
+        case 'shapeProps': overlay += shapePropsBlock(a.shapes, a.dims, bodyX, nextY, bodyW, ch); break
+        case 'shapeSort': overlay += shapeSortBlock(a.shapes, bodyX, nextY, bodyW, ch); break
         case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'traceNumbers': overlay += traceNumbersBlock(a.upTo, bodyX, nextY, bodyW, ch); break
       }
