@@ -1018,6 +1018,42 @@ export function spagPlan(rawTopic: string, age?: number): TopicPlan | null {
   return { category: 'composed', subject: c.title, title: sheetTitle(c.title), activities: c.build(band), prompt: '', difficulty: difficultyForAge(age) }
 }
 
+// ---- Rhyming & CVC (Tier-1 phonics, deterministic) ------------------------
+
+function detectRhyming(topic: string): boolean {
+  return /\brhym\w+\b|\brhymes?\b|words? that rhyme/i.test(clean(topic))
+}
+
+// Match the rhyming pairs, then write your own. All pairs genuinely rhyme.
+export function rhymingPlan(rawTopic: string, age?: number): TopicPlan | null {
+  if (!detectRhyming(rawTopic)) return null
+  const band = age == null ? 'mid' : age <= 5 ? 'young' : 'mid'
+  const acts: Activity[] = [
+    { type: 'note', text: 'Rhyming words end with the same sound' },
+    { type: 'matchLines', instruction: 'Match the words that rhyme', left: band === 'young' ? ['cat', 'dog', 'sun', 'pig'] : ['cat', 'dog', 'sun', 'pig', 'bee', 'star'], right: band === 'young' ? ['hat', 'log', 'bun', 'wig'] : ['hat', 'log', 'bun', 'wig', 'tree', 'car'] },
+    { type: 'matchLines', instruction: 'Match more rhyming words', left: ['cake', 'boat', 'fish', 'ball'], right: ['lake', 'coat', 'dish', 'wall'] },
+    { type: 'writeLines', instruction: 'Write a word that rhymes with: cat, dog, sun', count: 3 },
+  ]
+  return { category: 'composed', subject: 'Rhyming words', title: sheetTitle('Rhyming words'), activities: acts, prompt: '', difficulty: difficultyForAge(age) }
+}
+
+function detectCVC(topic: string): boolean {
+  return /\bcvc\b|consonant vowel consonant|three[\s-]?letter words?|sound(?:ing)? out words?/i.test(clean(topic))
+}
+
+// Read simple CVC words, sort them by their middle vowel sound, then write your
+// own. Reinforces segmenting and the short-vowel sounds.
+export function cvcPlan(rawTopic: string, age?: number): TopicPlan | null {
+  if (!detectCVC(rawTopic)) return null
+  const acts: Activity[] = [
+    { type: 'note', text: 'Sound out each letter then blend the word' },
+    { type: 'readWords', instruction: 'Read the words', words: ['cat', 'dog', 'pig', 'sun', 'bed', 'hen', 'cup', 'box'] },
+    { type: 'sortTwoGroups', instruction: 'Sort by the middle sound', items: ['cat', 'hen', 'bed', 'van', 'net', 'bag', 'pen', 'ham'], labelA: 'A SOUND', labelB: 'E SOUND' },
+    { type: 'writeLines', instruction: 'Write three cvc words of your own', count: 3 },
+  ]
+  return { category: 'composed', subject: 'CVC words', title: sheetTitle('CVC words'), activities: acts, prompt: '', difficulty: difficultyForAge(age) }
+}
+
 // Small deterministic RNG shared by the maths plans (stable, no Math.random so
 // a topic renders identically every time — important for eyeballing/tests).
 function mkRng(seed: number): () => number {
@@ -1174,6 +1210,10 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
 
   // --- grammar / spelling (synonyms, antonyms, adverbs, plurals…) ---
   const spag = spagPlan(topic, age); if (spag) return spag
+
+  // --- rhyming & CVC words (Tier-1 phonics) ---
+  const rhy = rhymingPlan(topic, age); if (rhy) return rhy
+  const cvc = cvcPlan(topic, age); if (cvc) return cvc
 
   // --- simple sums (addition / subtraction), drawn deterministically ---
   const sums = detectSums(topic, difficulty)

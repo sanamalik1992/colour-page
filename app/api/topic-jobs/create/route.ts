@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getUserPlan, FREE_LIMITS, USAGE_LIMITS_DISABLED, countTodaysUsage } from '@/lib/pro-gating'
-import { buildTopicPrompt, narrowBroadTopic, conceptPlan, timesTablePlan, numberBondsPlan, shapesPlan, fractionsPlan, comparePlan, oddEvenPlan, placeValuePlan, countingPlan, moneyPlan, spagPlan } from '@/lib/topic-prompt'
+import { buildTopicPrompt, narrowBroadTopic, conceptPlan, timesTablePlan, numberBondsPlan, shapesPlan, fractionsPlan, comparePlan, oddEvenPlan, placeValuePlan, countingPlan, moneyPlan, spagPlan, rhymingPlan, cvcPlan } from '@/lib/topic-prompt'
 import { aiPlanTopic } from '@/lib/topic-ai'
 import { findBlockedTerm } from '@/lib/blocklist'
 import { getServerUser } from '@/lib/supabase/auth-server'
@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
       moneyPlan(topic, age) ||
       countingPlan(topic, age) ||
       spagPlan(topic, age) ||
+      rhymingPlan(topic, age) ||
+      cvcPlan(topic, age) ||
       (await aiPlanTopic(topic, age)) ||
       buildTopicPrompt(topic, age)
     console.log(`[timing] plan "${topic}" ${Date.now() - tPlan}ms → ${plan.category}`)
