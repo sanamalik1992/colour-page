@@ -997,6 +997,35 @@ const SPAG: Record<string, { title: string; detect: RegExp; build: SpagBuild }> 
       { type: 'writeLines', instruction: 'Add -ful to: care, use, joy', count: 3 },
     ],
   },
+  preposition: {
+    title: 'Prepositions',
+    detect: /\bprepositions?\b|position words?/i,
+    build: () => [
+      { type: 'note', text: 'A preposition tells where: on under in behind over' },
+      { type: 'circleWords', instruction: 'Circle the prepositions', words: ['on', 'cat', 'under', 'run', 'in', 'behind', 'blue', 'over'] },
+      { type: 'matchLines', instruction: 'Match the preposition to its meaning', left: ['on', 'under', 'behind', 'beside'], right: ['on top of', 'below', 'at the back of', 'next to'] },
+      { type: 'sentence', instruction: 'Write a sentence using a preposition', lines: 2 },
+    ],
+  },
+  pronoun: {
+    title: 'Pronouns',
+    detect: /\bpronouns?\b/i,
+    build: () => [
+      { type: 'note', text: 'A pronoun replaces a noun: he she it we they' },
+      { type: 'circleWords', instruction: 'Circle the pronouns', words: ['he', 'dog', 'she', 'run', 'they', 'we', 'it', 'happy'] },
+      { type: 'sortTwoGroups', instruction: 'Sort each pronoun', items: ['he', 'she', 'it', 'we', 'they', 'i'], labelA: 'ONE PERSON', labelB: 'MORE THAN ONE' },
+      { type: 'sentence', instruction: 'Write a sentence using a pronoun', lines: 2 },
+    ],
+  },
+  tense: {
+    title: 'Past and present tense',
+    detect: /\bpast tense\b|\bpresent tense\b|\btenses?\b|-?ed ending/i,
+    build: () => [
+      { type: 'note', text: 'The past tense has already happened' },
+      { type: 'sortTwoGroups', instruction: 'Sort each verb by its tense', items: ['walked', 'jump', 'played', 'run', 'helped', 'skip', 'washed', 'sing'], labelA: 'PAST', labelB: 'PRESENT' },
+      { type: 'writeLines', instruction: 'Write the past tense of: play, jump, help', count: 3 },
+    ],
+  },
 }
 
 function detectSpag(topic: string): string | null {
@@ -1052,6 +1081,41 @@ export function cvcPlan(rawTopic: string, age?: number): TopicPlan | null {
     { type: 'writeLines', instruction: 'Write three cvc words of your own', count: 3 },
   ]
   return { category: 'composed', subject: 'CVC words', title: sheetTitle('CVC words'), activities: acts, prompt: '', difficulty: difficultyForAge(age) }
+}
+
+// ---- Days, months, Roman numerals (deterministic) -------------------------
+
+export function daysMonthsPlan(rawTopic: string, age?: number): TopicPlan | null {
+  const t = clean(rawTopic).toLowerCase()
+  const isDays = /\bdays? of (?:the )?week\b|\bweekdays?\b|\bdays of the week\b/.test(t)
+  const isMonths = /\bmonths? of (?:the )?year\b|\bmonths\b/.test(t)
+  if (!isDays && !isMonths) return null
+  if (isDays) {
+    const acts: Activity[] = [
+      { type: 'note', text: 'There are seven days in a week' },
+      { type: 'readWords', instruction: 'Read the days', words: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] },
+      { type: 'sortTwoGroups', instruction: 'Sort the days', items: ['monday', 'tuesday', 'friday', 'saturday', 'sunday', 'thursday'], labelA: 'SCHOOL DAY', labelB: 'WEEKEND' },
+      { type: 'writeLines', instruction: 'Write the days in order', count: 3 },
+    ]
+    return { category: 'composed', subject: 'Days of the week', title: sheetTitle('Days of the week'), activities: acts, prompt: '', difficulty: difficultyForAge(age) }
+  }
+  const acts: Activity[] = [
+    { type: 'note', text: 'There are twelve months in a year' },
+    { type: 'readWords', instruction: 'Read the months', words: ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'] },
+    { type: 'writeLines', instruction: 'Write the first four months in order', count: 4 },
+  ]
+  return { category: 'composed', subject: 'Months of the year', title: sheetTitle('Months of the year'), activities: acts, prompt: '', difficulty: difficultyForAge(age) }
+}
+
+export function romanNumeralsPlan(rawTopic: string, age?: number): TopicPlan | null {
+  if (!/\broman numerals?\b/i.test(clean(rawTopic))) return null
+  const acts: Activity[] = [
+    { type: 'note', text: 'Roman numerals use letters for numbers' },
+    { type: 'matchLines', instruction: 'Match the number to its Roman numeral', left: ['1', '5', '10', '50', '100'], right: ['I', 'V', 'X', 'L', 'C'] },
+    { type: 'matchLines', instruction: 'Match these Roman numerals', left: ['2', '4', '6', '9'], right: ['II', 'IV', 'VI', 'IX'] },
+    { type: 'writeLines', instruction: 'Write in Roman numerals: 3, 7, 11', count: 3 },
+  ]
+  return { category: 'composed', subject: 'Roman numerals', title: sheetTitle('Roman numerals'), activities: acts, prompt: '', difficulty: difficultyForAge(age) }
 }
 
 // Small deterministic RNG shared by the maths plans (stable, no Math.random so
@@ -1214,6 +1278,10 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   // --- rhyming & CVC words (Tier-1 phonics) ---
   const rhy = rhymingPlan(topic, age); if (rhy) return rhy
   const cvc = cvcPlan(topic, age); if (cvc) return cvc
+
+  // --- days / months / Roman numerals ---
+  const dm = daysMonthsPlan(topic, age); if (dm) return dm
+  const rn = romanNumeralsPlan(topic, age); if (rn) return rn
 
   // --- simple sums (addition / subtraction), drawn deterministically ---
   const sums = detectSums(topic, difficulty)
