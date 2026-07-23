@@ -80,10 +80,23 @@ export async function POST(request: NextRequest) {
     let contentType = file.type
     const originalFilename = file.name
 
-    // Convert HEIC to PNG
+    if (!buffer || buffer.length === 0) {
+      return NextResponse.json({ error: 'That photo came through empty. Please pick another.' }, { status: 400 })
+    }
+
+    // Convert HEIC to PNG — a bad/undecodable file gives a clear message rather
+    // than a generic 500.
     if (isHeic(file.name, file.type)) {
-      buffer = await convertHeicToPng(buffer) as Buffer
-      contentType = 'image/png'
+      try {
+        buffer = await convertHeicToPng(buffer) as Buffer
+        contentType = 'image/png'
+      } catch (heicErr) {
+        console.error('HEIC conversion failed:', heicErr)
+        return NextResponse.json(
+          { error: "We couldn't read that photo format. Please try a JPG or PNG." },
+          { status: 400 }
+        )
+      }
     }
 
     // Generate job ID and upload
@@ -91,10 +104,17 @@ export async function POST(request: NextRequest) {
     const ext = contentType === 'image/png' ? 'png' : 'jpg'
     const uploadPath = `photo-jobs/${jobId}/input.${ext}`
 
-    // Try uploads bucket first, fall back to images bucket
-    const { error: uploadError } = await supabase.storage
-      .from('uploads')
-      .upload(uploadPath, buffer, { contentType, upsert: true })
+    // Upload to the uploads bucket with a transient retry, then fall back to the
+    // images bucket — so a momentary storage blip doesn't fail the whole submit.
+    let uploadError = null
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const { error } = await supabase.storage
+        .from('uploads')
+        .upload(uploadPath, buffer, { contentType, upsert: true })
+      uploadError = error
+      if (!error) break
+      await new Promise((r) => setTimeout(r, 400))
+    }
 
     if (uploadError) {
       // Fallback to images bucket

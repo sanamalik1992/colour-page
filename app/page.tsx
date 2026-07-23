@@ -24,7 +24,7 @@ import { Hero3D } from '@/components/ui/hero-3d'
 import { BeforeAfter } from '@/components/ui/before-after'
 import { Footer } from '@/components/sections/footer'
 import { useSessionId } from '@/hooks/useSessionId'
-import { prepareImageForUpload, readJsonSafe, friendlyError } from '@/lib/client-image'
+import { prepareImageForUpload, readJsonSafe, friendlyError, MAX_UPLOAD_BYTES } from '@/lib/client-image'
 import type { PhotoJobStatus } from '@/types/photo-job'
 
 const STATUS_LABELS: Record<PhotoJobStatus, string> = {
@@ -172,6 +172,15 @@ export default function Home() {
 
   const handleGenerate = async () => {
     if (!file || !sessionId) return
+
+    // If the photo couldn't be shrunk (e.g. an undecodable HEIC on a non-Apple
+    // browser), it may exceed the upload limit — say so clearly up front instead
+    // of letting it fail as a cryptic 413 after a long wait.
+    if (file.size > MAX_UPLOAD_BYTES + 900_000) {
+      setError('That photo couldn’t be prepared for upload. Please try a JPG or PNG, or a smaller photo.')
+      return
+    }
+
     setIsSubmitting(true)
     setError('')
     setCapReached(false)
@@ -179,7 +188,8 @@ export default function Home() {
     setDisplayPct(0)
 
     // Upload with a hard timeout so a stalled request can't leave the UI on
-    // "submitting" forever, and one automatic retry to ride out a flaky network.
+    // "submitting" forever, plus a couple of automatic retries with backoff to
+    // ride out a flaky mobile network.
     const postOnce = async (): Promise<Response> => {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 45000)
@@ -197,12 +207,21 @@ export default function Home() {
     }
 
     try {
-      let res: Response
-      try {
-        res = await postOnce()
-      } catch {
-        res = await postOnce() // one retry on network error / timeout
+      // fetch only throws on a network error / abort (HTTP errors return a
+      // Response), so retrying here specifically rides out transient network
+      // drops and timeouts — up to 3 attempts with a short backoff.
+      let res: Response | null = null
+      let lastErr: unknown = null
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, attempt * 1200))
+        try {
+          res = await postOnce()
+          break
+        } catch (e) {
+          lastErr = e
+        }
       }
+      if (!res) throw lastErr instanceof Error ? lastErr : new Error('Upload failed')
 
       const data = await readJsonSafe(res)
       if (res.status === 429 || data?.limitReached) {
