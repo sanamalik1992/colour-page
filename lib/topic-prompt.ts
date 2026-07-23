@@ -909,6 +909,115 @@ export function moneyPlan(rawTopic: string, age?: number): TopicPlan | null {
   return { category: 'composed', subject: 'Money', title: sheetTitle('Money'), activities: acts, prompt: '', difficulty: d }
 }
 
+// ---- SPAG (grammar / spelling) --------------------------------------------
+
+// Word-level grammar and spelling concepts that render well with the deterministic
+// text blocks (match, sort, circle, write) — no pictures, always-correct content.
+// The all-caps glyph font can't show capital-vs-lowercase, so capitalisation and
+// punctuation-correction sheets are deliberately NOT here (they'd be misleading).
+type SpagBuild = (band: 'young' | 'mid' | 'old') => Activity[]
+const SPAG: Record<string, { title: string; detect: RegExp; build: SpagBuild }> = {
+  synonym: {
+    title: 'Synonyms',
+    detect: /\bsynonyms?\b|words? that mean the same|same meaning/i,
+    build: (band) => {
+      const a: Activity[] = [
+        { type: 'note', text: 'A synonym is a word that means the same' },
+        { type: 'matchLines', instruction: 'Match the words that mean the same', left: band === 'young' ? ['big', 'happy', 'fast', 'cold'] : ['big', 'happy', 'fast', 'cold', 'little', 'shut'], right: band === 'young' ? ['large', 'glad', 'quick', 'chilly'] : ['large', 'glad', 'quick', 'chilly', 'small', 'close'] },
+        { type: 'matchLines', instruction: 'Match more synonyms', left: ['begin', 'end', 'look', 'shout'], right: ['start', 'finish', 'see', 'yell'] },
+        { type: 'writeLines', instruction: 'Write a synonym for each: big, hot, sad', count: 3 },
+      ]
+      return a
+    },
+  },
+  antonym: {
+    title: 'Antonyms',
+    detect: /\bantonyms?\b|\bopposites?\b|opposite words?/i,
+    build: (band) => [
+      { type: 'note', text: 'An antonym is the opposite' },
+      { type: 'matchLines', instruction: 'Match the opposites', left: band === 'young' ? ['hot', 'big', 'up', 'day'] : ['hot', 'big', 'up', 'day', 'fast', 'happy'], right: band === 'young' ? ['cold', 'small', 'down', 'night'] : ['cold', 'small', 'down', 'night', 'slow', 'sad'] },
+      { type: 'matchLines', instruction: 'Match more opposites', left: ['open', 'full', 'hard', 'light'], right: ['shut', 'empty', 'soft', 'dark'] },
+      { type: 'writeLines', instruction: 'Write the opposite of: wet, tall, old', count: 3 },
+    ],
+  },
+  homophone: {
+    title: 'Homophones',
+    detect: /\bhomophones?\b|sound the same|there their|to too two/i,
+    build: () => [
+      { type: 'note', text: 'Homophones sound the same but are spelled differently' },
+      { type: 'matchLines', instruction: 'Match the homophones', left: ['sea', 'night', 'sun', 'blue', 'hear', 'bee'], right: ['see', 'knight', 'son', 'blew', 'here', 'be'] },
+      { type: 'writeLines', instruction: 'Write the missing word: I can ___ the sea (hear/here)', count: 3 },
+      { type: 'sentence', instruction: 'Write a sentence using here and hear', lines: 3 },
+    ],
+  },
+  adverb: {
+    title: 'Adverbs',
+    detect: /\badverbs?\b/i,
+    build: () => [
+      { type: 'note', text: 'An adverb tells how something is done' },
+      { type: 'circleWords', instruction: 'Circle the adverbs', words: ['quickly', 'dog', 'slowly', 'run', 'softly', 'blue', 'loudly', 'jump'] },
+      { type: 'matchLines', instruction: 'Match the verb to an adverb', left: ['whisper', 'sprint', 'giggle', 'stamp'], right: ['quietly', 'fast', 'happily', 'loudly'] },
+      { type: 'sentence', instruction: 'Write a sentence with an adverb', lines: 2 },
+    ],
+  },
+  conjunction: {
+    title: 'Conjunctions',
+    detect: /\bconjunctions?\b|joining words?|\band but because so\b/i,
+    build: () => [
+      { type: 'note', text: 'Conjunctions join ideas: and but so because' },
+      { type: 'circleWords', instruction: 'Circle the joining words', words: ['and', 'cat', 'but', 'jump', 'because', 'red', 'so', 'run'] },
+      { type: 'matchLines', instruction: 'Join each sentence to its ending', left: ['I was cold', 'She ran fast', 'He was tired', 'It rained'], right: ['so I got a coat', 'but still lost', 'because it was late', 'so we stayed in'] },
+      { type: 'sentence', instruction: 'Join each pair with and, but, so or because', lines: 3 },
+    ],
+  },
+  plural: {
+    title: 'Plurals',
+    detect: /\bplurals?\b|\badd -?es\b|more than one|\b-?s or -?es\b/i,
+    build: () => [
+      { type: 'note', text: 'Words ending in s x ch sh add -es, others add -s' },
+      { type: 'sortTwoGroups', instruction: 'Sort each word by its plural ending', items: ['cat', 'box', 'dog', 'fox', 'bus', 'brush', 'hat', 'church'], labelA: 'ADD S', labelB: 'ADD ES' },
+      { type: 'writeLines', instruction: 'Write the plural of: dog, fox, bus', count: 3 },
+    ],
+  },
+  prefix: {
+    title: 'Prefixes',
+    detect: /\bprefix(?:es)?\b|\bun-?\b|\bre-?\b/i,
+    build: () => [
+      { type: 'note', text: 'A prefix goes at the front of a word' },
+      { type: 'matchLines', instruction: 'Match the prefix word to its meaning', left: ['unhappy', 'redo', 'unkind', 'untie'], right: ['not happy', 'do again', 'not kind', 'undo a tie'] },
+      { type: 'writeLines', instruction: 'Add un- to: lock, well, fair', count: 3 },
+    ],
+  },
+  suffix: {
+    title: 'Suffixes',
+    detect: /\bsuffix(?:es)?\b|-?ful\b|-?less\b|-?ing\b|-?ed\b/i,
+    build: () => [
+      { type: 'note', text: 'A suffix goes at the end of a word' },
+      { type: 'matchLines', instruction: 'Match the word to its suffix meaning', left: ['helpful', 'hopeless', 'painful', 'fearless'], right: ['full of help', 'without hope', 'full of pain', 'without fear'] },
+      { type: 'writeLines', instruction: 'Add -ful to: care, use, joy', count: 3 },
+    ],
+  },
+}
+
+function detectSpag(topic: string): string | null {
+  const t = clean(topic)
+  for (const key of Object.keys(SPAG)) if (SPAG[key].detect.test(t)) return key
+  return null
+}
+
+/**
+ * Deterministic grammar/spelling sheets (synonyms, antonyms, homophones,
+ * adverbs, conjunctions, plurals, prefixes, suffixes). Every activity genuinely
+ * tests the concept and the activities relate to each other.
+ */
+export function spagPlan(rawTopic: string, age?: number): TopicPlan | null {
+  const key = detectSpag(rawTopic)
+  if (!key) return null
+  const c = SPAG[key]
+  const band = age == null ? 'mid' : age <= 7 ? 'young' : age <= 9 ? 'mid' : 'old'
+  return { category: 'composed', subject: c.title, title: sheetTitle(c.title), activities: c.build(band), prompt: '', difficulty: difficultyForAge(age) }
+}
+
 // Small deterministic RNG shared by the maths plans (stable, no Math.random so
 // a topic renders identically every time — important for eyeballing/tests).
 function mkRng(seed: number): () => number {
@@ -1062,6 +1171,9 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   // counting / skip-counting — before the picture "sequence" detector, so
   // "counting in 5s" becomes a real number track rather than a colour sheet.
   const cnt = countingPlan(topic, age); if (cnt) return cnt
+
+  // --- grammar / spelling (synonyms, antonyms, adverbs, plurals…) ---
+  const spag = spagPlan(topic, age); if (spag) return spag
 
   // --- simple sums (addition / subtraction), drawn deterministically ---
   const sums = detectSums(topic, difficulty)
