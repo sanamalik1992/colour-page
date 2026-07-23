@@ -793,11 +793,11 @@ export default function Home() {
                     <div className="rounded-xl border border-brand-primary/30 bg-zinc-900/60 p-4">
                       <div className="flex items-center gap-2 mb-1">
                         <Sparkles className="w-4 h-4 text-brand-primary" />
-                        <p className="text-sm font-bold text-white">Pro adds more activities to every sheet</p>
+                        <p className="text-sm font-bold text-white">Pro adds even more to every sheet</p>
                       </div>
                       <p className="text-xs text-gray-400 mb-4">
-                        You&apos;re seeing the free taster. Pro packs in extra age-matched activities
-                        — and removes the watermark.
+                        Your sheet is already full and varied. Pro adds an extra age-matched activity
+                        on top — and removes the watermark.
                       </p>
                       {(previewCategory === 'letter' || previewCategory === 'words') && (
                         <ProActivityPreviews token={previewToken} words={previewWords} />
