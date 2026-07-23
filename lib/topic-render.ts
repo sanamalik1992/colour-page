@@ -1394,9 +1394,11 @@ export async function buildComposedSheet(
   const picMap = new Map<string, Buffer>()
   if (genPicture && picNeeds.size) {
     // Hard cap on how many pictures we ever generate for one sheet. A broad
-    // topic (e.g. "alphabet") can otherwise fan out into a dozen parallel model
-    // calls and stall the job near the end — a sheet never needs more than this.
-    const MAX_OBJECTS = 6
+    // topic can otherwise fan out into a dozen parallel model calls and stall
+    // the job near the end. Four reads as a full colouring sheet and — paired
+    // with the process route's concurrency pool of 4 — completes in a SINGLE
+    // generation wave, roughly halving wall-clock vs. the old 6.
+    const MAX_OBJECTS = 4
     const names = [...picNeeds].slice(0, MAX_OBJECTS)
     let done = 0
     const results = await Promise.all(
