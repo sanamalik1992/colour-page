@@ -34,16 +34,18 @@ export function Hero3D() {
         </defs>
       </svg>
 
-      {/* glossy gold sphere — top-right corner (peeks on mobile, gutter on desktop) */}
-      <svg className="absolute w-20 -right-6 top-1 opacity-90 lg:opacity-100 lg:w-28 lg:right-[2%] lg:top-[8%] xl:w-40 h3d-float" viewBox="0 0 200 200"
+      {/* glossy gold sphere — top-right gutter (desktop only, fully in view so it
+          never crops at the screen edge; mobile stays clean) */}
+      <svg className="absolute hidden lg:block w-28 right-[2%] top-[8%] xl:w-40 h3d-float" viewBox="0 0 200 200"
         style={{ filter: 'drop-shadow(0 24px 26px rgba(0,0,0,.45))' }}>
         <ellipse cx="100" cy="184" rx="60" ry="12" fill="#000" opacity=".3" />
         <circle cx="100" cy="94" r="80" fill="url(#h3d-sphere)" />
         <ellipse cx="74" cy="64" rx="24" ry="18" fill="url(#h3d-hl)" />
       </svg>
 
-      {/* colouring pencil — top-left corner (peeks on mobile, gutter on desktop) */}
-      <svg className="absolute w-14 -left-4 top-2 opacity-90 lg:opacity-100 lg:w-20 lg:left-[3%] lg:top-[6%] xl:w-28 h3d-float-slow" viewBox="0 0 200 210"
+      {/* colouring pencil — top-left gutter (desktop only, fully in view so it
+          isn't clipped mid-air at the screen edge; mobile stays clean) */}
+      <svg className="absolute hidden lg:block w-20 left-[3%] top-[6%] xl:w-28 h3d-float-slow" viewBox="0 0 200 210"
         style={{ filter: 'drop-shadow(0 22px 24px rgba(0,0,0,.45))' }}>
         <g transform="rotate(34 100 105)">
           <path d="M92 184 L108 184 L100 200 Z" fill="#7E2A18" />

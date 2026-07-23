@@ -13,9 +13,11 @@ export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get('sessionId')
   const email = request.nextUrl.searchParams.get('email')?.toLowerCase()
 
-  // Limits disabled for testing → report effectively unlimited.
+  // Limits disabled → report unlimited AND flag that limits aren't enforced, so
+  // the UI hides the "N free left" counter entirely rather than showing a
+  // placeholder number (e.g. "9999 free left") to a real visitor.
   if (USAGE_LIMITS_DISABLED) {
-    return NextResponse.json({ canCreate: true, remaining: 9999, used: 0, limit: 9999, isPro: false })
+    return NextResponse.json({ canCreate: true, remaining: 9999, used: 0, limit: 9999, isPro: false, limitsEnforced: false })
   }
 
   // Check if Pro user by email
