@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { Hero3D } from '@/components/ui/hero-3d'
+import { BeforeAfter } from '@/components/ui/before-after'
 import { ProActivityPreviews } from '@/components/ui/pro-activity-previews'
 import { Footer } from '@/components/sections/footer'
 import { useSessionId } from '@/hooks/useSessionId'
@@ -95,6 +96,9 @@ export default function Home() {
   // Limits
   const [remaining, setRemaining] = useState(3)
   const [isPro, setIsPro] = useState(false)
+  // Whether daily limits are actually being enforced. When they're off (testing
+  // / launch), we hide the "N free left" counter rather than show a placeholder.
+  const [limitsEnforced, setLimitsEnforced] = useState(false)
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -105,6 +109,9 @@ export default function Home() {
       .then((d) => {
         setRemaining(d.remaining ?? 3)
         setIsPro(d.isPro ?? false)
+        // Only show the counter when the server confirms limits are enforced
+        // (the disabled branch returns limitsEnforced:false).
+        setLimitsEnforced(d.limitsEnforced !== false)
       })
       .catch(() => {})
   }, [sessionId])
@@ -440,9 +447,11 @@ export default function Home() {
             <h1 className="font-display text-4xl sm:text-[3.25rem] font-extrabold text-white mb-4 leading-[0.98]">
               Screen-time that ends<br className="hidden sm:block" /> up on the <span className="text-brand-glow">fridge</span>.
             </h1>
-            <p className="text-gray-400 text-base sm:text-lg max-w-md mx-auto">
+            <p className="text-gray-400 text-base sm:text-lg max-w-md mx-auto mb-6">
               Turn a photo into a colouring page — or type what they&rsquo;re learning today. Print-ready in seconds.
             </p>
+            {/* One glance = they get it: a photo becomes a printable colouring page. */}
+            <BeforeAfter />
           </div>
 
           {/* Generator Card */}
@@ -471,8 +480,9 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Limit indicator */}
-              {!isPro && !jobId && !isSubmitting && (
+              {/* Limit indicator — only shown when limits are actually enforced,
+                  so a real visitor never sees a placeholder count. */}
+              {!isPro && limitsEnforced && !jobId && !isSubmitting && (
                 <div className="flex items-center justify-between mb-5 pb-4 border-b border-gray-100">
                   <span className="text-sm text-gray-500">
                     {remaining > 0
@@ -635,6 +645,16 @@ export default function Home() {
                       )}
                     </div>
                   )}
+
+                  {/* Photo-privacy reassurance — parents hesitate before uploading
+                      photos of their children. Wording matches /privacy. */}
+                  <div className="mt-4 flex items-start gap-2 rounded-xl bg-gray-50 border border-gray-100 px-3.5 py-3">
+                    <Lock className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-gray-500 leading-relaxed">
+                      Your photos stay private — never shared, and never used to train AI. You can delete them any time.{' '}
+                      <Link href="/privacy" className="text-gray-600 font-semibold hover:underline">How we handle your data</Link>
+                    </p>
+                  </div>
                 </>
               )}
 
