@@ -24,7 +24,8 @@ import { Hero3D } from '@/components/ui/hero-3d'
 import { BeforeAfter } from '@/components/ui/before-after'
 import { Footer } from '@/components/sections/footer'
 import { useSessionId } from '@/hooks/useSessionId'
-import { prepareImageForUpload, readJsonSafe, friendlyError, MAX_UPLOAD_BYTES } from '@/lib/client-image'
+import { prepareImageForUpload, readJsonSafe, friendlyError } from '@/lib/client-image'
+import { createClient as createBrowserSupabase } from '@/lib/supabase/client'
 import type { PhotoJobStatus } from '@/types/photo-job'
 
 const STATUS_LABELS: Record<PhotoJobStatus, string> = {
@@ -116,6 +117,28 @@ export default function Home() {
 
   useEffect(() => { refreshLimits() }, [refreshLimits])
 
+  // A persistent, DOM-mounted file input. iOS Safari intermittently drops the
+  // `change` event of a detached <input> created on the fly (the page can be
+  // evicted while the photo picker is open), which showed up as "picked a photo,
+  // nothing happened". A ref to a real element in the tree is reliable.
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Surface client-side failures both on-screen AND to the server log, so a
+  // failure on someone else's phone is diagnosable instead of a blank screen.
+  const logClientError = (stage: string, err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err)
+    const detail = err instanceof Error && err.stack ? err.stack.slice(0, 400) : ''
+    console.error(`[client-error:${stage}]`, err)
+    try {
+      fetch('/api/client-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage, message, detail }),
+        keepalive: true,
+      }).catch(() => {})
+    } catch { /* logging must never throw */ }
+  }
+
   const trackUrl = (u: string) => {
     objectUrlsRef.current.push(u)
     return u
@@ -123,6 +146,18 @@ export default function Home() {
   const revokeUrls = () => {
     objectUrlsRef.current.forEach((u) => URL.revokeObjectURL(u))
     objectUrlsRef.current = []
+  }
+
+  const onFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const f = e.target.files?.[0]
+      // Reset so picking the SAME file again still fires `change`.
+      e.target.value = ''
+      if (f) handleFile(f)
+    } catch (err) {
+      logClientError('select', err)
+      setError('Could not read that photo. Please try another.')
+    }
   }
 
   const handleFile = useCallback(async (f: File) => {
@@ -149,8 +184,10 @@ export default function Home() {
         setPreview(trackUrl(URL.createObjectURL(prepared)))
         setPreviewError(false)
       }
-    } catch {
+    } catch (err) {
       // Keep the original file + preview; the server converts HEIC on its side.
+      // Log it so a silent prep failure is visible rather than a mystery.
+      logClientError('prep', err)
     } finally {
       if (token === uploadTokenRef.current) setUploadState('ready')
     }
@@ -173,78 +210,82 @@ export default function Home() {
   const handleGenerate = async () => {
     if (!file || !sessionId) return
 
-    // If the photo couldn't be shrunk (e.g. an undecodable HEIC on a non-Apple
-    // browser), it may exceed the upload limit — say so clearly up front instead
-    // of letting it fail as a cryptic 413 after a long wait.
-    if (file.size > MAX_UPLOAD_BYTES + 900_000) {
-      setError('That photo couldn’t be prepared for upload. Please try a JPG or PNG, or a smaller photo.')
-      return
-    }
-
     setIsSubmitting(true)
     setError('')
     setCapReached(false)
     genStartRef.current = Date.now()
     setDisplayPct(0)
 
-    // Upload with a hard timeout so a stalled request can't leave the UI on
-    // "submitting" forever, plus a couple of automatic retries with backoff to
-    // ride out a flaky mobile network.
-    const postOnce = async (): Promise<Response> => {
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 45000)
-      try {
-        const fd = new FormData()
-        fd.append('file', file)
-        fd.append('sessionId', sessionId)
-        fd.append('orientation', orientation)
-        fd.append('lineThickness', lineThickness)
-        fd.append('detailLevel', detailLevel)
-        return await fetch('/api/photo-jobs/create', { method: 'POST', body: fd, signal: controller.signal })
-      } finally {
-        clearTimeout(timer)
-      }
-    }
+    // Bound a promise so a stuck step surfaces an error instead of hanging.
+    const withTimeout = <T,>(p: Promise<T>, ms: number, label: string): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${label} timed out`)), ms)),
+      ])
 
     try {
-      // fetch only throws on a network error / abort (HTTP errors return a
-      // Response), so retrying here specifically rides out transient network
-      // drops and timeouts — up to 3 attempts with a short backoff.
-      let res: Response | null = null
-      let lastErr: unknown = null
-      for (let attempt = 0; attempt < 3; attempt++) {
-        if (attempt > 0) await new Promise((r) => setTimeout(r, attempt * 1200))
-        try {
-          res = await postOnce()
-          break
-        } catch (e) {
-          lastErr = e
-        }
-      }
-      if (!res) throw lastErr instanceof Error ? lastErr : new Error('Upload failed')
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
 
-      const data = await readJsonSafe(res)
-      if (res.status === 429 || data?.limitReached) {
+      // 1. Ask for a one-time signed URL — the file will go STRAIGHT to Supabase
+      //    storage, never through our serverless function (no body-size limit,
+      //    no function timeout on the upload).
+      const signRes = await fetch('/api/photo-jobs/sign-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, ext }),
+      })
+      const signData = await readJsonSafe(signRes)
+      if (!signRes.ok) throw new Error((signData.error as string) || 'Could not start the upload. Please try again.')
+      const { jobId: newJobId, path, token } = signData as { jobId: string; path: string; token: string }
+
+      // 2. Upload directly to storage (retry once, each attempt time-bounded).
+      const supabase = createBrowserSupabase()
+      let upErr: unknown = null
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 1000))
+        const { error } = await withTimeout(
+          supabase.storage.from('uploads').uploadToSignedUrl(path, token, file, {
+            contentType: file.type || 'image/jpeg',
+          }),
+          90_000,
+          'Upload',
+        )
+        upErr = error
+        if (!error) break
+      }
+      if (upErr) throw new Error(upErr instanceof Error ? upErr.message : 'Upload failed')
+
+      // 3. Register the job (fast — no file in this request).
+      const createRes = await fetch('/api/photo-jobs/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId: newJobId,
+          storagePath: path,
+          sessionId,
+          originalFilename: fileName,
+          orientation,
+          lineThickness,
+          detailLevel,
+        }),
+      })
+      const data = await readJsonSafe(createRes)
+      if (createRes.status === 429 || data?.limitReached) {
         setCapReached(true)
         setError((data?.error as string) || "You've reached today's free limit.")
         setIsSubmitting(false)
         refreshLimits()
         return
       }
-      if (!res.ok) throw new Error(friendlyError(res.status, data))
+      if (!createRes.ok) throw new Error(friendlyError(createRes.status, data))
 
       setJobId(data.jobId as string)
       setJobStatus('queued')
       setProgress(0)
       setIsPro((data.isPro as boolean) ?? false)
     } catch (err) {
-      const msg =
-        err instanceof Error && err.name === 'AbortError'
-          ? 'The upload timed out — please check your connection and tap Generate again.'
-          : err instanceof Error
-            ? err.message
-            : 'Failed to start generation'
-      setError(msg)
+      logClientError('upload', err)
+      setError(err instanceof Error && err.message ? err.message : 'Upload failed. Please try again.')
       setIsSubmitting(false)
     }
   }
@@ -533,6 +574,14 @@ export default function Home() {
               {/* Upload State (photo mode) */}
               {genMode === 'photo' && !jobId && !isSubmitting && (
                 <>
+                  {/* Persistent, DOM-mounted input — reliable `change` on iOS. */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,.heic,.heif"
+                    className="hidden"
+                    onChange={onFilePicked}
+                  />
                   {!preview ? (
                     <div
                       onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
@@ -543,16 +592,7 @@ export default function Home() {
                           ? 'border-brand-primary bg-brand-primary/5'
                           : 'border-gray-200 hover:border-brand-primary/50 hover:bg-gray-50'
                       }`}
-                      onClick={() => {
-                        const input = document.createElement('input')
-                        input.type = 'file'
-                        input.accept = 'image/*,.heic,.heif'
-                        input.onchange = (e) => {
-                          const f = (e.target as HTMLInputElement).files?.[0]
-                          if (f) handleFile(f)
-                        }
-                        input.click()
-                      }}
+                      onClick={() => fileInputRef.current?.click()}
                     >
                       <Upload className="w-10 h-10 text-gray-300 mx-auto mb-3" />
                       <p className="font-semibold text-gray-700 mb-1">

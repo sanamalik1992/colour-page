@@ -54,9 +54,14 @@ export async function prepareImageForUpload(file: File, maxDim = 1800): Promise<
         if (!ctx) return file
         ctx.drawImage(img, 0, 0, outW, outH)
 
-        const blob: Blob | null = await new Promise((resolve) =>
-          canvas.toBlob((b) => resolve(b), 'image/jpeg', quality)
-        )
+        // Bound toBlob — on iOS it can occasionally never call back for a large
+        // decoded image, which would hang prep forever. On timeout we fall back
+        // to the original file (direct-to-storage upload has no size limit, so a
+        // larger original is fine).
+        const blob: Blob | null = await Promise.race([
+          new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/jpeg', quality)),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000)),
+        ])
         if (!blob) return file
 
         const smallEnough = blob.size <= MAX_UPLOAD_BYTES

@@ -6,6 +6,7 @@ import { verifySheet } from '@/lib/sheet-verify'
 import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet, buildWordPracticeSheet, buildComposedSheet } from '@/lib/topic-render'
 import { singleObjectPrompt, type Activity } from '@/lib/topic-prompt'
 import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
+import { isHeic, convertHeicToPng } from '@/lib/heic-convert'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
 export const maxDuration = 300 // Vercel Pro: 5 minutes
@@ -306,23 +307,40 @@ export async function POST(request: NextRequest) {
         }
       }
     } else {
-      // Photo path (existing): edit the uploaded image into line art.
+      // Photo path: edit the uploaded image into line art.
       const signedUrl = await getSignedUrl(job.input_storage_path)
       if (!signedUrl) throw new Error('Failed to get signed URL for input image')
 
       const inputRes = await fetch(signedUrl)
       if (!inputRes.ok) throw new Error('Failed to download input image')
-      const inputBuffer = Buffer.from(await inputRes.arrayBuffer())
+      let inputBuffer = Buffer.from(await inputRes.arrayBuffer())
+      let modelUrl = signedUrl
+
+      // HEIC safety net. The browser normally uploads a prepared JPEG, but a raw
+      // HEIC that couldn't be decoded client-side (rare, non-Apple browsers) can
+      // reach storage — and neither Replicate nor sharp can read HEIC. Convert
+      // to PNG, store it alongside, and point the model at that instead.
+      if (isHeic(job.input_storage_path)) {
+        try {
+          inputBuffer = Buffer.from(await convertHeicToPng(inputBuffer))
+          const convPath = job.input_storage_path.replace(/\.[^.]+$/, '-conv.png')
+          await supabase.storage.from('uploads').upload(convPath, inputBuffer, { contentType: 'image/png', upsert: true })
+          const convUrl = await getSignedUrl(convPath)
+          if (convUrl) modelUrl = convUrl
+        } catch (heicErr) {
+          console.error('HEIC conversion failed:', heicErr)
+          throw new Error("We couldn't read that photo format. Please try a JPG or PNG.")
+        }
+      }
 
       await updateJob(jobId, { progress: 15 })
 
-      // Replicate gets the ORIGINAL image URL directly — faster (no extra
-      // preprocess + re-upload) and higher quality (the model works best on the
-      // full-colour photo). Preprocessing is only done for the local CV fallback.
+      // Replicate gets the image URL directly — faster (no extra preprocess +
+      // re-upload) and higher quality. Preprocessing is only for the CV fallback.
       if (hasReplicate) {
         try {
           lineArtBuffer = await processWithReplicate(
-            signedUrl,
+            modelUrl,
             settings,
             async (pct) => { await updateJob(jobId!, { progress: pct }) }
           )
