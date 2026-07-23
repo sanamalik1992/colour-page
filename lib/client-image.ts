@@ -11,6 +11,11 @@
  * sidesteps HEIC decoding on the server. On any failure it falls back to the
  * original file so we never block the user.
  */
+// Keep the encoded upload comfortably under the serverless request-body limit
+// (Vercel ~4.5MB). Iterating down to this ceiling means a huge iPhone photo can
+// never 413 or stall a slow mobile upload.
+export const MAX_UPLOAD_BYTES = 3_500_000
+
 export async function prepareImageForUpload(file: File, maxDim = 1800): Promise<File> {
   try {
     if (typeof document === 'undefined') return file
@@ -31,24 +36,38 @@ export async function prepareImageForUpload(file: File, maxDim = 1800): Promise<
       const h = img.naturalHeight
       if (!w || !h) return file
 
-      const scale = Math.min(1, maxDim / Math.max(w, h))
-      const outW = Math.max(1, Math.round(w * scale))
-      const outH = Math.max(1, Math.round(h * scale))
-
-      const canvas = document.createElement('canvas')
-      canvas.width = outW
-      canvas.height = outH
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return file
-      ctx.drawImage(img, 0, 0, outW, outH)
-
-      const blob: Blob | null = await new Promise((resolve) =>
-        canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.9)
-      )
-      if (!blob) return file
-
+      // Encode, and if the result is still over the limit, shrink the dimension
+      // and drop quality and try again — so the payload is ALWAYS small enough
+      // to upload, regardless of the source photo's size.
+      let dim = maxDim
+      let quality = 0.9
       const name = file.name.replace(/\.[^.]+$/, '') || 'photo'
-      return new File([blob], `${name}.jpg`, { type: 'image/jpeg' })
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const scale = Math.min(1, dim / Math.max(w, h))
+        const outW = Math.max(1, Math.round(w * scale))
+        const outH = Math.max(1, Math.round(h * scale))
+
+        const canvas = document.createElement('canvas')
+        canvas.width = outW
+        canvas.height = outH
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return file
+        ctx.drawImage(img, 0, 0, outW, outH)
+
+        const blob: Blob | null = await new Promise((resolve) =>
+          canvas.toBlob((b) => resolve(b), 'image/jpeg', quality)
+        )
+        if (!blob) return file
+
+        const smallEnough = blob.size <= MAX_UPLOAD_BYTES
+        const cantShrinkMore = outW <= 900 && quality <= 0.6
+        if (smallEnough || cantShrinkMore) {
+          return new File([blob], `${name}.jpg`, { type: 'image/jpeg' })
+        }
+        dim = Math.round(dim * 0.8)
+        quality = Math.max(0.6, quality - 0.1)
+      }
+      return file
     } finally {
       URL.revokeObjectURL(url)
     }
