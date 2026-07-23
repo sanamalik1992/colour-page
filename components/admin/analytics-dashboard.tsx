@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Activity, Search, Image as ImageIcon, Sparkles, CheckCircle2, XCircle, Users } from 'lucide-react'
+import { Loader2, Activity, Search, Image as ImageIcon, Sparkles, CheckCircle2, XCircle, Users, Crown } from 'lucide-react'
 
 interface Bucket { total: number; photo: number; topic: number; done: number; failed: number; pro: number; free: number }
 interface Analytics {
@@ -13,6 +13,7 @@ interface Analytics {
   perDay: { day: string; total: number; photo: number; topic: number }[]
   topics: { top: { term: string; count: number }[]; recent: { term: string; at: string }[] }
   failingTopics: { term: string; count: number }[]
+  pro: { activeSubscribers: number; signups: { last24h: number; last7d: number }; perDay: { day: string; count: number }[] }
 }
 
 function ago(iso: string): string {
@@ -185,9 +186,33 @@ export function AnalyticsDashboard() {
           )}
         </section>
 
+        {/* PRO / PAYING USERS */}
+        <section>
+          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-2"><Crown className="w-4 h-4 text-amber-400" /> Pro subscribers</h2>
+          <div className="grid grid-cols-3 gap-3">
+            <Card label="Active paying users" value={<span className="text-amber-300">{data.pro.activeSubscribers}</span>} sub="total" />
+            <Card label="New Pro (24h)" value={data.pro.signups.last24h} />
+            <Card label="New Pro (7d)" value={data.pro.signups.last7d} />
+          </div>
+          <div className="mt-3 space-y-1">
+            {data.pro.perDay.map((d) => {
+              const max = Math.max(1, ...data.pro.perDay.map((x) => x.count))
+              return (
+                <div key={d.day} className="flex items-center gap-2 text-xs">
+                  <span className="w-14 text-gray-500 shrink-0">{d.day.slice(5)}</span>
+                  <div className="flex-1 bg-zinc-800 rounded h-3 overflow-hidden">
+                    <div className="h-full bg-amber-400/60" style={{ width: `${(d.count / max) * 100}%` }} />
+                  </div>
+                  <span className="w-8 text-right text-gray-400">{d.count}</span>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
         {/* USAGE */}
         <section>
-          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-2"><Users className="w-4 h-4" /> Free vs Pro</h2>
+          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-2"><Users className="w-4 h-4" /> Free vs Pro generations</h2>
           <div className="grid grid-cols-2 gap-3">
             <Card label="Pro generations (7d)" value={data.volumes.last7d.pro} />
             <Card label="Free generations (7d)" value={data.volumes.last7d.free} />
