@@ -75,6 +75,10 @@ export type ActivityKind =
   | { type: 'tenFrame'; instruction: string; whole: number; count: number } // make-N ten-frame visual
   | { type: 'partWhole'; instruction: string; whole: number; count: number } // part-whole model
   | { type: 'bonds'; instruction: string; whole: number; count: number; style: 'missing' | 'subtract' } // missing-number / inverse sentences
+  // Shapes — deterministic 2D/3D drawings + properties + sorting.
+  | { type: 'shapeGallery'; instruction: string; shapes: string[]; label: boolean } // name &/or colour shapes
+  | { type: 'shapeProps'; instruction: string; shapes: string[]; dims: string[] } // count sides/corners or faces/edges/vertices
+  | { type: 'shapeSort'; instruction: string; shapes: string[] } // sort into 2D / 3D
 
 // `pro` is retained on the type for schema stability but is no longer used to
 // gate content — every sheet renders all of its activities (free == Pro).
@@ -632,6 +636,77 @@ export function numberBondsPlan(rawTopic: string, age?: number): TopicPlan | nul
   }
 }
 
+// Shapes: "2d shapes", "3d shapes", "shapes", or a named non-trivial shape.
+function detectShapes(topic: string): '2d' | '3d' | 'both' | null {
+  const t = topic.toLowerCase()
+  const has3d = /\b3\s*-?\s*d\b|three[\s-]?dimensional/.test(t)
+  const has2d = /\b2\s*-?\s*d\b|two[\s-]?dimensional/.test(t)
+  const hasShapes = /\bshapes?\b/.test(t) || /\b(triangle|rectangle|pentagon|hexagon|octagon|cuboid|cylinder|sphere|pyramid|prism)s?\b/.test(t)
+  if (has2d && has3d) return 'both'
+  if (has3d) return '3d'
+  if (has2d) return '2d'
+  if (hasShapes) return 'both'
+  return null
+}
+
+/**
+ * A deterministic shapes sheet that actually TEACHES shapes — name & colour,
+ * count sides/corners (2D) or faces/edges/vertices (3D), and sort 2D vs 3D —
+ * instead of the old "colour a picture of some shapes". Age-shaped and correct.
+ */
+export function shapesPlan(rawTopic: string, age?: number): TopicPlan | null {
+  const kind = detectShapes(clean(rawTopic))
+  if (!kind) return null
+  const d = difficultyForAge(age)
+  const band = age == null ? 'mid' : age <= 7 ? 'young' : age <= 9 ? 'mid' : 'old'
+  const use3d = kind === '3d'
+  const title = kind === '2d' ? '2D shapes' : kind === '3d' ? '3D shapes' : 'Shapes'
+  const sortSet = ['square', 'cube', 'circle', 'sphere', 'triangle', 'cone']
+
+  let acts: Activity[]
+  if (band === 'young') {
+    const shapes = use3d ? ['cube', 'sphere', 'cylinder', 'cone'] : ['circle', 'triangle', 'square', 'rectangle']
+    acts = [
+      { type: 'note', text: 'Name and colour the shapes' },
+      { type: 'shapeGallery', instruction: 'Name and colour', shapes, label: true },
+      use3d
+        ? { type: 'shapeProps', instruction: 'How many faces', shapes: ['cube', 'cylinder', 'cone'], dims: ['faces'] }
+        : { type: 'shapeProps', instruction: 'How many sides', shapes: ['triangle', 'square', 'pentagon'], dims: ['sides'] },
+    ]
+  } else if (band === 'mid') {
+    acts = use3d
+      ? [
+          { type: 'note', text: 'Count the faces and edges' },
+          { type: 'shapeProps', instruction: 'Faces and edges', shapes: ['cube', 'cylinder', 'cone', 'pyramid'], dims: ['faces', 'edges'] },
+          { type: 'shapeSort', instruction: 'Sort the shapes', shapes: sortSet },
+        ]
+      : [
+          { type: 'note', text: 'Count the sides and corners' },
+          { type: 'shapeProps', instruction: 'Sides and corners', shapes: ['triangle', 'square', 'rectangle', 'pentagon', 'hexagon'], dims: ['sides', 'corners'] },
+          { type: 'shapeSort', instruction: 'Sort the shapes', shapes: sortSet },
+        ]
+  } else {
+    acts = use3d
+      ? [
+          { type: 'note', text: 'Faces, edges and vertices' },
+          { type: 'shapeProps', instruction: 'Faces edges vertices', shapes: ['cube', 'cuboid', 'cylinder', 'cone', 'pyramid'], dims: ['faces', 'edges', 'vertices'] },
+        ]
+      : [
+          { type: 'note', text: 'Shape properties' },
+          { type: 'shapeProps', instruction: 'Sides and corners', shapes: ['triangle', 'square', 'pentagon', 'hexagon'], dims: ['sides', 'corners'] },
+          { type: 'shapeProps', instruction: 'Faces edges vertices', shapes: ['cube', 'cylinder', 'cone', 'pyramid'], dims: ['faces', 'edges', 'vertices'] },
+        ]
+  }
+  return {
+    category: 'composed',
+    subject: title,
+    title: sheetTitle(title),
+    activities: acts,
+    prompt: '',
+    difficulty: d,
+  }
+}
+
 // Objects that begin with (or use) a grapheme.
 function objectsForGrapheme(g: string): string[] {
   if (g.length === 1) return LETTER_OBJECTS[g] || []
@@ -764,6 +839,10 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   // --- number bonds (part-whole pairs) — before generic sums ---
   const nb = numberBondsPlan(topic, age)
   if (nb) return nb
+
+  // --- shapes (2D/3D properties + sort) — before the shapes colour-page ---
+  const sp = shapesPlan(topic, age)
+  if (sp) return sp
 
   // --- simple sums (addition / subtraction), drawn deterministically ---
   const sums = detectSums(topic, difficulty)
