@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getUserPlan, FREE_LIMITS, USAGE_LIMITS_DISABLED, countTodaysUsage } from '@/lib/pro-gating'
-import { buildTopicPrompt, narrowBroadTopic } from '@/lib/topic-prompt'
+import { buildTopicPrompt, narrowBroadTopic, conceptPlan } from '@/lib/topic-prompt'
 import { aiPlanTopic } from '@/lib/topic-ai'
 import { findBlockedTerm } from '@/lib/blocklist'
 import { getServerUser } from '@/lib/supabase/auth-server'
@@ -79,9 +79,16 @@ export async function POST(request: NextRequest) {
     // and skip the blocking AI-planner round-trip. Everything else: interpret
     // with AI when available (long tail like "multiples of 10"), else the
     // deterministic keyword builder.
+    // Order matters: vague catch-alls and the common grammar concepts (nouns,
+    // verbs, adjectives) resolve to reliable, connected DETERMINISTIC sheets
+    // BEFORE the AI planner — the planner previously mislabelled adjectives as
+    // "name" and used an unrelated word bank. The AI handles the long tail.
     const tPlan = Date.now()
     const plan =
-      narrowBroadTopic(topic, age) || (await aiPlanTopic(topic, age)) || buildTopicPrompt(topic, age)
+      narrowBroadTopic(topic, age) ||
+      conceptPlan(topic, age) ||
+      (await aiPlanTopic(topic, age)) ||
+      buildTopicPrompt(topic, age)
     console.log(`[timing] plan "${topic}" ${Date.now() - tPlan}ms → ${plan.category}`)
 
     // Topic metadata lives in the settings JSON (no schema migration needed).
