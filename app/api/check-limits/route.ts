@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { USAGE_LIMITS_DISABLED, FREE_LIMITS, getUserPlan } from '@/lib/pro-gating'
+import { USAGE_LIMITS_DISABLED, FREE_LIMITS, getUserPlan, countTodaysUsage } from '@/lib/pro-gating'
 import { getServerUser } from '@/lib/supabase/auth-server'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
 
 // Reports today's remaining free allowance per mode, counted directly from the
 // jobs actually created (same source the create routes gate on — so the counter
@@ -31,22 +25,10 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  const startOfDay = new Date(new Date().setHours(0, 0, 0, 0)).toISOString()
-  const todaysJobs = () =>
-    supabase
-      .from('photo_jobs')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', sessionId || '')
-      .gte('created_at', startOfDay)
-      .in('status', ['queued', 'processing', 'rendering', 'done'])
-
-  const [photoRes, topicRes] = await Promise.all([
-    todaysJobs().not('input_storage_path', 'ilike', 'topic/%'),
-    todaysJobs().ilike('input_storage_path', 'topic/%'),
+  const [photoUsed, topicUsed] = await Promise.all([
+    countTodaysUsage(sessionId || '', 'photo'),
+    countTodaysUsage(sessionId || '', 'topic'),
   ])
-
-  const photoUsed = photoRes.count || 0
-  const topicUsed = topicRes.count || 0
   const photoLimit = FREE_LIMITS.photo_coloring
   const topicLimit = FREE_LIMITS.topic_sheet
 

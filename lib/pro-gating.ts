@@ -27,6 +27,34 @@ export const FREE_LIMITS = {
   dot_to_dot: 3,
 }
 
+// Only jobs that actually did work count against a free allowance. A job that
+// failed, or was created but never started (e.g. a dropped trigger, later
+// reaped to 'failed'), must NOT consume one of the user's daily generations —
+// otherwise a flaky upload that makes someone tap three times would wipe out
+// their whole allowance. 'queued' is excluded too: it either advances to
+// 'processing' (and then counts) or is reaped to 'failed' (and never counts).
+export const COUNTED_STATUSES = ['processing', 'rendering', 'done'] as const
+
+/**
+ * How many photo / topic jobs the user has genuinely used today, counted from
+ * the rows themselves (no RPC dependency). `kind` splits the shared photo_jobs
+ * table: topic sheets live under a `topic/` input path, photos do not.
+ */
+export async function countTodaysUsage(sessionId: string, kind: 'photo' | 'topic'): Promise<number> {
+  const startOfDay = new Date(new Date().setHours(0, 0, 0, 0)).toISOString()
+  let q = supabase
+    .from('photo_jobs')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', sessionId)
+    .gte('created_at', startOfDay)
+    .in('status', COUNTED_STATUSES as unknown as string[])
+  q = kind === 'topic'
+    ? q.ilike('input_storage_path', 'topic/%')
+    : q.not('input_storage_path', 'ilike', 'topic/%')
+  const { count } = await q
+  return count || 0
+}
+
 export interface UserPlan {
   isPro: boolean
   email: string | null
