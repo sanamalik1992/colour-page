@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { checkUsage, recordUsage } from '@/lib/pro-gating'
+import { getUserPlan, FREE_LIMITS, USAGE_LIMITS_DISABLED } from '@/lib/pro-gating'
 import { buildTopicPrompt, narrowBroadTopic } from '@/lib/topic-prompt'
 import { aiPlanTopic } from '@/lib/topic-ai'
 import { findBlockedTerm } from '@/lib/blocklist'
@@ -54,17 +54,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Usage / Pro gating — topic sheets have their own daily allowance.
-    const userId = email || sessionId
-    const usage = await checkUsage(userId, 'topic_sheet', email)
-    if (!usage.allowed) {
-      const message = usage.isPro
-        ? 'Daily limit reached. Try again tomorrow.'
-        : 'You have used your free learning sheets for today. Upgrade to Pro for more!'
-      return NextResponse.json(
-        { error: message, isPro: usage.isPro, used: usage.used, limit: usage.limit },
-        { status: 429 }
-      )
+    // Pro status (from the linked account) — Pro is unlimited.
+    const isPro = (await getUserPlan(email)).isPro
+
+    // Learning-sheet daily allowance (generous; Pro unlimited). Counted directly
+    // from today's rows — no RPC dependency. The insert below is the record.
+    if (!isPro && !USAGE_LIMITS_DISABLED) {
+      const startOfDay = new Date(new Date().setHours(0, 0, 0, 0)).toISOString()
+      const { count } = await supabase
+        .from('photo_jobs')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', sessionId)
+        .ilike('input_storage_path', 'topic/%')
+        .gte('created_at', startOfDay)
+        .in('status', ['queued', 'processing', 'rendering', 'done'])
+      if ((count || 0) >= FREE_LIMITS.topic_sheet) {
+        return NextResponse.json(
+          {
+            error: `You've made your ${FREE_LIMITS.topic_sheet} free learning sheets for today — Pro unlocks unlimited.`,
+            isPro: false,
+            limitReached: true,
+            feature: 'topic_sheet',
+          },
+          { status: 429 }
+        )
+      }
     }
 
     // Vague catch-all topics ("alphabet", "phonics") → a focused, fully
@@ -92,14 +106,6 @@ export async function POST(request: NextRequest) {
       numbers: plan.numbers,
       objects: plan.objects,
       activities: plan.activities,
-    }
-
-    const isPro = usage.isPro
-
-    // Record usage (atomic increment) before kicking off work.
-    const { allowed } = await recordUsage(userId, 'topic_sheet', email)
-    if (!allowed) {
-      return NextResponse.json({ error: 'Usage limit reached', isPro }, { status: 429 })
     }
 
     const jobId = crypto.randomUUID()

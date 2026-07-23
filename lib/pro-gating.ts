@@ -12,11 +12,20 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// TEMPORARY: when true, all daily/lifetime usage limits are bypassed (for
-// testing). Flip back to false to re-enable limits. Also honours an env
-// override so it can be toggled without a deploy.
-export const USAGE_LIMITS_DISABLED =
-  true || process.env.DISABLE_USAGE_LIMITS === 'true'
+// Master switch for daily usage limits. Limits are ENFORCED in production; an
+// env override can disable them without a deploy (for testing).
+export const USAGE_LIMITS_DISABLED = process.env.DISABLE_USAGE_LIMITS === 'true'
+
+// Free daily allowances, enforced by counting rows (no RPC dependency). Pro is
+// unlimited. Tuned to cost: the image-model paths (photo, standalone dot-to-dot)
+// are tightly capped; learning sheets are mostly deterministic (near-zero cost
+// to serve), so their free allowance is generous — a real parent never hits it,
+// and it still bounds a runaway loop of picture-heavy theme topics.
+export const FREE_LIMITS = {
+  photo_coloring: 3,
+  topic_sheet: 30,
+  dot_to_dot: 3,
+}
 
 export interface UserPlan {
   isPro: boolean

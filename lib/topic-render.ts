@@ -1373,13 +1373,14 @@ export async function buildComposedSheet(
   title: string | undefined,
   activities: Activity[],
   settings: PhotoJobSettings,
-  isPro: boolean,
   genPicture?: (obj: string) => Promise<Buffer | null>,
   // Fires as each unique object finishes so the caller can show honest progress
   // during the (otherwise silent) picture-generation phase.
   onPicProgress?: (done: number, total: number) => void
 ): Promise<Buffer> {
-  const acts = activities.filter((a) => isPro || !a.pro).slice(0, 6)
+  // Every sheet renders ALL its activities — free and Pro are identical in
+  // content. Quality is for everyone; Pro is more sheets, not better ones.
+  const acts = activities.slice(0, 6)
   const bodyX = MARGIN
   const bodyW = A4_W - MARGIN * 2
 

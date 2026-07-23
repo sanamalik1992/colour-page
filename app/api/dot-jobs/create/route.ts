@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { checkUsage, recordUsage } from '@/lib/pro-gating'
+import { getUserPlan, FREE_LIMITS, USAGE_LIMITS_DISABLED } from '@/lib/pro-gating'
 import { generateDotToDot } from '@/lib/dot-to-dot-engine'
 import { processWithReplicate } from '@/lib/image-processing'
 import { isHeic, convertHeicToPng } from '@/lib/heic-convert'
@@ -62,20 +62,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Session ID required' }, { status: 400 })
     }
 
-    // Server-side usage check
+    // Pro is unlimited; free gets a small daily allowance (this is the expensive
+    // image-model path). Counted directly from today's dot_jobs rows.
     const userId = email || sessionId
-    const usage = await checkUsage(userId, 'dot_to_dot', email)
-
-    if (!usage.allowed) {
-      const message = usage.isPro
-        ? 'Daily limit reached. Try again tomorrow.'
-        : 'You have used your free dot-to-dot try. Upgrade to Pro for unlimited access!'
-      return NextResponse.json({
-        error: message,
-        isPro: usage.isPro,
-        used: usage.used,
-        limit: usage.limit,
-      }, { status: 429 })
+    const isPro = (await getUserPlan(email)).isPro
+    if (!isPro && !USAGE_LIMITS_DISABLED) {
+      const startOfDay = new Date(new Date().setHours(0, 0, 0, 0)).toISOString()
+      const { count } = await supabase
+        .from('dot_jobs')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .gte('created_at', startOfDay)
+        .in('status', ['processing', 'done'])
+      if ((count || 0) >= FREE_LIMITS.dot_to_dot) {
+        return NextResponse.json({
+          error: `You've used your ${FREE_LIMITS.dot_to_dot} free dot-to-dots for today — Pro unlocks unlimited.`,
+          isPro: false,
+          limitReached: true,
+          feature: 'dot_to_dot',
+        }, { status: 429 })
+      }
     }
 
     // Read the upload once; we process from this buffer directly.
@@ -111,11 +117,6 @@ export async function POST(request: NextRequest) {
         .upload(storagePath, buffer, { contentType, upsert: true })
     }
 
-    // Record usage (atomic increment)
-    const { allowed } = await recordUsage(userId, 'dot_to_dot', email)
-    if (!allowed) {
-      return NextResponse.json({ error: 'Usage limit reached', isPro: usage.isPro }, { status: 429 })
-    }
 
     const settings: DotJobSettings = {
       dotCount,
@@ -133,7 +134,7 @@ export async function POST(request: NextRequest) {
         input_storage_path: storagePath,
         original_filename: file.name,
         settings,
-        is_pro: usage.isPro,
+        is_pro: isPro,
         progress: 10,
       })
       .select('id')
@@ -205,8 +206,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       jobId: job.id,
-      remaining: usage.remaining - 1,
-      isPro: usage.isPro,
+      isPro,
       status: 'done',
     })
   } catch (error) {

@@ -8,7 +8,6 @@ import {
   Loader2,
   Sparkles,
   Infinity as InfinityIcon,
-  Stamp,
   Palette,
   ShieldCheck,
   Lock,
@@ -17,7 +16,6 @@ import {
 import { useRouter } from 'next/navigation'
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
-import { ProActivityPreviews } from '@/components/ui/pro-activity-previews'
 import { useMe } from '@/hooks/useMe'
 
 // An annual plan is only offered when a separate annual price is configured,
@@ -30,10 +28,9 @@ const PLANS = {
 } as const
 
 const FEATURES = [
-  { icon: InfinityIcon, color: 'text-emerald-500', bg: 'bg-emerald-50', title: 'Unlimited pages', desc: 'Make as many colouring pages as you like' },
-  { icon: Stamp, color: 'text-rose-500', bg: 'bg-rose-50', title: 'No watermark', desc: 'Clean, print-ready pages every time' },
-  { icon: Palette, color: 'text-violet-500', bg: 'bg-violet-50', title: 'Unlimited dot-to-dot', desc: 'Turn photos into number puzzles too' },
-  { icon: Sparkles, color: 'text-sky-500', bg: 'bg-sky-50', title: 'Bonus activities', desc: 'An extra age-matched activity on every learning sheet' },
+  { icon: InfinityIcon, color: 'text-emerald-500', bg: 'bg-emerald-50', title: 'Unlimited colouring pages', desc: 'Turn as many photos as you like into pages' },
+  { icon: Sparkles, color: 'text-sky-500', bg: 'bg-sky-50', title: 'Unlimited learning sheets', desc: 'Every topic, every day — no limit' },
+  { icon: Palette, color: 'text-violet-500', bg: 'bg-violet-50', title: 'Unlimited dot-to-dot', desc: 'Turn any photo into a number puzzle' },
 ]
 
 export default function ProPage() {
@@ -203,17 +200,17 @@ export default function ProPage() {
             </div>
           </div>
 
-          {/* Learning-sheet activity showcase */}
+          {/* What free already includes — free is genuinely good, not a taster */}
           <div className="mt-8 rounded-2xl border border-brand-primary/30 bg-zinc-900/60 p-6 sm:p-8">
             <div className="flex items-center gap-2 mb-1">
-              <Sparkles className="w-5 h-5 text-brand-primary" />
-              <h2 className="text-base font-bold text-white">Richer learning sheets</h2>
+              <Check className="w-5 h-5 text-emerald-400" />
+              <h2 className="text-base font-bold text-white">Free is genuinely good</h2>
             </div>
-            <p className="text-sm text-gray-400 mb-6">
-              Free sheets are already full and varied — several activities per topic. Pro adds an
-              extra, age-matched activity on top: tracing, letter hunts, word searches and writing.
+            <p className="text-sm text-gray-400">
+              Every free sheet is the full, varied version — all the activities, no watermark,
+              print-ready. Pro isn&apos;t about better sheets; it&apos;s simply making as many as you
+              like, whenever you like.
             </p>
-            <ProActivityPreviews />
           </div>
 
           {/* Free vs Pro */}
@@ -224,8 +221,10 @@ export default function ProPage() {
               <div className="p-4 text-center font-bold text-brand-primary border-l border-zinc-700 bg-brand-primary/5">Pro</div>
               {[
                 ['Colouring pages', '3 / day', 'Unlimited'],
-                ['Learning activities', 'Full varied sheet', 'Full sheet + a bonus activity'],
-                ['Watermark', 'Yes', 'None'],
+                ['Learning sheets', '30 / day', 'Unlimited'],
+                ['Dot-to-dot', '3 / day', 'Unlimited'],
+                ['Full activity sheets', 'Yes', 'Yes'],
+                ['Watermark', 'None', 'None'],
               ].map(([label, free, pro], i) => (
                 <div key={label} className="contents">
                   <div className={`p-4 text-gray-300 ${i > 0 ? 'border-t border-zinc-700/60' : ''}`}>{label}</div>
