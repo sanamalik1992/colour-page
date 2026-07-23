@@ -97,6 +97,29 @@ export async function GET() {
   const { data: recentTopics } = await supabase
     .from('topic_searches').select('term, last_at').order('last_at', { ascending: false }).limit(15)
 
+  // --- Pro / paying users ---
+  // Total active paying subscribers = customers currently flagged Pro (the
+  // webhook keeps is_pro in sync with the live Stripe subscription status).
+  const { count: activePro } = await supabase
+    .from('stripe_customers').select('*', { count: 'exact', head: true }).eq('is_pro', true)
+
+  // New Pro signups over time = subscriptions created (created_at ≈ subscribe time).
+  const { data: subs } = await supabase
+    .from('stripe_subscriptions').select('created_at').gte('created_at', since14).order('created_at', { ascending: false }).limit(3000)
+  let proSignups24 = 0, proSignups7 = 0
+  const proPerDayMap: Record<string, number> = {}
+  for (const s of subs || []) {
+    const t = new Date(s.created_at as string).getTime()
+    if (t >= win24) proSignups24++
+    if (t >= win7) proSignups7++
+    const day = new Date(s.created_at as string).toISOString().slice(0, 10)
+    proPerDayMap[day] = (proPerDayMap[day] || 0) + 1
+  }
+  const proPerDay = Array.from({ length: 14 }, (_, i) => {
+    const day = new Date(now - i * DAY).toISOString().slice(0, 10)
+    return { day, count: proPerDayMap[day] || 0 }
+  })
+
   // --- Top failing topics (7d) ---
   const { data: failedRows } = await supabase
     .from('photo_jobs').select('settings').eq('status', 'failed').gte('created_at', iso(win7)).limit(400)
@@ -120,5 +143,10 @@ export async function GET() {
       recent: (recentTopics || []).map((t) => ({ term: t.term, at: t.last_at })),
     },
     failingTopics: topFailing,
+    pro: {
+      activeSubscribers: activePro || 0,
+      signups: { last24h: proSignups24, last7d: proSignups7 },
+      perDay: proPerDay,
+    },
   })
 }
