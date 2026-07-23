@@ -78,7 +78,10 @@ export async function POST(request: NextRequest) {
 
     // Send email via Resend
     const { data: emailData, error: emailError } = await resend.emails.send({
+      // Sender must be a verified domain (Resend rejects a gmail "from"); replies
+      // are routed to our contact inbox.
       from: 'Colour.page <noreply@colour.page>',
+      replyTo: 'colour.page123@gmail.com',
       to: email,
       subject: '🎨 Your Colouring Page is Ready!',
       html: `
