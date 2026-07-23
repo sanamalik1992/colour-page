@@ -578,6 +578,57 @@ function abcOrderBlock(words: string[], x: number, top: number, w: number, h: nu
   return s
 }
 
+// Deterministic letter shuffle (stable across renders, no Math.random so the
+// output is reproducible) for the "unscramble the word" activity. Guarantees
+// the result differs from the original spelling when the word allows it.
+function scrambleWord(word: string, seed: number): string {
+  const chars = word.split('')
+  let state = ((seed + 1) * 2654435761) >>> 0
+  const rnd = () => { state = (state * 1103515245 + 12345) >>> 0; return state / 0x100000000 }
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1))
+    ;[chars[i], chars[j]] = [chars[j], chars[i]]
+  }
+  let out = chars.join('')
+  if (out === word && word.length > 1) out = word.slice(1) + word[0]
+  return out
+}
+
+// "Unscramble the word": scrambled letters on the left, an arrow, then a
+// write-in line to spell the word correctly. Age 9–10 spelling practice.
+function unscrambleBlock(words: string[], x: number, top: number, w: number, h: number): string {
+  const list = words.map((word) => word.toUpperCase().replace(/[^A-Z]/g, '')).filter((word) => word.length >= 3).slice(0, 4)
+  if (!list.length) return ''
+  const rowH = Math.min(150, h / list.length)
+  const longest = list.reduce((m, word) => Math.max(m, word.length), 1)
+  const spreadLen = longest * 2 - 1 // letters interleaved with spaces
+  let gh = Math.max(40, Math.min(rowH * 0.5, 88))
+  const maxSpreadW = w * 0.46
+  while (numberWidth('X'.repeat(spreadLen), gh) > maxSpreadW && gh > 40) gh -= 6
+  const numH = Math.round(gh * 0.72)
+  let s = ''
+  list.forEach((word, i) => {
+    const scr = scrambleWord(word, i)
+    const y = top + i * rowH
+    const gy = y + (rowH - gh) / 2
+    s += numberSvg(String(i + 1), x, gy + (gh - numH) / 2, numH, 12)
+    let cx = x + numberWidth(String(i + 1), numH) + 44
+    const spread = scr.split('').join(' ')
+    s += numberSvg(spread, cx, gy, gh, 10, { color: '#111' })
+    cx += maxSpreadW + gh * 0.4
+    // arrow →
+    const midY = gy + gh / 2
+    const aLen = gh * 0.7
+    s += `<path d="M${cx.toFixed(1)},${midY.toFixed(1)} h${aLen.toFixed(1)}" stroke="#c9c4ba" stroke-width="4" fill="none" stroke-linecap="round"/>`
+    s += `<path d="M${(cx + aLen).toFixed(1)},${midY.toFixed(1)} l${(-gh * 0.2).toFixed(1)},${(-gh * 0.15).toFixed(1)} m${(gh * 0.2).toFixed(1)},${(gh * 0.15).toFixed(1)} l${(-gh * 0.2).toFixed(1)},${(gh * 0.15).toFixed(1)}" stroke="#c9c4ba" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
+    cx += aLen + gh * 0.5
+    // write-in line
+    const lineY = gy + gh
+    s += `<line x1="${cx.toFixed(1)}" y1="${lineY.toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${lineY.toFixed(1)}" stroke="#d0cabf" stroke-width="3"/>`
+  })
+  return s
+}
+
 /**
  * 6–8 band: "write the missing sound". Sticker grid where each picture has the
  * word underneath with the target grapheme replaced by a write-in line.
@@ -646,88 +697,116 @@ export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string
 }
 
 /**
- * 9–10 band: a word-search puzzle using the target words, a "find these" list,
- * and lined space to write a sentence. Fully deterministic — no model needed.
+ * 9–10 band: a full, varied worksheet — word search → unscramble the words →
+ * put them in ABC order (→ write a sentence, for Pro). Fully deterministic; no
+ * image model needed. Matches the 3–4 activity mix younger age bands get.
  */
 export async function buildLetterPuzzleSheet(letter: string, words: string[], settings: PhotoJobSettings, isPro = false): Promise<Buffer> {
   const chars = letter.toUpperCase().slice(0, 3)
   const requested = words.map((w) => w.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean).slice(0, 6)
-  // Size the grid to the LONGEST word (not the shortest) so every word fits.
-  const maxLen = requested.reduce((m, w) => Math.max(m, w.length), 0)
-  const size = Math.max(9, Math.min(14, maxLen + 2))
-  const { grid, placed } = makeWordSearch(requested, size)
-  // Only list words that were actually placed — never ask a child to find a
-  // word that isn't in the grid.
-  const list = placed.length ? placed : requested
+  const bodyX = MARGIN
+  const bodyW = A4_W - MARGIN * 2
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${A4_W}" height="${A4_H}" viewBox="0 0 ${A4_W} ${A4_H}">`
   svg += `<rect width="${A4_W}" height="${A4_H}" fill="#ffffff"/>`
 
-  // Title + header grapheme
-  let headTop = MARGIN * 0.4
+  // Title + header grapheme.
+  let y = MARGIN * 0.4
   if (settings.title) {
     const th = 52
     const tw = textWidth(settings.title, th)
-    svg += textSvg(settings.title, (A4_W - tw) / 2, headTop, th, 12, { color: '#111' })
-    const uy = headTop + th + 14
+    svg += textSvg(settings.title, (A4_W - tw) / 2, y, th, 12, { color: '#111' })
+    const uy = y + th + 14
     svg += `<line x1="${((A4_W - tw) / 2).toFixed(1)}" y1="${uy}" x2="${((A4_W + tw) / 2).toFixed(1)}" y2="${uy}" stroke="#F2A81E" stroke-width="6" stroke-linecap="round"/>`
-    headTop = uy + 26
+    y = uy + 26
   }
-  const hH = Math.round(A4_H * 0.08)
-  const hGlyphH = Math.round(hH * 0.8)
-  svg += numberSvg(chars, (A4_W - numberWidth(chars, hGlyphH)) / 2, headTop, hGlyphH, 22)
+  const hGlyphH = Math.round(A4_H * 0.064)
+  svg += numberSvg(chars, (A4_W - numberWidth(chars, hGlyphH)) / 2, y, hGlyphH, 22)
+  y += hGlyphH + Math.round(A4_H * 0.018)
 
-  // Word-search grid — a little smaller for Pro to leave room for ABC order.
-  const gridTop = headTop + hGlyphH + Math.round(A4_H * 0.02)
-  const gridMax = Math.min(A4_W - MARGIN * 2, Math.round(A4_H * (isPro ? 0.42 : 0.5)))
-  const cell = Math.floor(gridMax / size)
-  const gridSize = cell * size
-  const gridX = Math.round((A4_W - gridSize) / 2)
-  svg += `<rect x="${gridX}" y="${gridTop}" width="${gridSize}" height="${gridSize}" fill="none" stroke="#c9c4ba" stroke-width="3" rx="24"/>`
-  const letterH = Math.round(cell * 0.6)
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      const ch = grid[r][c]
-      const lw = numberWidth(ch, letterH)
-      svg += numberSvg(ch, gridX + c * cell + (cell - lw) / 2, gridTop + r * cell + (cell - letterH) / 2, letterH, 8)
-    }
-  }
+  const bottom = A4_H - MARGIN
+  const remaining = bottom - y
+  const gap = 40
+  // Region proportions. Free: search / unscramble / ABC order (3 activities).
+  // Pro: the same three, tighter, plus a write-a-sentence region (4 activities).
+  const fr = isPro ? [0.40, 0.22, 0.20, 0.18] : [0.48, 0.26, 0.26]
 
-  // "FIND" list — wraps onto NEW lines when it runs out of width (the old code
-  // reset x on the same line, drawing words on top of each other).
-  const listY = gridTop + gridSize + Math.round(A4_H * 0.03)
-  const labelH = 54
-  svg += textSvg('FIND', MARGIN, listY, labelH, 12)
-  const listStartX = MARGIN + textWidth('FIND', labelH) + labelH * 0.6
-  const wordH = 48
-  const wordGap = wordH * 0.7
-  const lineGap = wordH * 1.55
-  const maxX = A4_W - MARGIN
-  let wx = listStartX
-  let wy = listY
-  for (const w of list) {
-    const ww = numberWidth(w, wordH)
-    if (wx > listStartX && wx + ww > maxX) { wx = listStartX; wy += lineGap } // wrap DOWN
-    svg += numberSvg(w, wx, wy + (labelH - wordH) / 2, wordH, 8)
-    wx += ww + wordGap
-  }
-  const listBottom = wy + wordH
-
-  // Activity 2 (free + Pro): write a sentence — placed below the actual list end.
-  const sentTop = listBottom + Math.round(A4_H * 0.03)
-  svg += textSvg('WRITE A SENTENCE', MARGIN, sentTop, 58, 11)
-  const sentLines = isPro ? 2 : 3
-  for (let i = 0; i < sentLines; i++) {
-    const y = sentTop + 140 + i * 130
-    svg += `<line x1="${MARGIN}" y1="${y}" x2="${A4_W - MARGIN}" y2="${y}" stroke="#d0cabf" stroke-width="3"/>`
-  }
-
-  // Activity 3 (Pro only): put the words in ABC order.
-  if (isPro) {
-    const abcTop = sentTop + 140 + sentLines * 130 + Math.round(A4_H * 0.02)
-    const { svg: hSvg, nextY } = headingSvg('WRITE IN ABC ORDER', MARGIN, abcTop)
+  // --- Activity 1: word search (grid + a "find" list under it) ---------------
+  {
+    const { svg: hSvg, nextY } = headingSvg('WORD SEARCH', bodyX, y)
     svg += hSvg
-    svg += abcOrderBlock(list, MARGIN, nextY, A4_W - MARGIN * 2, A4_H - MARGIN - nextY)
+    const h1 = remaining * fr[0] - (nextY - y)
+    // Size the grid to the LONGEST word so every word fits and can be placed.
+    const maxLen = requested.reduce((m, w) => Math.max(m, w.length), 0)
+    const size = Math.max(9, Math.min(14, maxLen + 2))
+    const { grid, placed } = makeWordSearch(requested, size)
+    // Only list words actually placed — never ask for one that isn't in the grid.
+    const list = placed.length ? placed : requested
+    const findH = 150
+    const gridArea = Math.max(0, h1 - findH)
+    const gridMax = Math.min(bodyW, gridArea)
+    const cell = Math.floor(gridMax / size)
+    const gridSize = cell * size
+    const gridX = Math.round((A4_W - gridSize) / 2)
+    const gridTop = nextY
+    svg += `<rect x="${gridX}" y="${gridTop}" width="${gridSize}" height="${gridSize}" fill="none" stroke="#c9c4ba" stroke-width="3" rx="24"/>`
+    const letterH = Math.round(cell * 0.6)
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        const ch = grid[r][c]
+        const lw = numberWidth(ch, letterH)
+        svg += numberSvg(ch, gridX + c * cell + (cell - lw) / 2, gridTop + r * cell + (cell - letterH) / 2, letterH, 8)
+      }
+    }
+    // "FIND" list, wrapping onto new lines when it runs out of width.
+    const listY = gridTop + gridSize + 30
+    const labelH = 46
+    svg += textSvg('FIND', bodyX, listY, labelH, 11)
+    const listStartX = bodyX + textWidth('FIND', labelH) + labelH * 0.6
+    const wordH = 42
+    const wordGap = wordH * 0.7
+    const lineGap = wordH * 1.5
+    const maxX = A4_W - MARGIN
+    let wx = listStartX
+    let wy = listY
+    for (const w of list) {
+      const ww = numberWidth(w, wordH)
+      if (wx > listStartX && wx + ww > maxX) { wx = listStartX; wy += lineGap }
+      svg += numberSvg(w, wx, wy + (labelH - wordH) / 2, wordH, 8)
+      wx += ww + wordGap
+    }
+    y = nextY + h1 + gap
+  }
+
+  // --- Activity 2: unscramble the words --------------------------------------
+  {
+    const { svg: hSvg, nextY } = headingSvg('UNSCRAMBLE THE WORDS', bodyX, y)
+    svg += hSvg
+    const h2 = remaining * fr[1] - (nextY - y)
+    svg += unscrambleBlock(requested, bodyX, nextY, bodyW, h2)
+    y = nextY + h2 + gap
+  }
+
+  // --- Activity 3: put the words in ABC order (now free, not Pro-only) --------
+  {
+    const { svg: hSvg, nextY } = headingSvg('WRITE IN ABC ORDER', bodyX, y)
+    svg += hSvg
+    const h3 = isPro ? remaining * fr[2] - (nextY - y) : bottom - nextY
+    svg += abcOrderBlock(requested, bodyX, nextY, bodyW, h3)
+    y = nextY + h3 + gap
+  }
+
+  // --- Activity 4 (Pro): write a sentence ------------------------------------
+  if (isPro) {
+    const { svg: hSvg, nextY } = headingSvg('WRITE A SENTENCE', bodyX, y)
+    svg += hSvg
+    const h4 = bottom - nextY
+    const lines = Math.max(2, Math.min(3, Math.floor(h4 / 130)))
+    const lineStep = h4 / (lines + 0.5)
+    for (let i = 0; i < lines; i++) {
+      const ly = nextY + (i + 1) * lineStep
+      svg += `<line x1="${bodyX}" y1="${ly.toFixed(1)}" x2="${A4_W - MARGIN}" y2="${ly.toFixed(1)}" stroke="#d0cabf" stroke-width="3"/>`
+    }
   }
 
   svg += `</svg>`
