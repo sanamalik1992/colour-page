@@ -79,6 +79,21 @@ export type ActivityKind =
   | { type: 'shapeGallery'; instruction: string; shapes: string[]; label: boolean } // name &/or colour shapes
   | { type: 'shapeProps'; instruction: string; shapes: string[]; dims: string[] } // count sides/corners or faces/edges/vertices
   | { type: 'shapeSort'; instruction: string; shapes: string[] } // sort into 2D / 3D
+  // Reusable, deterministic sorters/matchers (unlock many topics: odd/even,
+  // grammar word-class sorts, synonym/antonym matching, etc.).
+  | { type: 'sortTwoGroups'; instruction: string; items: string[]; labelA: string; labelB: string } // word bank → two labelled bins
+  | { type: 'matchLines'; instruction: string; left: string[]; right: string[] } // draw a line to join each pair
+  // Fractions — deterministic shaded shapes and fractions of amounts.
+  | { type: 'fractionShade'; instruction: string; fractions: { n: number; d: number }[]; mode: 'shade' | 'write' } // colour the fraction / name the shaded fraction
+  | { type: 'fractionOf'; instruction: string; problems: { n: number; d: number; whole: number }[] } // n/d of an amount, with countable dots
+  // Comparing numbers with < > =.
+  | { type: 'compareNumbers'; instruction: string; pairs: { a: number; b: number }[] }
+  // Place value — base-10 tens rods + unit cubes, write the number.
+  | { type: 'placeValue'; instruction: string; numbers: number[] }
+  // Counting / skip-counting: a track of numbers with blanks to fill.
+  | { type: 'numberTrack'; instruction: string; start: number; step: number; count: number }
+  // Money — draw UK coins, total them into a box.
+  | { type: 'coins'; instruction: string; groups: number[][] }
 
 // `pro` is retained on the type for schema stability but is no longer used to
 // gate content — every sheet renders all of its activities (free == Pro).
@@ -709,6 +724,198 @@ export function shapesPlan(rawTopic: string, age?: number): TopicPlan | null {
   }
 }
 
+// ---- Fractions -------------------------------------------------------------
+
+function detectFractions(topic: string): boolean {
+  return /\bfractions?\b|\bhalf\b|\bhalves\b|\bquarters?\b|\bthirds?\b|\bfifths?\b|\bsixths?\b|\bequivalent fraction/i.test(topic)
+}
+
+/**
+ * A deterministic fractions sheet — shaded shapes and fractions of amounts,
+ * correct by construction. Age-shaped: 5–7 colour halves/quarters, 8–9 name the
+ * shaded fraction and find simple fractions of amounts, 10+ harder denominators
+ * and non-unit fractions of amounts (the biggest KS2 parent worry).
+ */
+export function fractionsPlan(rawTopic: string, age?: number): TopicPlan | null {
+  if (!detectFractions(clean(rawTopic))) return null
+  const d = difficultyForAge(age)
+  const band = age == null ? 'mid' : age <= 7 ? 'young' : age <= 9 ? 'mid' : 'old'
+  let acts: Activity[]
+  if (band === 'young') {
+    acts = [
+      { type: 'note', text: 'Colour the fraction shown under each bar' },
+      { type: 'fractionShade', instruction: 'Colour the fraction', mode: 'shade', fractions: [{ n: 1, d: 2 }, { n: 1, d: 2 }, { n: 1, d: 4 }, { n: 3, d: 4 }] },
+      { type: 'fractionShade', instruction: 'Write the fraction that is shaded', mode: 'write', fractions: [{ n: 1, d: 2 }, { n: 1, d: 4 }] },
+    ]
+  } else if (band === 'mid') {
+    acts = [
+      { type: 'note', text: 'Name the shaded fraction, then find fractions of amounts' },
+      { type: 'fractionShade', instruction: 'Write the shaded fraction', mode: 'write', fractions: [{ n: 1, d: 2 }, { n: 1, d: 3 }, { n: 1, d: 4 }, { n: 2, d: 3 }, { n: 3, d: 4 }, { n: 2, d: 5 }] },
+      { type: 'fractionShade', instruction: 'Colour the fraction', mode: 'shade', fractions: [{ n: 1, d: 3 }, { n: 3, d: 4 }, { n: 2, d: 5 }, { n: 5, d: 6 }] },
+      { type: 'fractionOf', instruction: 'Find the fraction of each amount', problems: [{ n: 1, d: 2, whole: 8 }, { n: 1, d: 4, whole: 8 }, { n: 1, d: 3, whole: 9 }, { n: 1, d: 2, whole: 10 }] },
+    ]
+  } else {
+    acts = [
+      { type: 'note', text: 'Name each shaded fraction and find fractions of amounts' },
+      { type: 'fractionShade', instruction: 'Write the shaded fraction', mode: 'write', fractions: [{ n: 2, d: 3 }, { n: 3, d: 4 }, { n: 3, d: 5 }, { n: 5, d: 6 }, { n: 2, d: 4 }, { n: 4, d: 8 }] },
+      { type: 'fractionOf', instruction: 'Find the fraction of each amount', problems: [{ n: 1, d: 2, whole: 12 }, { n: 1, d: 4, whole: 12 }, { n: 2, d: 3, whole: 12 }, { n: 3, d: 4, whole: 16 }, { n: 2, d: 5, whole: 10 }] },
+      { type: 'fractionOf', instruction: 'More fractions of amounts', problems: [{ n: 3, d: 5, whole: 20 }, { n: 5, d: 6, whole: 18 }, { n: 3, d: 8, whole: 16 }, { n: 2, d: 7, whole: 14 }, { n: 4, d: 9, whole: 18 }] },
+    ]
+  }
+  return { category: 'composed', subject: 'Fractions', title: sheetTitle('Fractions'), activities: acts, prompt: '', difficulty: d }
+}
+
+// ---- Comparing numbers < > = ----------------------------------------------
+
+function detectCompare(topic: string): boolean {
+  return /\bcompar\w+\b|\bgreater than\b|\bless than\b|\bmore than\b|\bfewer than\b|\bbigger (?:or|than)\b|\bsmaller (?:or|than)\b|\border\w* numbers?\b|greater or less/i.test(topic)
+}
+
+// Age-scaled ranges of number pairs to compare with < > =. Deterministic pairs
+// (index-seeded) so the sheet is stable and always has a defined answer.
+export function comparePlan(rawTopic: string, age?: number): TopicPlan | null {
+  if (!detectCompare(clean(rawTopic))) return null
+  const d = difficultyForAge(age)
+  const band = age == null ? 'mid' : age <= 7 ? 'young' : age <= 9 ? 'mid' : 'old'
+  const maxV = band === 'young' ? 20 : band === 'mid' ? 100 : 1000
+  const rng = mkRng(maxV * 7 + 13)
+  const ri = (lo: number, hi: number) => lo + Math.floor(rng() * (hi - lo + 1))
+  const lo = band === 'young' ? 1 : 10
+  const makePairs = (count: number, hi: number): { a: number; b: number }[] => {
+    const out: { a: number; b: number }[] = []
+    for (let i = 0; i < count; i++) {
+      const a = ri(lo, hi)
+      let b = ri(lo, hi)
+      if (i % 6 === 5) b = a // ~1 in 6 equal, so = is genuinely needed
+      out.push({ a, b })
+    }
+    return out
+  }
+  const n = band === 'young' ? 6 : 12
+  // Two blocks so the page fills; the second block steps the range up.
+  const hi2 = band === 'young' ? 20 : band === 'mid' ? 100 : 1000
+  const acts: Activity[] = [
+    { type: 'note', text: 'Write the sign in each box' },
+    { type: 'compareNumbers', instruction: 'Greater than, less than or equal', pairs: makePairs(n, band === 'young' ? 10 : 50) },
+    { type: 'compareNumbers', instruction: band === 'old' ? 'Compare the larger numbers' : 'Keep going', pairs: makePairs(n, hi2) },
+  ]
+  return { category: 'composed', subject: 'Comparing numbers', title: sheetTitle('Comparing numbers'), activities: acts, prompt: '', difficulty: d }
+}
+
+// ---- Odd and even ---------------------------------------------------------
+
+function detectOddEven(topic: string): boolean {
+  return /\bodd\b|\beven\b|odd (?:and|or) even|odd numbers?|even numbers?/i.test(topic)
+}
+
+export function oddEvenPlan(rawTopic: string, age?: number): TopicPlan | null {
+  if (!detectOddEven(clean(rawTopic))) return null
+  const d = difficultyForAge(age)
+  const band = age == null ? 'mid' : age <= 7 ? 'young' : age <= 9 ? 'mid' : 'old'
+  const hi = band === 'young' ? 12 : band === 'mid' ? 30 : 100
+  const rng = mkRng(hi * 11 + 5)
+  const pick = (lo: number, up: number) => lo + Math.floor(rng() * (up - lo + 1))
+  const bank = Array.from(new Set(Array.from({ length: 10 }, () => pick(band === 'young' ? 1 : 10, hi)))).slice(0, 8).map(String)
+  const circleMix = Array.from(new Set(Array.from({ length: 8 }, () => pick(1, hi)))).slice(0, 8).map(String)
+  const acts: Activity[] = [
+    { type: 'note', text: 'An even number ends in 0 2 4 6 or 8' },
+    { type: 'circleWords', instruction: 'Circle the even numbers', words: circleMix },
+    { type: 'sortTwoGroups', instruction: 'Sort each number', items: bank, labelA: 'ODD', labelB: 'EVEN' },
+  ]
+  return { category: 'composed', subject: 'Odd and even', title: sheetTitle('Odd and even numbers'), activities: acts, prompt: '', difficulty: d }
+}
+
+// ---- Place value ----------------------------------------------------------
+
+function detectPlaceValue(topic: string): boolean {
+  return /\bplace value\b|\btens and (?:units|ones)\b|\bhundreds tens\b|\bpartition\w*\b|\btens and units\b/i.test(topic)
+}
+
+export function placeValuePlan(rawTopic: string, age?: number): TopicPlan | null {
+  if (!detectPlaceValue(clean(rawTopic))) return null
+  const d = difficultyForAge(age)
+  const band = age == null ? 'mid' : age <= 7 ? 'young' : age <= 9 ? 'mid' : 'old'
+  const rng = mkRng(band.length * 31 + 7)
+  const pick = (lo: number, hi: number) => lo + Math.floor(rng() * (hi - lo + 1))
+  const lo = band === 'young' ? 10 : 20
+  const set = () => Array.from({ length: 4 }, () => pick(lo, 99))
+  const acts: Activity[] = [
+    { type: 'note', text: 'Count the tens and units, then write the number' },
+    { type: 'placeValue', instruction: 'How many tens and units', numbers: set() },
+    { type: 'placeValue', instruction: 'Write each number', numbers: set() },
+  ]
+  return { category: 'composed', subject: 'Place value', title: sheetTitle('Place value'), activities: acts, prompt: '', difficulty: d }
+}
+
+// ---- Counting and skip-counting -------------------------------------------
+
+// "counting to 50", "count to 100", "counting in 2s/5s/10s". Returns {to} for a
+// 1-step count, or {step} for skip-counting. Kept separate from the picture
+// "numbers to 10" flow so it produces a real number track, not a colour sheet.
+function detectCounting(topic: string): { step: number; to: number } | null {
+  const t = topic.toLowerCase()
+  const skip = t.match(/\bcount(?:ing)?\s+(?:in|by)\s+(\d{1,2})s?\b/) || t.match(/\bskip\s+count(?:ing)?\s+(?:in|by)?\s*(\d{1,2})?/)
+  if (skip && skip[1]) return { step: parseInt(skip[1], 10), to: 0 }
+  const to = t.match(/\bcount(?:ing)?\s+(?:up\s+)?to\s+(\d{1,3})\b/) || t.match(/\bnumbers?\s+to\s+(\d{2,3})\b/)
+  if (to) { const v = parseInt(to[1], 10); if (v >= 20) return { step: 1, to: Math.min(120, v) } }
+  return null
+}
+
+export function countingPlan(rawTopic: string, age?: number): TopicPlan | null {
+  const det = detectCounting(clean(rawTopic))
+  if (!det) return null
+  const d = difficultyForAge(age)
+  if (det.step > 1) {
+    const k = det.step
+    const rng = mkRng(k * 97 + 3)
+    const mix = Array.from(new Set([...[1, 2, 3, 4, 5, 6].map((m) => k * m), ...Array.from({ length: 6 }, () => k * (1 + Math.floor(rng() * 6)) + (rng() < 0.5 ? 1 : -1))])).slice(0, 8).map(String)
+    const acts: Activity[] = [
+      { type: 'note', text: `Count in ${k}s and fill the missing numbers` },
+      { type: 'numberTrack', instruction: `Count in ${k}s`, start: k, step: k, count: 24 },
+      { type: 'circleWords', instruction: `Circle the numbers you say counting in ${k}s`, words: mix },
+    ]
+    return { category: 'composed', subject: `Counting in ${k}s`, title: sheetTitle(`Counting in ${k}s`), activities: acts, prompt: '', difficulty: d }
+  }
+  const N = det.to
+  const acts: Activity[] = [
+    { type: 'note', text: `Fill in the missing numbers to ${N}` },
+    { type: 'numberTrack', instruction: 'Fill the missing numbers', start: 1, step: 1, count: Math.min(N, 20) },
+  ]
+  if (N > 20) acts.push({ type: 'numberTrack', instruction: 'Keep going', start: 21, step: 1, count: Math.min(N - 20, 20) })
+  if (N > 40) acts.push({ type: 'numberTrack', instruction: 'Count in tens', start: 10, step: 10, count: Math.min(Math.floor(N / 10), 12) })
+  return { category: 'composed', subject: `Counting to ${N}`, title: sheetTitle(`Counting to ${N}`), activities: acts, prompt: '', difficulty: d }
+}
+
+// ---- Money ----------------------------------------------------------------
+
+function detectMoney(topic: string): boolean {
+  return /\bmoney\b|\bcoins?\b|\bpence\b|\bpennies\b|\bgiving change\b|\badding money\b/i.test(topic)
+}
+
+export function moneyPlan(rawTopic: string, age?: number): TopicPlan | null {
+  if (!detectMoney(clean(rawTopic))) return null
+  const d = difficultyForAge(age)
+  const band = age == null ? 'mid' : age <= 7 ? 'young' : age <= 9 ? 'mid' : 'old'
+  // UK pence coins only (no £ glyph); totals stay within age-appropriate ranges.
+  const denoms = band === 'young' ? [1, 2, 5, 10] : band === 'mid' ? [1, 2, 5, 10, 20] : [2, 5, 10, 20, 50]
+  const rng = mkRng(band.length * 53 + denoms.length)
+  const nCoins = band === 'young' ? 3 : band === 'mid' ? 4 : 5
+  const purse = () => Array.from({ length: nCoins }, () => denoms[Math.floor(rng() * denoms.length)]).sort((a, b) => b - a)
+  const acts: Activity[] = [
+    { type: 'note', text: 'Add up the coins and write the total in pence' },
+    { type: 'coins', instruction: 'How much money', groups: Array.from({ length: band === 'young' ? 4 : 5 }, purse) },
+    { type: 'coins', instruction: 'How much altogether', groups: Array.from({ length: band === 'young' ? 4 : 5 }, purse) },
+  ]
+  return { category: 'composed', subject: 'Money', title: sheetTitle('Money'), activities: acts, prompt: '', difficulty: d }
+}
+
+// Small deterministic RNG shared by the maths plans (stable, no Math.random so
+// a topic renders identically every time — important for eyeballing/tests).
+function mkRng(seed: number): () => number {
+  let s = seed >>> 0 || 1
+  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 }
+}
+
 // Objects that begin with (or use) a grapheme.
 function objectsForGrapheme(g: string): string[] {
   if (g.length === 1) return LETTER_OBJECTS[g] || []
@@ -845,6 +1052,16 @@ export function buildTopicPrompt(rawTopic: string, age?: number): TopicPlan {
   // --- shapes (2D/3D properties + sort) — before the shapes colour-page ---
   const sp = shapesPlan(topic, age)
   if (sp) return sp
+
+  // --- new deterministic maths blocks (all correct by construction) ---
+  const fr = fractionsPlan(topic, age); if (fr) return fr
+  const cmp = comparePlan(topic, age); if (cmp) return cmp
+  const oe = oddEvenPlan(topic, age); if (oe) return oe
+  const pv = placeValuePlan(topic, age); if (pv) return pv
+  const money = moneyPlan(topic, age); if (money) return money
+  // counting / skip-counting — before the picture "sequence" detector, so
+  // "counting in 5s" becomes a real number track rather than a colour sheet.
+  const cnt = countingPlan(topic, age); if (cnt) return cnt
 
   // --- simple sums (addition / subtraction), drawn deterministically ---
   const sums = detectSums(topic, difficulty)

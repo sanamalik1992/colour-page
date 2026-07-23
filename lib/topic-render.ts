@@ -1420,6 +1420,340 @@ function shapeSortBlock(names: string[], x: number, top: number, w: number, h: n
   return s
 }
 
+// ---- Generic sorters / matchers -------------------------------------------
+
+// Sort a word bank into two labelled bins. The reusable engine behind 2D/3D
+// shape sorting, odd/even numbers, noun/verb sorts, etc.
+function sortTwoGroupsBlock(items: string[], labelA: string, labelB: string, x: number, top: number, w: number, h: number): string {
+  const bank = items.map((n) => n.toUpperCase()).join('   ')
+  let bankH = Math.min(h * 0.14, 46)
+  while (textWidth(bank, bankH) > w * 0.96 && bankH > 20) bankH -= 2
+  const bw = textWidth(bank, bankH)
+  let s = textSvg(bank, x + Math.max(0, (w - bw) / 2), top, bankH, 9, { color: '#9aa0a6' })
+  const boxTop = top + bankH + h * 0.08
+  const boxH = h - (bankH + h * 0.08) - 10
+  const gap = w * 0.05
+  const boxW = (w - gap) / 2
+  const labelH = Math.min(boxH * 0.15, 38)
+  const mk = (bx: number, lbl: string) => {
+    let o = `<rect x="${bx.toFixed(1)}" y="${boxTop.toFixed(1)}" width="${boxW.toFixed(1)}" height="${boxH.toFixed(1)}" rx="18" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    o += textSvg(lbl, bx + 24, boxTop + 16, labelH, 9, { color: '#111' })
+    return o
+  }
+  s += mk(x, labelA.toUpperCase()) + mk(x + boxW + gap, labelB.toUpperCase())
+  return s
+}
+
+// Two columns of words; the child draws a line joining each left item to its
+// partner on the right. The right column is shuffled so it isn't a straight
+// across-match. A small ring sits on the inner edge of each word to draw from.
+function matchLinesBlock(left: string[], right: string[], x: number, top: number, w: number, h: number): string {
+  const n = Math.min(left.length, right.length, 6)
+  const L = left.slice(0, n).map((v) => v.toUpperCase())
+  // Deterministic shuffle of the right column (stable, index-seeded).
+  const order = Array.from({ length: n }, (_, i) => i)
+  const rng = makeRng(n * 761 + L.join('').length * 13)
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [order[i], order[j]] = [order[j], order[i]] }
+  const R = order.map((i) => right[i].toUpperCase())
+  const rowH = Math.min(h / n, 150)
+  const yOff = Math.max(0, (h - rowH * n) / 2)
+  const gh = Math.min(rowH * 0.4, 52)
+  const dotR = 9
+  const leftDotX = x + w * 0.42
+  const rightDotX = x + w * 0.58
+  let s = ''
+  for (let i = 0; i < n; i++) {
+    const midY = top + yOff + i * rowH + rowH / 2
+    const lw = numberWidth(L[i], gh)
+    s += numberSvg(L[i], leftDotX - 30 - lw, midY - gh / 2, gh, Math.max(6, gh * 0.14))
+    s += `<circle cx="${leftDotX.toFixed(1)}" cy="${midY.toFixed(1)}" r="${dotR}" fill="#111"/>`
+    const rMidY = top + yOff + i * rowH + rowH / 2
+    s += `<circle cx="${rightDotX.toFixed(1)}" cy="${rMidY.toFixed(1)}" r="${dotR}" fill="#111"/>`
+    s += numberSvg(R[i], rightDotX + 30, rMidY - gh / 2, gh, Math.max(6, gh * 0.14))
+  }
+  return s
+}
+
+// ---- Fractions -------------------------------------------------------------
+
+// A vulgar fraction n/d: numerator above a bar, denominator below.
+function fractionGlyph(n: number, d: number, cx: number, midY: number, gh: number, st: number): string {
+  const nw = numberWidth(String(n), gh), dw = numberWidth(String(d), gh)
+  const barW = Math.max(nw, dw) + gh * 0.3
+  let s = numberSvg(String(n), cx - nw / 2, midY - gh * 1.05, gh, st)
+  s += `<line x1="${(cx - barW / 2).toFixed(1)}" y1="${midY.toFixed(1)}" x2="${(cx + barW / 2).toFixed(1)}" y2="${midY.toFixed(1)}" stroke="#111" stroke-width="${st}" stroke-linecap="round"/>`
+  s += numberSvg(String(d), cx - dw / 2, midY + gh * 0.08, gh, st)
+  return s
+}
+function fractionWidth(gh: number): number { return gh * 1.6 }
+
+// A bar split into `d` equal parts, with the first `k` shaded (light grey).
+function fractionBar(k: number, d: number, x: number, y: number, w: number, barH: number): string {
+  const cw = w / d
+  let s = ''
+  for (let i = 0; i < d; i++) {
+    const fill = i < k ? '#c9c4ba' : 'none'
+    s += `<rect x="${(x + i * cw).toFixed(1)}" y="${y.toFixed(1)}" width="${cw.toFixed(1)}" height="${barH.toFixed(1)}" fill="${fill}" stroke="#111" stroke-width="4"/>`
+  }
+  return s
+}
+
+// Fraction shapes. mode 'write': the fraction is shaded, child writes n/d in a
+// box. mode 'shade': the bar is blank with the fraction printed, child colours
+// that many parts. Two columns so the block packs the page.
+function fractionShadeBlock(fractions: { n: number; d: number }[], mode: 'shade' | 'write', x: number, top: number, w: number, h: number): string {
+  const list = fractions.slice(0, 6)
+  const cols = list.length > 3 ? 2 : 1
+  const rows = Math.ceil(list.length / cols)
+  const cellW = w / cols
+  const rowH = Math.min(h / rows, 240)
+  const yOff = Math.max(0, (h - rowH * rows) / 2)
+  const barW = cellW * 0.5
+  const barH = Math.min(rowH * 0.5, 110)
+  let s = ''
+  list.forEach((f, i) => {
+    const col = i % cols, row = Math.floor(i / cols)
+    const cellX = x + col * cellW
+    const rowTop = top + yOff + row * rowH
+    const barX = cellX + 10
+    const barY = rowTop + (rowH - barH) / 2
+    s += fractionBar(mode === 'write' ? f.n : 0, f.d, barX, barY, barW, barH)
+    const midY = barY + barH / 2
+    if (mode === 'write') {
+      // "= [box]" to write the fraction.
+      const gh = Math.min(barH * 0.5, 56)
+      const eqX = barX + barW + 26
+      s += opGlyph('=', eqX, midY, gh * 0.7, Math.max(6, gh * 0.14))
+      const boxX = eqX + gh * 0.7
+      s += `<rect x="${boxX.toFixed(1)}" y="${(midY - gh * 0.7).toFixed(1)}" width="${(gh * 1.15).toFixed(1)}" height="${(gh * 1.4).toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    } else {
+      // Print the fraction to colour.
+      const gh = Math.min(barH * 0.42, 46)
+      s += fractionGlyph(f.n, f.d, barX + barW + 26 + fractionWidth(gh) / 2, midY, gh, Math.max(6, gh * 0.14))
+    }
+  })
+  return s
+}
+
+// "n/d of W = [box]", each with W countable dots grouped into d rings so the
+// child can share them out. Deterministic, correct by construction.
+function fractionOfBlock(problems: { n: number; d: number; whole: number }[], x: number, top: number, w: number, h: number): string {
+  const list = problems.slice(0, 5)
+  const rowH = Math.min(h / list.length, 150)
+  const yOff = Math.max(0, (h - rowH * list.length) / 2)
+  let s = ''
+  list.forEach((p, i) => {
+    const midY = top + yOff + i * rowH + rowH / 2
+    const gh = Math.min(rowH * 0.42, 54)
+    const st = Math.max(6, gh * 0.14)
+    let cx = x + 6
+    // n/d
+    s += fractionGlyph(p.n, p.d, cx + fractionWidth(gh) / 2, midY, gh * 0.7, st)
+    cx += fractionWidth(gh) + gh * 0.3
+    // "of" — drawn smaller and grey so it reads as a connective word, not a
+    // digit (the glyph O would otherwise look like a 0 next to the numbers).
+    const ofH = gh * 0.6
+    s += numberSvg('OF', cx, midY - ofH / 2, ofH, Math.max(4, ofH * 0.12), { color: '#9aa0a6' }); cx += numberWidth('OF', ofH) + gh * 0.34
+    s += numberSvg(String(p.whole), cx, midY - gh / 2, gh, st); cx += numberWidth(String(p.whole), gh) + gh * 0.3
+    s += opGlyph('=', cx + gh * 0.35, midY, gh * 0.7, st); cx += gh * 0.7 + gh * 0.3
+    s += `<rect x="${cx.toFixed(1)}" y="${(midY - gh / 2).toFixed(1)}" width="${(gh * 1.2).toFixed(1)}" height="${gh.toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    cx += gh * 1.2 + gh * 0.6
+    // Countable dots for the whole (up to 20), so the child can share them out.
+    if (p.whole <= 20) {
+      const dr = Math.min(gh * 0.16, (w - (cx - x)) / (p.whole + 1) * 0.4)
+      const dgap = dr * 2.6
+      for (let k = 0; k < p.whole; k++) {
+        const dx = cx + k * dgap + dr
+        s += `<circle cx="${dx.toFixed(1)}" cy="${midY.toFixed(1)}" r="${dr.toFixed(1)}" fill="none" stroke="#111" stroke-width="3"/>`
+      }
+    }
+  })
+  return s
+}
+
+// ---- Comparing numbers < > = ----------------------------------------------
+
+// The < > = signs have no glyph in the font, so draw them as strokes.
+function signGlyph(kind: '<' | '>' | '=', cx: number, cy: number, size: number, st: number): string {
+  const h = size * 0.5, wsp = size * 0.42
+  const L = (x1: number, y1: number, x2: number, y2: number) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#111" stroke-width="${st}" stroke-linecap="round"/>`
+  if (kind === '=') return L(cx - wsp, cy - size * 0.16, cx + wsp, cy - size * 0.16) + L(cx - wsp, cy + size * 0.16, cx + wsp, cy + size * 0.16)
+  // '<' points left (small end on the left), '>' points right.
+  const tipX = kind === '<' ? cx - wsp : cx + wsp
+  const openX = kind === '<' ? cx + wsp : cx - wsp
+  return L(openX, cy - h, tipX, cy) + L(openX, cy + h, tipX, cy)
+}
+
+// A little key showing the three signs and what they mean, drawn once at the
+// top so the child knows which sign to write.
+function compareLegend(x: number, y: number, w: number, gh: number): string {
+  const st = Math.max(5, gh * 0.14)
+  const items: [('<' | '>' | '='), string][] = [['>', 'GREATER'], ['<', 'LESS'], ['=', 'EQUAL']]
+  const colW = w / 3
+  let s = ''
+  items.forEach(([sign, word], i) => {
+    const cx = x + i * colW
+    s += signGlyph(sign, cx + gh * 0.6, y + gh / 2, gh, st)
+    s += textSvg(word, cx + gh * 1.3, y, gh * 0.62, Math.max(4, gh * 0.1), { color: '#9aa0a6' })
+  })
+  return s
+}
+
+function compareBlock(pairs: { a: number; b: number }[], x: number, top: number, w: number, h: number): string {
+  const list = pairs.slice(0, 12)
+  const legendH = Math.min(h * 0.12, 44)
+  let s = compareLegend(x, top, w, legendH)
+  top = top + legendH + h * 0.04
+  h = h - legendH - h * 0.04
+  const cols = list.length > 5 ? 2 : 1
+  const rows = Math.ceil(list.length / cols)
+  const cellW = w / cols
+  const rowPitch = Math.min(h / rows, 150)
+  const yOff = Math.max(0, (h - rowPitch * rows) / 2)
+  const gh = Math.min(rowPitch / 1.9, 74)
+  const st = Math.max(6, gh * 0.14)
+  list.forEach((p, i) => {
+    const col = i % cols, row = Math.floor(i / cols)
+    const cellX = x + col * cellW
+    const midY = top + yOff + row * rowPitch + rowPitch / 2
+    const aw = numberWidth(String(p.a), gh), bw = numberWidth(String(p.b), gh)
+    const boxW = gh * 1.15
+    const totalW = aw + gh * 0.5 + boxW + gh * 0.5 + bw
+    let cx = cellX + (cellW - totalW) / 2
+    s += numberSvg(String(p.a), cx, midY - gh / 2, gh, st); cx += aw + gh * 0.5
+    s += `<rect x="${cx.toFixed(1)}" y="${(midY - gh / 2).toFixed(1)}" width="${boxW.toFixed(1)}" height="${gh.toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    cx += boxW + gh * 0.5
+    s += numberSvg(String(p.b), cx, midY - gh / 2, gh, st)
+  })
+  return s
+}
+
+// ---- Place value (tens and units) -----------------------------------------
+
+// Base-ten picture: `tens` vertical "long" rods (each a tall bar of 10) and
+// `units` single cubes, then "TENS ▢ UNITS ▢ = ▢" to write the number.
+function placeValueBlock(numbers: number[], x: number, top: number, w: number, h: number): string {
+  const list = numbers.slice(0, 4).map((v) => Math.max(0, Math.min(99, Math.round(v))))
+  const rowH = Math.min(h / list.length, 220)
+  const yOff = Math.max(0, (h - rowH * list.length) / 2)
+  let s = ''
+  list.forEach((num, i) => {
+    const tens = Math.floor(num / 10), units = num % 10
+    const rowTop = top + yOff + i * rowH
+    const midY = rowTop + rowH / 2
+    const rodH = Math.min(rowH * 0.62, 130)
+    const rodW = rodH * 0.16
+    let px = x + 8
+    // Tens rods (a long divided into 10).
+    for (let t = 0; t < tens; t++) {
+      const rx = px
+      s += `<rect x="${rx.toFixed(1)}" y="${(midY - rodH / 2).toFixed(1)}" width="${rodW.toFixed(1)}" height="${rodH.toFixed(1)}" fill="none" stroke="#111" stroke-width="3.5"/>`
+      for (let seg = 1; seg < 10; seg++) {
+        const sy = midY - rodH / 2 + (rodH / 10) * seg
+        s += `<line x1="${rx.toFixed(1)}" y1="${sy.toFixed(1)}" x2="${(rx + rodW).toFixed(1)}" y2="${sy.toFixed(1)}" stroke="#111" stroke-width="1.5"/>`
+      }
+      px += rodW + 8
+    }
+    // Unit cubes (up to 9) stacked in a little column pair.
+    const uSize = rodW * 0.96
+    px += 12
+    for (let u = 0; u < units; u++) {
+      const ux = px + (u % 2) * (uSize + 5)
+      const uy = midY - rodH / 2 + Math.floor(u / 2) * (uSize + 5)
+      s += `<rect x="${ux.toFixed(1)}" y="${uy.toFixed(1)}" width="${uSize.toFixed(1)}" height="${uSize.toFixed(1)}" fill="none" stroke="#111" stroke-width="3"/>`
+    }
+    // Labels + boxes on the right half.
+    const gh = Math.min(rowH * 0.24, 38)
+    const st = Math.max(5, gh * 0.14)
+    const lx = x + w * 0.52
+    const boxOf = (lbl: string, bx: number, byMid: number): string => {
+      let o = textSvg(lbl, bx, byMid - gh / 2, gh, st)
+      const bxx = bx + textWidth(lbl, gh) + gh * 0.4
+      o += `<rect x="${bxx.toFixed(1)}" y="${(byMid - gh / 2).toFixed(1)}" width="${(gh * 1.2).toFixed(1)}" height="${gh.toFixed(1)}" rx="6" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+      return o
+    }
+    s += boxOf('TENS', lx, midY - gh)
+    s += boxOf('UNITS', lx, midY + gh)
+    // "= [box]" for the whole number.
+    const eqX = x + w * 0.8
+    s += opGlyph('=', eqX, midY, gh * 0.8, st)
+    s += `<rect x="${(eqX + gh * 0.55).toFixed(1)}" y="${(midY - gh * 0.7).toFixed(1)}" width="${(gh * 1.7).toFixed(1)}" height="${(gh * 1.4).toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3.5"/>`
+  })
+  return s
+}
+
+// ---- Number track (counting / skip-counting) ------------------------------
+
+// A track of joined boxes; some hold the number, the rest are blank to fill.
+// The sequence is start, start+step, … The first two are always filled to model
+// the pattern, then a deterministic mix of shown/blank.
+function numberTrackBlock(start: number, step: number, count: number, x: number, top: number, w: number, h: number): string {
+  const n = Math.max(3, Math.min(30, count))
+  // Aim for ~6 boxes per row so they're big enough to write in comfortably.
+  const perRow = n > 6 ? Math.ceil(n / Math.ceil(n / 6)) : n
+  const rows = Math.ceil(n / perRow)
+  const cellW = w / perRow
+  const rowH = Math.min(h / rows, 170)
+  const yOff = Math.max(0, (h - rowH * rows) / 2)
+  const boxW = Math.min(cellW * 0.86, rowH * 0.7)
+  const boxH = boxW * 0.8
+  const gh = Math.min(boxH * 0.6, 46)
+  const st = Math.max(5, gh * 0.14)
+  const rng = makeRng(start * 131 + step * 17 + n * 7)
+  let s = ''
+  for (let i = 0; i < n; i++) {
+    const col = i % perRow, row = Math.floor(i / perRow)
+    const cx = x + col * cellW + (cellW - boxW) / 2
+    const cy = top + yOff + row * rowH + (rowH - boxH) / 2
+    const val = start + i * step
+    // First two of each row shown; then ~45% shown, rest blank to fill.
+    const shown = (i % perRow) < 2 || rng() < 0.45
+    s += `<rect x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="${boxW.toFixed(1)}" height="${boxH.toFixed(1)}" rx="10" fill="none" stroke="${shown ? '#111' : '#c9c4ba'}" stroke-width="3"/>`
+    if (shown) {
+      const vw = numberWidth(String(val), gh)
+      s += numberSvg(String(val), cx + (boxW - vw) / 2, cy + (boxH - gh) / 2, gh, st)
+    }
+  }
+  return s
+}
+
+// ---- Money (coins) --------------------------------------------------------
+
+// Draw a coin: a ringed circle with its value inside ("5P", "20P", "50P"…).
+function coinSvg(value: number, cx: number, cy: number, r: number): string {
+  const label = value >= 100 ? `${value / 100}` : `${value}P`
+  let s = `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="none" stroke="#111" stroke-width="4"/>`
+  s += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(r * 0.82).toFixed(1)}" fill="none" stroke="#111" stroke-width="1.5"/>`
+  const gh = r * 0.62
+  const lw = numberWidth(label, gh)
+  s += numberSvg(label, cx - lw / 2, cy - gh / 2, gh, Math.max(4, gh * 0.14))
+  return s
+}
+
+// Each group is a purse of coins; the child totals them into a "= ▢ P" box.
+function coinsBlock(groups: number[][], x: number, top: number, w: number, h: number): string {
+  const list = groups.slice(0, 5)
+  const rowH = Math.min(h / list.length, 170)
+  const yOff = Math.max(0, (h - rowH * list.length) / 2)
+  let s = ''
+  list.forEach((coins, i) => {
+    const midY = top + yOff + i * rowH + rowH / 2
+    const cs = coins.slice(0, 8)
+    const r = Math.min(rowH * 0.4, (w * 0.62) / (cs.length * 2.3))
+    let cx = x + r + 6
+    for (const v of cs) { s += coinSvg(v, cx, midY, r); cx += r * 2.3 }
+    // "= [box] P"
+    const gh = Math.min(rowH * 0.4, 52)
+    const st = Math.max(6, gh * 0.14)
+    const eqX = x + w * 0.72
+    s += opGlyph('=', eqX, midY, gh * 0.7, st)
+    const boxX = eqX + gh * 0.6
+    s += `<rect x="${boxX.toFixed(1)}" y="${(midY - gh / 2).toFixed(1)}" width="${(gh * 1.7).toFixed(1)}" height="${gh.toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    s += numberSvg('P', boxX + gh * 1.9, midY - gh / 2, gh, st)
+  })
+  return s
+}
+
 // Countable dots under an operand (visual aid for the youngest children).
 function countDots(n: number, cx: number, top: number, r: number): string {
   if (n < 1) return ''
@@ -1738,6 +2072,9 @@ const ACTIVITY_WEIGHT: Record<string, number> = {
   timesTable: 3.6, multiplyGroups: 4.2,
   tenFrame: 3.8, partWhole: 0.9, bonds: 3,
   shapeGallery: 3.4, shapeProps: 3.6, shapeSort: 3.2,
+  sortTwoGroups: 3.2, matchLines: 3.2,
+  fractionShade: 3.6, fractionOf: 3.2, compareNumbers: 3.2,
+  placeValue: 3.6, numberTrack: 2.6, coins: 3.2,
 }
 
 /**
@@ -1816,27 +2153,54 @@ export async function buildComposedSheet(
   const totalW = live.reduce((s, a) => s + (ACTIVITY_WEIGHT[a.type] || 1.6), 0) || 1
   const bodyH = bottom - y - gap * live.length
 
-  // A few maths blocks self-limit their content (a light `3×` table for a
-  // 6-year-old is only a handful of rows). Left to stretch-to-fill they'd float
-  // rows apart or leave a gap between blocks. Estimate their NATURAL height so a
-  // light block takes only what it needs and the leftover pools into one clean
-  // bottom margin — a short, gentle sheet — instead of airy gaps mid-page. The
-  // estimate is generous, so a dense block (a full 12× ladder) is never capped.
+  // Some blocks self-limit their content (a 6-year-old's short 3× table, a
+  // handful of shaded fraction bars). Left to stretch-to-fill they float their
+  // rows apart. So each "tidy" block reports a NATURAL height; "flexible" blocks
+  // (pictures, sums, sorting bins, word searches — designed to grow) return
+  // Infinity. The estimate is generous, so a dense block is never capped.
   const naturalMaxH = (a: Activity): number => {
+    if (a.type === 'note') return 150
     if (a.type === 'timesTable') {
       const items = Math.max(2, Math.min(12, Math.round(a.upTo)))
       const rows = Math.ceil(items / (items > 4 ? 2 : 1))
       return rows * 176 + 130
     }
-    if (a.type === 'multiplyGroups') {
-      return Math.max(2, Math.min(6, Math.round(a.upTo))) * 116 + 130
-    }
+    if (a.type === 'multiplyGroups') return Math.max(2, Math.min(6, Math.round(a.upTo))) * 116 + 130
+    if (a.type === 'fractionShade') { const rows = Math.ceil(Math.min(a.fractions.length, 6) / (a.fractions.length > 3 ? 2 : 1)); return rows * 210 + 150 }
+    if (a.type === 'fractionOf') return Math.min(a.problems.length, 5) * 156 + 150
+    if (a.type === 'compareNumbers') { const rows = Math.ceil(Math.min(a.pairs.length, 12) / (a.pairs.length > 5 ? 2 : 1)); return rows * 156 + 220 }
+    if (a.type === 'placeValue') return Math.min(a.numbers.length, 4) * 220 + 150
+    if (a.type === 'coins') return Math.min(a.groups.length, 5) * 176 + 150
+    if (a.type === 'numberTrack') { const per = a.count > 6 ? Math.ceil(a.count / Math.ceil(a.count / 6)) : a.count; return Math.ceil(a.count / per) * 170 + 150 }
+    if (a.type === 'matchLines') return Math.min(a.left.length, 6) * 150 + 150
+    if (a.type === 'circleWords') { const items = Math.min(a.words.length, 8); const cols = items <= 4 ? items : 4; return Math.ceil(items / cols) * 170 + 150 }
+    if (a.type === 'bonds') { const rows = Math.ceil(Math.min(a.count, 12) / 2); return rows * 150 + 150 }
     return Infinity
   }
 
+  // Flex-distribute: cap every tidy block at its natural height, collect the
+  // freed slack, then either hand it to the flexible (Infinity) blocks so they
+  // grow to fill the page, or — if every block is tidy — spread it as equal gaps
+  // between the blocks so the page fills evenly instead of pooling at the bottom.
+  const wOf = (a: Activity) => ACTIVITY_WEIGHT[a.type] || 1.6
+  const rawSlice = live.map((a) => (wOf(a) / totalW) * bodyH)
+  const natH = live.map((a, i) => Math.min(rawSlice[i], naturalMaxH(a)))
+  const slack = live.reduce((sum, a, i) => sum + (rawSlice[i] - natH[i]), 0)
+  const flexIdx = live.map((a, i) => (naturalMaxH(a) === Infinity ? i : -1)).filter((i) => i >= 0)
+  const slices = natH.slice()
+  if (flexIdx.length) {
+    // Flexible blocks (bins, pictures, sums) soak up the freed space and fill.
+    const flexW = flexIdx.reduce((s, i) => s + wOf(live[i]), 0) || 1
+    for (const i of flexIdx) slices[i] += slack * (wOf(live[i]) / flexW)
+  }
+  // When every block is tidy the leftover simply pools into one clean bottom
+  // margin (blocks stay hugged under their headings). Plans are written with
+  // enough content to keep that margin small.
+
   let blockIndex = 0
-  for (const a of live) {
-    const sliceH = Math.min(((ACTIVITY_WEIGHT[a.type] || 1.6) / totalW) * bodyH, naturalMaxH(a))
+  for (let li = 0; li < live.length; li++) {
+    const a = live[li]
+    const sliceH = slices[li]
     blockIndex++
     if (a.type === 'note') {
       overlay += noteBlock(a.text, bodyX, y, bodyW, sliceH)
@@ -1877,6 +2241,14 @@ export async function buildComposedSheet(
         case 'shapeGallery': overlay += shapeGalleryBlock(a.shapes, a.label, bodyX, nextY, bodyW, ch); break
         case 'shapeProps': overlay += shapePropsBlock(a.shapes, a.dims, bodyX, nextY, bodyW, ch); break
         case 'shapeSort': overlay += shapeSortBlock(a.shapes, bodyX, nextY, bodyW, ch); break
+        case 'sortTwoGroups': overlay += sortTwoGroupsBlock(a.items, a.labelA, a.labelB, bodyX, nextY, bodyW, ch); break
+        case 'matchLines': overlay += matchLinesBlock(a.left, a.right, bodyX, nextY, bodyW, ch); break
+        case 'fractionShade': overlay += fractionShadeBlock(a.fractions, a.mode, bodyX, nextY, bodyW, ch); break
+        case 'fractionOf': overlay += fractionOfBlock(a.problems, bodyX, nextY, bodyW, ch); break
+        case 'compareNumbers': overlay += compareBlock(a.pairs, bodyX, nextY, bodyW, ch); break
+        case 'placeValue': overlay += placeValueBlock(a.numbers, bodyX, nextY, bodyW, ch); break
+        case 'numberTrack': overlay += numberTrackBlock(a.start, a.step, a.count, bodyX, nextY, bodyW, ch); break
+        case 'coins': overlay += coinsBlock(a.groups, bodyX, nextY, bodyW, ch); break
         case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'traceNumbers': overlay += traceNumbersBlock(a.upTo, bodyX, nextY, bodyW, ch); break
       }
