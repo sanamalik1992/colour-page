@@ -667,34 +667,36 @@ export function shapesPlan(rawTopic: string, age?: number): TopicPlan | null {
   if (band === 'young') {
     const shapes = use3d ? ['cube', 'sphere', 'cylinder', 'cone'] : ['circle', 'triangle', 'square', 'rectangle']
     acts = [
-      { type: 'note', text: 'Name and colour the shapes' },
-      { type: 'shapeGallery', instruction: 'Name and colour', shapes, label: true },
+      { type: 'note', text: 'Colour each shape and write its name' },
+      { type: 'shapeGallery', instruction: 'Name and colour the shapes', shapes, label: true },
       use3d
-        ? { type: 'shapeProps', instruction: 'How many faces', shapes: ['cube', 'cylinder', 'cone'], dims: ['faces'] }
-        : { type: 'shapeProps', instruction: 'How many sides', shapes: ['triangle', 'square', 'pentagon'], dims: ['sides'] },
+        ? { type: 'shapeProps', instruction: 'Count the faces on each shape', shapes: ['cube', 'cylinder', 'cone', 'sphere'], dims: ['faces'] }
+        : { type: 'shapeProps', instruction: 'Count the sides on each shape', shapes: ['triangle', 'square', 'rectangle', 'pentagon'], dims: ['sides'] },
     ]
   } else if (band === 'mid') {
     acts = use3d
       ? [
-          { type: 'note', text: 'Count the faces and edges' },
-          { type: 'shapeProps', instruction: 'Faces and edges', shapes: ['cube', 'cylinder', 'cone', 'pyramid'], dims: ['faces', 'edges'] },
-          { type: 'shapeSort', instruction: 'Sort the shapes', shapes: sortSet },
+          { type: 'note', text: 'Write how many faces and edges each shape has' },
+          { type: 'shapeGallery', instruction: 'Name each 3D shape', shapes: ['cube', 'cylinder', 'cone', 'sphere'], label: true },
+          { type: 'shapeProps', instruction: 'Count the faces and edges', shapes: ['cube', 'cylinder', 'cone', 'pyramid'], dims: ['faces', 'edges'] },
+          { type: 'shapeSort', instruction: 'Sort each shape into 2D or 3D', shapes: sortSet },
         ]
       : [
-          { type: 'note', text: 'Count the sides and corners' },
-          { type: 'shapeProps', instruction: 'Sides and corners', shapes: ['triangle', 'square', 'rectangle', 'pentagon', 'hexagon'], dims: ['sides', 'corners'] },
-          { type: 'shapeSort', instruction: 'Sort the shapes', shapes: sortSet },
+          { type: 'note', text: 'Write how many sides and corners each shape has' },
+          { type: 'shapeProps', instruction: 'Count the sides and corners', shapes: ['triangle', 'square', 'rectangle', 'pentagon', 'hexagon', 'circle'], dims: ['sides', 'corners'] },
+          { type: 'shapeSort', instruction: 'Sort each shape into 2D or 3D', shapes: sortSet },
         ]
   } else {
     acts = use3d
       ? [
-          { type: 'note', text: 'Faces, edges and vertices' },
-          { type: 'shapeProps', instruction: 'Faces edges vertices', shapes: ['cube', 'cuboid', 'cylinder', 'cone', 'pyramid'], dims: ['faces', 'edges', 'vertices'] },
+          { type: 'note', text: 'Write how many faces, edges and vertices each shape has' },
+          { type: 'shapeGallery', instruction: 'Name each 3D shape', shapes: ['cube', 'cylinder', 'cone', 'pyramid'], label: true },
+          { type: 'shapeProps', instruction: 'Count the faces, edges and vertices', shapes: ['cube', 'cuboid', 'cylinder', 'cone', 'pyramid', 'sphere'], dims: ['faces', 'edges', 'vertices'] },
         ]
       : [
-          { type: 'note', text: 'Shape properties' },
-          { type: 'shapeProps', instruction: 'Sides and corners', shapes: ['triangle', 'square', 'pentagon', 'hexagon'], dims: ['sides', 'corners'] },
-          { type: 'shapeProps', instruction: 'Faces edges vertices', shapes: ['cube', 'cylinder', 'cone', 'pyramid'], dims: ['faces', 'edges', 'vertices'] },
+          { type: 'note', text: 'Write the properties of each shape' },
+          { type: 'shapeProps', instruction: 'Count the sides and corners', shapes: ['triangle', 'square', 'pentagon', 'hexagon'], dims: ['sides', 'corners'] },
+          { type: 'shapeProps', instruction: 'Count the faces, edges and vertices', shapes: ['cube', 'cuboid', 'cylinder', 'cone'], dims: ['faces', 'edges', 'vertices'] },
         ]
   }
   return {

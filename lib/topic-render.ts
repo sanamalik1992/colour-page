@@ -932,7 +932,10 @@ export async function buildWordPracticeSheet(title: string | undefined, words: s
 // Composed sheet: a designed sequence of activity blocks (open-ended topics)
 // ---------------------------------------------------------------------------
 
-const up = (s: string) => s.toUpperCase().replace(/[^A-Z ]/g, ' ').replace(/\s+/g, ' ').trim()
+// Keep A-Z AND 0-9: the glyph font renders both, so headings/notes can say
+// "2D" / "3D" / "TO 10" without the digit being blanked out. Everything else
+// (punctuation) collapses to a space.
+const up = (s: string) => s.toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
 
 // A centred definition / caption line (word-wrapped).
 function noteBlock(text: string, x: number, top: number, w: number, h: number): string {
@@ -1067,19 +1070,24 @@ function timesTableBlock(table: number, upTo: number, op: 'multiply' | 'divide',
     ? { a: table * k, b: table, sign: '÷' as const }
     : { a: table, b: k, sign: '×' as const })
 
-  const cols = items.length > 6 ? 2 : 1
+  const cols = items.length > 4 ? 2 : 1
   const rows = Math.ceil(items.length / cols)
   const cellW = w / cols
-  const rowPitch = h / rows
+  const slot = h / rows
 
   const eqW = (it: { a: number; b: number }, gh: number) => {
     const gap = gh * 0.34, opW = gh * 0.62, eqSym = gh * 0.7
     return numberWidth(String(it.a), gh) + gap + opW + gap + numberWidth(String(it.b), gh) + gap + eqSym + gap + gh * 1.15
   }
-  let gh = Math.min(84, rowPitch / 1.7)
+  let gh = Math.min(84, slot / 1.7)
   const widest = () => Math.max(...items.map((it) => eqW(it, gh)))
   if (widest() > cellW * 0.9) gh = gh * (cellW * 0.9 / widest())
   gh = Math.max(24, gh)
+
+  // Cap the row pitch so a tall slice doesn't stretch a few rows into big gaps;
+  // the rows cluster directly under the heading and any slack pools at the
+  // bottom of the slice (before the next heading) instead of between rows.
+  const rowPitch = Math.min(slot, gh * 2.1)
 
   return items.map((it, i) => {
     const col = i % cols, row = Math.floor(i / cols)
@@ -1106,7 +1114,10 @@ function timesTableBlock(table: number, upTo: number, op: 'multiply' | 'divide',
 function multiplyGroupsBlock(table: number, upTo: number, x: number, top: number, w: number, h: number): string {
   const kMax = Math.max(2, Math.min(6, Math.round(upTo)))
   const ks = Array.from({ length: kMax }, (_, i) => i + 1)
-  const rowH = h / ks.length
+  // Cap the row pitch so the groups cluster directly under the heading rather
+  // than stretching down a tall slice with big gaps between rows.
+  const rowH = Math.min(h / ks.length, 116)
+  const gTop = top
   const perGroupCols = Math.min(Math.max(1, table), 5)
   const groupRows = Math.ceil(Math.max(1, table) / perGroupCols)
   const availW = w * 0.56
@@ -1118,7 +1129,7 @@ function multiplyGroupsBlock(table: number, upTo: number, x: number, top: number
 
   let s = ''
   ks.forEach((k, idx) => {
-    const rowMid = top + idx * rowH + rowH / 2
+    const rowMid = gTop + idx * rowH + rowH / 2
     const cy0 = rowMid - (groupRows - 1) * cs / 2
     let gx = x
     for (let g = 0; g < k; g++) {
@@ -1351,20 +1362,27 @@ function shapeGalleryBlock(names: string[], label: boolean, x: number, top: numb
   return s
 }
 
-// Each row: a shape, then its properties to fill in ("SIDES ▢", "CORNERS ▢",
-// or "FACES ▢ / EDGES ▢ / VERTICES ▢"), stacked beside the shape.
+// A shape with its properties to fill in ("SIDES ▢", "CORNERS ▢", or
+// "FACES ▢ / EDGES ▢ / VERTICES ▢"). Laid out in TWO columns when there are
+// more than three shapes, so the block packs tightly and uses the page width
+// instead of stretching a few rows down the whole page.
 function shapePropsBlock(names: string[], dims: string[], x: number, top: number, w: number, h: number): string {
-  const list = names.slice(0, 5)
-  const rowH = h / list.length
-  const shapeSize = Math.min(rowH * 0.72, w * 0.2)
+  const list = names.slice(0, 6)
+  const cols = list.length > 3 ? 2 : 1
+  const rows = Math.ceil(list.length / cols)
+  const cellW = w / cols
+  const rowH = h / rows
+  const shapeSize = Math.min(rowH * 0.74, cellW * 0.34)
   let s = ''
   list.forEach((name, i) => {
-    const rowMid = top + i * rowH + rowH / 2
-    s += drawShapeSvg(name, x + shapeSize * 0.6 + 8, rowMid, shapeSize)
-    const lineH = Math.min(rowH / (dims.length + 0.6), 46)
-    const labelH = Math.min(lineH * 0.62, 34)
+    const col = i % cols, row = Math.floor(i / cols)
+    const cellX = x + col * cellW
+    const rowMid = top + row * rowH + rowH / 2
+    s += drawShapeSvg(name, cellX + shapeSize * 0.6 + 6, rowMid, shapeSize)
+    const lineH = Math.min(rowH / (dims.length + 0.5), 44)
+    const labelH = Math.min(lineH * 0.6, 30)
     const boxH = labelH * 1.15
-    const px = x + w * 0.34
+    const px = cellX + shapeSize * 1.2 + 22
     const startY = rowMid - (dims.length - 1) * lineH / 2
     dims.forEach((dim, j) => {
       const ly = startY + j * lineH
@@ -1798,9 +1816,27 @@ export async function buildComposedSheet(
   const totalW = live.reduce((s, a) => s + (ACTIVITY_WEIGHT[a.type] || 1.6), 0) || 1
   const bodyH = bottom - y - gap * live.length
 
+  // A few maths blocks self-limit their content (a light `3×` table for a
+  // 6-year-old is only a handful of rows). Left to stretch-to-fill they'd float
+  // rows apart or leave a gap between blocks. Estimate their NATURAL height so a
+  // light block takes only what it needs and the leftover pools into one clean
+  // bottom margin — a short, gentle sheet — instead of airy gaps mid-page. The
+  // estimate is generous, so a dense block (a full 12× ladder) is never capped.
+  const naturalMaxH = (a: Activity): number => {
+    if (a.type === 'timesTable') {
+      const items = Math.max(2, Math.min(12, Math.round(a.upTo)))
+      const rows = Math.ceil(items / (items > 4 ? 2 : 1))
+      return rows * 176 + 130
+    }
+    if (a.type === 'multiplyGroups') {
+      return Math.max(2, Math.min(6, Math.round(a.upTo))) * 116 + 130
+    }
+    return Infinity
+  }
+
   let blockIndex = 0
   for (const a of live) {
-    const sliceH = ((ACTIVITY_WEIGHT[a.type] || 1.6) / totalW) * bodyH
+    const sliceH = Math.min(((ACTIVITY_WEIGHT[a.type] || 1.6) / totalW) * bodyH, naturalMaxH(a))
     blockIndex++
     if (a.type === 'note') {
       overlay += noteBlock(a.text, bodyX, y, bodyW, sliceH)
