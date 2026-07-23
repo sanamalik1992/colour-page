@@ -170,18 +170,31 @@ export default function Home() {
     genStartRef.current = Date.now()
     setDisplayPct(0)
 
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('sessionId', sessionId)
-      formData.append('orientation', orientation)
-      formData.append('lineThickness', lineThickness)
-      formData.append('detailLevel', detailLevel)
+    // Upload with a hard timeout so a stalled request can't leave the UI on
+    // "submitting" forever, and one automatic retry to ride out a flaky network.
+    const postOnce = async (): Promise<Response> => {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 45000)
+      try {
+        const fd = new FormData()
+        fd.append('file', file)
+        fd.append('sessionId', sessionId)
+        fd.append('orientation', orientation)
+        fd.append('lineThickness', lineThickness)
+        fd.append('detailLevel', detailLevel)
+        return await fetch('/api/photo-jobs/create', { method: 'POST', body: fd, signal: controller.signal })
+      } finally {
+        clearTimeout(timer)
+      }
+    }
 
-      const res = await fetch('/api/photo-jobs/create', {
-        method: 'POST',
-        body: formData,
-      })
+    try {
+      let res: Response
+      try {
+        res = await postOnce()
+      } catch {
+        res = await postOnce() // one retry on network error / timeout
+      }
 
       const data = await readJsonSafe(res)
       if (!res.ok) throw new Error(friendlyError(res.status, data))
@@ -191,7 +204,13 @@ export default function Home() {
       setProgress(0)
       setIsPro((data.isPro as boolean) ?? false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start generation')
+      const msg =
+        err instanceof Error && err.name === 'AbortError'
+          ? 'The upload timed out — please check your connection and tap Generate again.'
+          : err instanceof Error
+            ? err.message
+            : 'Failed to start generation'
+      setError(msg)
       setIsSubmitting(false)
     }
   }
