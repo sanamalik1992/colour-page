@@ -48,11 +48,11 @@ function SuccessContent() {
         {/* Message */}
         <div className="text-4xl mb-3" aria-hidden>🎉🖍️🌈</div>
         <h1 className="text-3xl font-bold text-white mb-4">
-          Welcome to Pro!
+          Welcome to Pro Family!
         </h1>
 
         <p className="text-gray-400 mb-8">
-          Thank you for subscribing! You now have unlimited colouring pages, dot-to-dot puzzles, and watermark-free downloads.
+          Thank you for subscribing! You now have unlimited learning sheets, generous photo &amp; dot-to-dot creations, and clean HD downloads with no branding — saved to your account on every device.
         </p>
 
         {/* Benefits */}

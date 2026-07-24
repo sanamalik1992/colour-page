@@ -12,21 +12,22 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Master switch for daily usage limits.
-// TEMPORARY: limits are OFF for testing (the `true ||`). Remove the `true ||`
-// before launch to re-enable the 3/day photo · 30/day learning · 3/day dot-to-dot
-// allowances. The env override also disables them without a deploy.
-export const USAGE_LIMITS_DISABLED = true || process.env.DISABLE_USAGE_LIMITS === 'true'
+// Master switch for daily usage limits. Limits are ENFORCED by default; the env
+// override can disable them (e.g. for a testing window) without a deploy.
+export const USAGE_LIMITS_DISABLED = process.env.DISABLE_USAGE_LIMITS === 'true'
 
 // Free daily allowances, enforced by counting rows (no RPC dependency). Pro is
 // unlimited. Tuned to cost: the image-model paths (photo, standalone dot-to-dot)
 // are tightly capped; learning sheets are mostly deterministic (near-zero cost
 // to serve), so their free allowance is generous — a real parent never hits it,
 // and it still bounds a runaway loop of picture-heavy theme topics.
+// Free plan: enough to experience every feature, not enough to cover a family's
+// daily use. Pro Family lifts these (learning sheets unlimited; photo+dot metered
+// monthly). The gallery of ready-made sheets stays unlimited for everyone.
 export const FREE_LIMITS = {
-  photo_coloring: 3,
-  topic_sheet: 30,
-  dot_to_dot: 3,
+  photo_coloring: 1,
+  topic_sheet: 3,
+  dot_to_dot: 1,
 }
 
 // Only jobs that actually did work count against a free allowance. A job that

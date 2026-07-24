@@ -24,13 +24,14 @@ const ANNUAL_ENABLED = Boolean(process.env.NEXT_PUBLIC_STRIPE_PRICE_ANNUAL)
 
 const PLANS = {
   monthly: { label: 'Monthly', price: '£4.99', per: '/month', note: 'Billed monthly · cancel anytime', badge: '' },
-  annual: { label: 'Yearly', price: '£49.99', per: '/year', note: 'Just £4.17/month · 2 months free', badge: '-17%' },
+  annual: { label: 'Yearly', price: '£39.99', per: '/year', note: 'Just £3.33/month · 4 months free', badge: '-33%' },
 } as const
 
 const FEATURES = [
-  { icon: InfinityIcon, color: 'text-emerald-500', bg: 'bg-emerald-50', title: 'Unlimited colouring pages', desc: 'Turn as many photos as you like into pages' },
   { icon: Sparkles, color: 'text-sky-500', bg: 'bg-sky-50', title: 'Unlimited learning sheets', desc: 'Every topic, every day — no limit' },
-  { icon: Palette, color: 'text-violet-500', bg: 'bg-violet-50', title: 'Unlimited dot-to-dot', desc: 'Turn any photo into a number puzzle' },
+  { icon: InfinityIcon, color: 'text-emerald-500', bg: 'bg-emerald-50', title: 'Generous photo & dot-to-dot', desc: 'Plenty of AI creations for the whole family' },
+  { icon: ShieldCheck, color: 'text-amber-500', bg: 'bg-amber-50', title: 'HD downloads, no branding', desc: 'Full 300-DPI A4 PDF & PNG, footer-free' },
+  { icon: Crown, color: 'text-violet-500', bg: 'bg-violet-50', title: 'Saved to your account', desc: 'Your library on every device you sign in on' },
 ]
 
 export default function ProPage() {
@@ -88,14 +89,14 @@ export default function ProPage() {
           <div className="text-center mb-8">
             <div className="inline-flex items-center gap-2 bg-brand-primary/15 border border-brand-primary/30 rounded-full px-4 py-1.5 mb-5">
               <Crown className="w-4 h-4 text-brand-primary" />
-              <span className="text-sm font-semibold text-brand-primary">colour.page Pro</span>
+              <span className="text-sm font-semibold text-brand-primary">colour.page Pro Family</span>
             </div>
             <div className="text-4xl mb-3" aria-hidden>🎨🖍️🌈</div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-3 leading-tight">
-              Unlock the whole crayon box
+              Personalised printables for every stage of learning
             </h1>
             <p className="text-gray-400 text-base sm:text-lg">
-              Unlimited colouring pages and puzzles for the little artists at home.
+              Create colouring pages, learning packs and puzzles tailored to your child — ready to print whenever you need them.
             </p>
           </div>
 
@@ -164,7 +165,7 @@ export default function ProPage() {
                 ) : loggedIn ? (
                   <>
                     <Crown className="w-5 h-5" />
-                    Start Pro — {active.price}{active.per}
+                    Start Pro Family — {active.price}{active.per}
                   </>
                 ) : (
                   <>Create account &amp; get Pro</>
@@ -207,9 +208,10 @@ export default function ProPage() {
               <h2 className="text-base font-bold text-white">Free is genuinely good</h2>
             </div>
             <p className="text-sm text-gray-400">
-              Every free sheet is the full, varied version — all the activities, no watermark,
-              print-ready. Pro isn&apos;t about better sheets; it&apos;s simply making as many as you
-              like, whenever you like.
+              Every free sheet is the full, varied version — all the activities, print-ready,
+              with just a small colour.page footer. Browse the ready-made gallery as much as you
+              like, and make a few of your own each day. Pro Family lifts the daily limits and
+              adds packs, personalisation and clean HD downloads.
             </p>
           </div>
 
@@ -220,11 +222,12 @@ export default function ProPage() {
               <div className="p-4 text-center font-semibold text-gray-400 border-l border-zinc-700">Free</div>
               <div className="p-4 text-center font-bold text-brand-primary border-l border-zinc-700 bg-brand-primary/5">Pro</div>
               {[
-                ['Colouring pages', '3 / day', 'Unlimited'],
-                ['Learning sheets', '30 / day', 'Unlimited'],
-                ['Dot-to-dot', '3 / day', 'Unlimited'],
+                ['Ready-made gallery', 'Unlimited', 'Unlimited'],
+                ['Learning sheets', '3 / day', 'Unlimited'],
+                ['Photo colouring', '1 / day', 'Unlimited'],
+                ['Dot-to-dot', '1 / day', 'Unlimited'],
                 ['Full activity sheets', 'Yes', 'Yes'],
-                ['Watermark', 'None', 'None'],
+                ['Downloads', 'A4 · footer', 'HD · no branding'],
               ].map(([label, free, pro], i) => (
                 <div key={label} className="contents">
                   <div className={`p-4 text-gray-300 ${i > 0 ? 'border-t border-zinc-700/60' : ''}`}>{label}</div>
