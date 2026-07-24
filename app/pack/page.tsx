@@ -7,6 +7,7 @@ import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 import { useMe } from '@/hooks/useMe'
 import { useSessionId } from '@/hooks/useSessionId'
+import { useChildProfiles } from '@/hooks/useChildProfiles'
 
 interface PackResult {
   title: string
@@ -22,7 +23,9 @@ const EXAMPLES = ['letter b', '3 times table', 'fractions', 'number bonds to 10'
 export default function PackPage() {
   const { me, loading: meLoading } = useMe()
   const sessionId = useSessionId()
+  const { profiles, save: saveChild } = useChildProfiles()
   const [topic, setTopic] = useState('')
+  const [childName, setChildName] = useState('')
   const [age, setAge] = useState(6)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -39,7 +42,7 @@ export default function PackPage() {
       const res = await fetch('/api/packs/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: topic.trim(), age, sessionId }),
+        body: JSON.stringify({ topic: topic.trim(), age, sessionId, childName: childName.trim() || undefined }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -105,8 +108,31 @@ export default function PackPage() {
                 ))}
               </div>
 
+              <label className="block text-sm font-medium text-gray-300 mb-2 mt-6">Child&apos;s name <span className="text-gray-500 font-normal">(optional — personalises the pack)</span></label>
+              <input
+                value={childName}
+                onChange={(e) => setChildName(e.target.value)}
+                placeholder="e.g. Ben"
+                maxLength={20}
+                className="w-full h-12 px-4 rounded-xl bg-zinc-800 border border-zinc-700 text-white placeholder-gray-500 focus:outline-none focus:border-brand-primary"
+              />
+              {profiles.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {profiles.map((p) => (
+                    <button key={p.id} onClick={() => { setChildName(p.name); setAge(p.age) }} className="text-xs px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-gray-300 hover:border-brand-primary">
+                      {p.name} · {p.age}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <label className="block text-sm font-medium text-gray-300 mb-2 mt-6">Age: <span className="text-brand-primary font-bold">{age}</span></label>
               <input type="range" min={3} max={10} value={age} onChange={(e) => setAge(parseInt(e.target.value, 10))} className="w-full accent-brand-primary" />
+              {childName.trim() && (
+                <button onClick={() => saveChild(childName, age)} className="text-xs text-brand-primary hover:underline mt-2">
+                  Save {childName.trim()} for next time
+                </button>
+              )}
 
               <button
                 onClick={generate}

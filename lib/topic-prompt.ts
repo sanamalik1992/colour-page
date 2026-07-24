@@ -96,6 +96,8 @@ export type ActivityKind =
   | { type: 'coins'; instruction: string; groups: number[][] }
   // A big letter to trace (formation), plus dotted trace rows. Deterministic.
   | { type: 'bigLetter'; instruction: string; letter: string }
+  // A reward / certificate panel personalised with the child's name.
+  | { type: 'reward'; instruction: string; name: string }
 
 // `pro` is retained on the type for schema stability but is no longer used to
 // gate content — every sheet renders all of its activities (free == Pro).
@@ -1109,7 +1111,31 @@ export interface ActivityPack {
 // Returns null for topics without a pack recipe (the caller falls back to a
 // single sheet). This is the flagship Pro feature: "make my 4-year-old a week
 // of letter-B activities" in one click.
-export function packPlan(rawTopic: string, age?: number): ActivityPack | null {
+// Clean a child's name for rendering (glyph font is A–Z/0–9). Empty → null.
+function cleanName(name?: string): string | null {
+  if (!name) return null
+  const n = name.toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 14)
+  return n || null
+}
+
+/**
+ * Build a pack, personalised with the child's name when supplied (a Pro Family
+ * touch): the name appears in each sheet heading, plus a "trace your name" sheet
+ * and a reward certificate are added.
+ */
+export function packPlan(rawTopic: string, age?: number, childName?: string): ActivityPack | null {
+  const base = basePackPlan(rawTopic, age)
+  if (!base) return null
+  const name = cleanName(childName)
+  if (!name) return base
+  const d = difficultyForAge(age)
+  const sheets = base.sheets.map((s) => ({ ...s, title: sheetTitle(`${name} ${s.subject}`) }))
+  sheets.push({ category: 'composed', subject: 'Trace your name', title: sheetTitle(`Trace your name`), activities: [{ type: 'note', text: `Trace your name, ${name}` }, { type: 'traceWords', instruction: 'Trace your name', words: [name] }], prompt: '', difficulty: d })
+  sheets.push({ category: 'composed', subject: 'Reward', title: sheetTitle('Well done'), activities: [{ type: 'reward', instruction: 'Colour your reward', name }], prompt: '', difficulty: d })
+  return { title: `${name}'s ${base.subject} pack`, subject: base.subject, sheets }
+}
+
+function basePackPlan(rawTopic: string, age?: number): ActivityPack | null {
   const topic = clean(rawTopic)
   const d = difficultyForAge(age)
   const mk = (title: string, acts: Activity[]): TopicPlan => ({ category: 'composed', subject: title, title: sheetTitle(title), activities: acts, prompt: '', difficulty: d })
