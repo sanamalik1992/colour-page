@@ -131,7 +131,7 @@ export default function AccountPage() {
           <div className="flex justify-between items-center py-3 border-b border-zinc-700">
             <span className="text-gray-400">Current plan</span>
             <span className="text-white font-medium">
-              {isPro ? <span className="flex items-center gap-2"><Crown className="w-4 h-4 text-amber-400" /> Pro</span> : 'Free'}
+              {isPro ? <span className="flex items-center gap-2"><Crown className="w-4 h-4 text-amber-400" /> Pro Family</span> : 'Free'}
             </span>
           </div>
 
@@ -158,7 +158,7 @@ export default function AccountPage() {
                 href="/pro"
                 className="w-full h-12 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold rounded-xl transition-opacity hover:opacity-90 flex items-center justify-center gap-2"
               >
-                <Crown className="w-4 h-4" /> Upgrade to Pro
+                <Crown className="w-4 h-4" /> Upgrade to Pro Family
               </Link>
             )}
           </div>
@@ -167,10 +167,10 @@ export default function AccountPage() {
         {/* Pro benefits */}
         <div className="bg-zinc-800/50 border border-zinc-700 rounded-2xl p-6">
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <Crown className="w-5 h-5 text-amber-400" /> Pro benefits
+            <Crown className="w-5 h-5 text-amber-400" /> Pro Family benefits
           </h2>
           <ul className="space-y-3 text-gray-300">
-            {['Unlimited colouring pages & learning sheets', 'High-resolution A4 print quality', 'Priority processing', 'Full print library', 'No watermarks'].map((b) => (
+            {['Unlimited learning sheets', 'Generous photo & dot-to-dot each month', 'HD A4 downloads — no branding', 'Your library saved on every device'].map((b) => (
               <li key={b} className="flex items-center gap-3">
                 <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" /> {b}
               </li>

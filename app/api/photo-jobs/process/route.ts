@@ -376,16 +376,17 @@ export async function POST(request: NextRequest) {
     // full-page ~35MB bitmaps decoded at once — keeps peak memory down.
     await updateJob(jobId, { status: 'rendering', progress: 88 })
     const isLandscape = settings.orientation === 'landscape'
+    // Pro Family downloads are unbranded and full 300-DPI; free downloads carry
+    // a small centred colour.page footer (on both the PDF and the PNG). Sheets
+    // are never watermarked either way — a shared sheet is distribution.
+    const isProJob = job.is_pro === true
     const tRender = Date.now()
     const pdfBuffer = await renderA4Pdf(lineArtBuffer, {
-      // Free sheets are no longer watermarked — every shared sheet is
-      // distribution, so it must be clean and print-proud. Only the small
-      // centred colour.page footer credit remains (on all sheets, free + Pro).
       watermark: false,
-      footer: true,
+      footer: !isProJob,
       landscape: isLandscape,
     })
-    const previewBuffer = await renderA4Preview(lineArtBuffer, isLandscape)
+    const previewBuffer = await renderA4Preview(lineArtBuffer, isLandscape, { footer: !isProJob, hd: isProJob })
     console.log(`[timing ${jobId}] render ${Date.now() - tRender}ms`)
 
     await updateJob(jobId, { progress: 93 })

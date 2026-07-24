@@ -157,17 +157,31 @@ export async function renderA4Pdf(
  */
 export async function renderA4Preview(
   imageBuffer: Buffer,
-  landscape: boolean = false
+  landscape: boolean = false,
+  opts: { footer?: boolean; hd?: boolean } = {}
 ): Promise<Buffer> {
-  // Preview at half resolution (1240 x 1754)
-  const targetW = landscape ? 1754 : 1240
-  const targetH = landscape ? 1240 : 1754
+  const { footer = false, hd = false } = opts
+  // Pro downloads are full 300-DPI (2480×3508); free previews are half-res.
+  const targetW = hd ? (landscape ? A4_HEIGHT_PX : A4_WIDTH_PX) : (landscape ? 1754 : 1240)
+  const targetH = hd ? (landscape ? A4_WIDTH_PX : A4_HEIGHT_PX) : (landscape ? 1240 : 1754)
 
-  return sharp(imageBuffer)
+  let img = sharp(imageBuffer)
     .resize(targetW, targetH, { fit: 'inside', background: { r: 255, g: 255, b: 255, alpha: 1 } })
     .flatten({ background: { r: 255, g: 255, b: 255 } })
-    .png()
-    .toBuffer()
+
+  // Free downloads carry a small centred colour.page footer credit baked into
+  // the bitmap (so it's present on the PNG download too, not just the PDF).
+  // Pro downloads have no branding.
+  if (footer) {
+    const fh = Math.round(targetH * 0.011)
+    const label = Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${targetW}" height="${fh * 2}">` +
+      `<text x="${targetW / 2}" y="${fh * 1.3}" font-family="sans-serif" font-size="${fh}" fill="#bfbfbf" text-anchor="middle">${FOOTER_TEXT}</text></svg>`
+    )
+    img = sharp(await img.png().toBuffer()).composite([{ input: label, gravity: 'south' }])
+  }
+
+  return img.png().toBuffer()
 }
 
 /**
