@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
     const topic = String(body?.topic || '').trim()
     const ageRaw = parseInt(String(body?.age), 10)
     const age = Number.isFinite(ageRaw) ? Math.max(3, Math.min(10, ageRaw)) : undefined
+    const childName = body?.childName ? String(body.childName).slice(0, 20) : undefined
 
     if (!topic) return NextResponse.json({ error: 'Please type a topic for the pack.' }, { status: 400 })
     if (topic.length > 80) return NextResponse.json({ error: 'Please use a shorter topic.' }, { status: 400 })
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `We can't make a pack for "${blocked}". Try a theme like space, animals or letters!` }, { status: 400 })
     }
 
-    const pack = packPlan(topic, age)
+    const pack = packPlan(topic, age, childName)
     if (!pack || !pack.sheets.length) {
       return NextResponse.json(
         { error: "We don't have a pack for that topic yet — try a letter, times table, fractions, number bonds, shapes, counting or addition.", noPack: true },

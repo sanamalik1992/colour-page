@@ -1794,6 +1794,37 @@ function bigLetterBlock(letter: string, x: number, top: number, w: number, h: nu
   return s
 }
 
+// A reward certificate: a big star, "WELL DONE", the child's name, and a line to
+// colour. Personalises a pack's final page.
+function rewardBlock(name: string, x: number, top: number, w: number, h: number): string {
+  const N = name.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim().slice(0, 12) || 'STAR'
+  const cx = x + w / 2
+  // A rosette-style star at the top.
+  const starCy = top + h * 0.26
+  const R = Math.min(h * 0.2, w * 0.22)
+  const pts: string[] = []
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5
+    const rr = i % 2 === 0 ? R : R * 0.45
+    pts.push(`${(cx + Math.cos(a) * rr).toFixed(1)},${(starCy + Math.sin(a) * rr).toFixed(1)}`)
+  }
+  let s = `<polygon points="${pts.join(' ')}" fill="none" stroke="#111" stroke-width="6" stroke-linejoin="round"/>`
+  // "WELL DONE"
+  const wh = Math.min(h * 0.1, 70)
+  const ww = textWidth('WELL DONE', wh)
+  s += textSvg('WELL DONE', cx - ww / 2, top + h * 0.5, wh, Math.max(6, wh * 0.14), { color: '#B26A00' })
+  // The child's name, big.
+  const nh = Math.min(h * 0.16, 150)
+  let nhh = nh
+  while (numberWidth(N, nhh) > w * 0.9 && nhh > 40) nhh -= 4
+  const nw = numberWidth(N, nhh)
+  s += numberSvg(N, cx - nw / 2, top + h * 0.6, nhh, Math.max(8, nhh * 0.12))
+  // A ribbon line to colour / sign.
+  const ly = top + h * 0.88
+  s += `<line x1="${(cx - w * 0.32).toFixed(1)}" y1="${ly.toFixed(1)}" x2="${(cx + w * 0.32).toFixed(1)}" y2="${ly.toFixed(1)}" stroke="#c9c4ba" stroke-width="3"/>`
+  return s
+}
+
 // Countable dots under an operand (visual aid for the youngest children).
 function countDots(n: number, cx: number, top: number, r: number): string {
   if (n < 1) return ''
@@ -2107,7 +2138,7 @@ function clocksBlock(
 }
 
 const ACTIVITY_WEIGHT: Record<string, number> = {
-  note: 0.6, pictures: 4.4, circleWords: 1.8, traceWords: 1.6, bigLetter: 5,
+  note: 0.6, pictures: 4.4, circleWords: 1.8, traceWords: 1.6, bigLetter: 5, reward: 5,
   wordSearch: 2.6, readWords: 1.8, writeLines: 1.4, sentence: 1.4, sums: 3.2,
   countObjects: 2.6, countPictures: 3, traceNumbers: 1.8, clocks: 3.2,
   timesTable: 3.6, multiplyGroups: 4.2,
@@ -2304,6 +2335,7 @@ export async function buildComposedSheet(
         case 'numberTrack': overlay += numberTrackBlock(a.start, a.step, a.count, bodyX, nextY, bodyW, ch, answers); break
         case 'coins': overlay += coinsBlock(a.groups, bodyX, nextY, bodyW, ch, answers); break
         case 'bigLetter': overlay += bigLetterBlock(a.letter, bodyX, nextY, bodyW, ch); break
+        case 'reward': overlay += rewardBlock(a.name, bodyX, nextY, bodyW, ch); break
         case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'traceNumbers': overlay += traceNumbersBlock(a.upTo, bodyX, nextY, bodyW, ch); break
       }
