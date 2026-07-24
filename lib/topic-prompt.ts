@@ -94,6 +94,8 @@ export type ActivityKind =
   | { type: 'numberTrack'; instruction: string; start: number; step: number; count: number }
   // Money — draw UK coins, total them into a box.
   | { type: 'coins'; instruction: string; groups: number[][] }
+  // A big letter to trace (formation), plus dotted trace rows. Deterministic.
+  | { type: 'bigLetter'; instruction: string; letter: string }
 
 // `pro` is retained on the type for schema stability but is no longer used to
 // gate content — every sheet renders all of its activities (free == Pro).
@@ -1092,6 +1094,106 @@ export function cvcPlan(rawTopic: string, age?: number): TopicPlan | null {
     { type: 'writeLines', instruction: 'Write three cvc words of your own', count: 3 },
   ]
   return { category: 'composed', subject: 'CVC words', title: sheetTitle('CVC words'), activities: acts, prompt: '', difficulty: difficultyForAge(age) }
+}
+
+// ---- Activity packs (Pro): a coordinated set of sheets for one topic --------
+
+export interface ActivityPack {
+  title: string
+  subject: string
+  sheets: TopicPlan[]
+}
+
+// Build a coordinated multi-sheet pack for a topic+age. All sheets are
+// DETERMINISTIC (no image model), so a pack renders instantly and correctly.
+// Returns null for topics without a pack recipe (the caller falls back to a
+// single sheet). This is the flagship Pro feature: "make my 4-year-old a week
+// of letter-B activities" in one click.
+export function packPlan(rawTopic: string, age?: number): ActivityPack | null {
+  const topic = clean(rawTopic)
+  const d = difficultyForAge(age)
+  const mk = (title: string, acts: Activity[]): TopicPlan => ({ category: 'composed', subject: title, title: sheetTitle(title), activities: acts, prompt: '', difficulty: d })
+
+  // Letters / phonics sounds → a formation + reading + writing week.
+  const grapheme = detectLetter(topic) || detectPhonics(topic) || detectBeginningSound(topic)
+  if (grapheme) {
+    const L = grapheme.toUpperCase()
+    const pool = objectsForGrapheme(grapheme.toLowerCase())
+    const words = (pool.length >= 3 ? pool : ['ball', 'bat', 'bus', 'bee']).map((w) => w.replace(/[^a-zA-Z]/g, '')).filter(Boolean).slice(0, 8)
+    const distract = ['cat', 'dog', 'sun', 'hen', 'pig', 'top', 'mug', 'net'].filter((w) => !w.toLowerCase().startsWith(grapheme.toLowerCase()[0])).slice(0, 4)
+    const circleBank: string[] = []
+    for (let i = 0; i < 4; i++) { if (words[i]) circleBank.push(words[i]); if (distract[i]) circleBank.push(distract[i]) }
+    const sheets: TopicPlan[] = [
+      mk(`Letter ${L}`, [{ type: 'note', text: `Colour the big ${L}, then trace the rows` }, { type: 'bigLetter', instruction: `Trace the letter ${L}`, letter: L }]),
+      mk(`${L} words`, [{ type: 'note', text: `Read and trace words with ${L}` }, { type: 'readWords', instruction: 'Read the words', words: words.slice(0, 8) }, { type: 'traceWords', instruction: 'Trace the words', words: words.slice(0, 4) }]),
+      mk(`Words with ${L}`, [{ type: 'note', text: `Circle the words that use ${L}` }, { type: 'circleWords', instruction: `Circle the ${L} words`, words: circleBank.slice(0, 8) }, { type: 'traceWords', instruction: `Trace the ${L} words`, words: words.slice(0, 4) }, { type: 'writeLines', instruction: `Write three words with ${L}`, count: 3 }]),
+      mk(`${L} word search`, [{ type: 'note', text: `Find the words with ${L}` }, { type: 'wordSearch', instruction: 'Find the words', words: words.slice(0, 5) }, { type: 'sentence', instruction: `Write a sentence with a ${L} word`, lines: 2 }]),
+    ]
+    return { title: `Letter ${L} pack`, subject: `Letter ${L}`, sheets }
+  }
+
+  // Times tables → count → groups → ladder → mixed → (÷).
+  const table = detectTimesTable(topic)
+  if (table != null) {
+    const old = age == null || age >= 9
+    const sheets: TopicPlan[] = [
+      mk(`Count in ${table}s`, [{ type: 'note', text: `Count in ${table}s and fill the gaps` }, { type: 'numberTrack', instruction: `Count in ${table}s`, start: table, step: table, count: 18 }]),
+      mk(`Groups of ${table}`, [{ type: 'note', text: 'Count the groups to multiply' }, { type: 'multiplyGroups', instruction: 'Count the groups', table, upTo: 5 }]),
+      mk(`The ${table} times table`, [{ type: 'note', text: 'Multiply to find each answer' }, { type: 'timesTable', instruction: 'The table in order', table, upTo: 12, op: 'multiply', shuffle: false }]),
+      mk(`${table} times table mixed`, [{ type: 'note', text: 'Mixed practice' }, { type: 'timesTable', instruction: 'Mixed practice', table, upTo: 12, op: 'multiply', shuffle: true }]),
+    ]
+    if (old) sheets.push(mk(`Dividing by ${table}`, [{ type: 'note', text: 'Use the table backwards to divide' }, { type: 'timesTable', instruction: 'Division facts', table, upTo: 12, op: 'divide', shuffle: true }]))
+    return { title: `${table} times table pack`, subject: `${table} times table`, sheets }
+  }
+
+  // Fractions → colour → name → of amounts (easy) → of amounts (harder).
+  if (detectFractions(topic)) {
+    const sheets: TopicPlan[] = [
+      mk('Colour the fraction', [{ type: 'note', text: 'Colour the fraction shown' }, { type: 'fractionShade', instruction: 'Colour the fraction', mode: 'shade', fractions: [{ n: 1, d: 2 }, { n: 1, d: 4 }, { n: 1, d: 3 }, { n: 3, d: 4 }] }]),
+      mk('Name the fraction', [{ type: 'note', text: 'Write the fraction that is shaded' }, { type: 'fractionShade', instruction: 'Write the shaded fraction', mode: 'write', fractions: [{ n: 1, d: 2 }, { n: 1, d: 3 }, { n: 1, d: 4 }, { n: 2, d: 3 }, { n: 3, d: 4 }, { n: 2, d: 5 }] }]),
+      mk('Fractions of amounts', [{ type: 'note', text: 'Find the fraction of each amount' }, { type: 'fractionOf', instruction: 'Find the fraction of each amount', problems: [{ n: 1, d: 2, whole: 8 }, { n: 1, d: 4, whole: 8 }, { n: 1, d: 3, whole: 9 }, { n: 1, d: 2, whole: 10 }, { n: 1, d: 5, whole: 10 }] }]),
+      mk('More fractions of amounts', [{ type: 'note', text: 'Find the fraction of each amount' }, { type: 'fractionOf', instruction: 'Find the fraction of each amount', problems: [{ n: 2, d: 3, whole: 12 }, { n: 3, d: 4, whole: 16 }, { n: 3, d: 5, whole: 20 }, { n: 5, d: 6, whole: 18 }, { n: 2, d: 5, whole: 15 }] }]),
+    ]
+    return { title: 'Fractions pack', subject: 'Fractions', sheets }
+  }
+
+  // Number bonds → ten frame → part-whole → missing → subtraction.
+  const W = detectNumberBonds(topic)
+  if (W != null) {
+    const w = Math.min(W, 20)
+    const sheets: TopicPlan[] = [
+      mk(`Make ${w} — ten frame`, [{ type: 'note', text: 'Fill the ten frame and write the pair' }, { type: 'tenFrame', instruction: 'How many make the whole', whole: w, count: 4 }]),
+      mk(`Make ${w} — part-whole`, [{ type: 'note', text: 'Write the missing part' }, { type: 'partWhole', instruction: 'Write the missing part', whole: w, count: 3 }]),
+      mk(`Bonds to ${w} — missing number`, [{ type: 'note', text: 'Find the missing number' }, { type: 'bonds', instruction: 'Find the missing number', whole: w, count: 10, style: 'missing' }]),
+      mk(`Bonds to ${w} — subtraction`, [{ type: 'note', text: 'Complete the subtraction facts' }, { type: 'bonds', instruction: 'Subtraction facts', whole: w, count: 10, style: 'subtract' }]),
+    ]
+    return { title: `Number bonds to ${w} pack`, subject: `Number bonds to ${w}`, sheets }
+  }
+
+  // Shapes → 2D → 3D → sort. Reuses the tested single-sheet builder.
+  if (detectShapes(topic)) {
+    const sheets = [shapesPlan('2d shapes', age)!, shapesPlan('3d shapes', age)!, shapesPlan('shapes', age)!].filter(Boolean)
+    return { title: 'Shapes pack', subject: 'Shapes', sheets }
+  }
+
+  // Counting → to 20 → to 50 → in 2s → in 5s → in 10s.
+  if (detectCounting(topic)) {
+    const sheets = [countingPlan('counting to 20', age)!, countingPlan('counting to 50', age)!, countingPlan('counting in 2s', age)!, countingPlan('counting in 5s', age)!, countingPlan('counting in 10s', age)!].filter(Boolean)
+    return { title: 'Counting pack', subject: 'Counting', sheets }
+  }
+
+  // Addition & subtraction → to 10 → to 20 → mixed.
+  if (/\b(add|adding|addition|sums?|subtract\w*|take[\s-]?aways?|plus|minus)\b/i.test(topic)) {
+    const sheets: TopicPlan[] = [
+      mk('Adding to 10', [{ type: 'note', text: 'Count and add' }, { type: 'sums', instruction: 'Add', op: 'add', maxValue: 10, count: 12, dots: true }]),
+      mk('Adding to 20', [{ type: 'note', text: 'Work out each sum' }, { type: 'sums', instruction: 'Add', op: 'add', maxValue: 20, count: 12 }]),
+      mk('Subtracting to 20', [{ type: 'note', text: 'Work out each sum' }, { type: 'sums', instruction: 'Subtract', op: 'subtract', maxValue: 20, count: 12 }]),
+      mk('Mixed sums to 20', [{ type: 'note', text: 'Add and subtract' }, { type: 'sums', instruction: 'Add and subtract', op: 'mixed', maxValue: 20, count: 12 }]),
+    ]
+    return { title: 'Addition & subtraction pack', subject: 'Addition and subtraction', sheets }
+  }
+
+  return null
 }
 
 // ---- Days, months, Roman numerals (deterministic) -------------------------
