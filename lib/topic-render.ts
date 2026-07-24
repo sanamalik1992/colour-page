@@ -1002,9 +1002,12 @@ async function picturesRowBlock(
 ): Promise<{ svg: string; composites: sharp.OverlayOptions[] }> {
   const n = bufs.length
   if (!n) return { svg: '', composites: [] }
-  // Fewer columns = bigger, clearer pictures. The common "colour & label 4
-  // things" case becomes a 2×2 grid rather than a cramped 1×4 row.
-  const cols = n === 4 ? 2 : Math.min(n, 3)
+  // Two columns is the sweet spot for big, comfortable colour-in pictures: the
+  // cells are half the page wide, and (with a tall flex-filled slice) the
+  // pictures come out large. 1–2 pictures sit in a single row; 3+ use 2 columns
+  // (so 3 is a 2-then-1 grid of BIG pictures, not a cramped 1×3 row). Five/six
+  // fall to 3 columns.
+  const cols = n <= 2 ? n : n <= 4 ? 2 : 3
   const rows = Math.ceil(n / cols)
   const cellW = w / cols
   const cellH = h / rows
@@ -1016,7 +1019,12 @@ async function picturesRowBlock(
   for (let i = 0; i < n; i++) {
     const c = i % cols
     const r = Math.floor(i / cols)
-    const cx = x + c * cellW
+    // Centre an incomplete final row (e.g. the lone 3rd picture) instead of
+    // leaving it hanging under the left column.
+    const itemsInRow = Math.min(cols, n - r * cols)
+    const rowW = itemsInRow * cellW
+    const rowX = x + (w - rowW) / 2
+    const cx = rowX + c * cellW
     const cy = top + r * cellH
     const innerW = Math.round(cellW * 0.94)
     const innerH = Math.round(picBoxH * 0.98)
