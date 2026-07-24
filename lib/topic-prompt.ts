@@ -455,14 +455,20 @@ export function clockActivities(d: Difficulty): Activity[] {
 // Turn a theme's drawable objects into a VARIED sheet rather than a plain
 // colour page: colour & label the pictures → a puzzle/trace → count / write.
 export function pictorialActivities(objects: string[], d: Difficulty): Activity[] {
-  const objs = objects.map((o) => o.trim()).filter(Boolean).slice(0, 4)
-  const names = [...new Set(objects.map((o) => o.toUpperCase().replace(/[^A-Z]/g, '')).filter((w) => w.length >= 2 && w.length <= 8))].slice(0, 4)
+  const low = d.detailLevel === 'low'
+  // Young children (5–7) get FEWER, BIGGER colour-in pictures — three large
+  // drawings a small hand can actually colour, rather than a grid of little
+  // ones. Older children, where the writing is the point, keep four.
+  const maxPics = low ? 3 : 4
+  const objs = objects.map((o) => o.trim()).filter(Boolean).slice(0, maxPics)
+  const names = [...new Set(objects.map((o) => o.toUpperCase().replace(/[^A-Z]/g, '')).filter((w) => w.length >= 2 && w.length <= 8))].slice(0, maxPics)
   const acts: Activity[] = [{ type: 'pictures', instruction: 'Colour and label', items: objs, label: true }]
-  if (d.detailLevel === 'low') {
-    // Count the topic's OWN pictures (moons, lanterns…) — stays on-topic instead
-    // of counting abstract dots.
-    acts.push({ type: 'countPictures', instruction: 'Count and colour', items: objs })
-    if (names.length) acts.push({ type: 'traceWords', instruction: 'Trace the words', words: names })
+  if (low) {
+    // Colour-first for the youngest: the big pictures above, then a counting
+    // warm-up with countable DOTS (not a scatter of tiny topic pictures) and
+    // tracing the words. Retires the old "count & colour" tiny-picture block.
+    acts.push({ type: 'countObjects', instruction: 'Count and colour', count: 4, maxCount: 6 })
+    if (names.length) acts.push({ type: 'traceWords', instruction: 'Trace the words', words: names.slice(0, 3) })
   } else {
     if (names.length >= 2) acts.push({ type: 'wordSearch', instruction: 'Find the words', words: names })
     else acts.push({ type: 'countPictures', instruction: 'Count and colour', items: objs })
@@ -497,13 +503,14 @@ export function numberActivities(maxN: number): Activity[] {
   ]
 }
 
-function conceptActivities(key: string): Activity[] {
+function conceptActivities(key: string, young: boolean): Activity[] {
   const c = CONCEPTS[key]
   return [
     { type: 'note', text: c.note },
     // Colour the pictures and write a word of the RIGHT type for each (describe
-    // for adjectives, the action for verbs, the name for nouns).
-    { type: 'pictures', instruction: c.picInstruction, items: c.pics, label: true },
+    // for adjectives, the action for verbs, the name for nouns). Young children
+    // get three BIG pictures rather than four smaller ones.
+    { type: 'pictures', instruction: c.picInstruction, items: young ? c.pics.slice(0, 3) : c.pics, label: true },
     // Circle the target type from a bank whose examples describe/relate to those
     // pictures, mixed with off-type distractors.
     { type: 'circleWords', instruction: c.circleInstruction, words: c.mixed },
@@ -521,11 +528,12 @@ function conceptActivities(key: string): Activity[] {
 export function conceptPlan(rawTopic: string, age?: number): TopicPlan | null {
   const ck = conceptKey(clean(rawTopic))
   if (!ck) return null
+  const young = age != null && age <= 7
   return {
     category: 'composed',
     subject: CONCEPTS[ck].title,
     title: sheetTitle(CONCEPTS[ck].title),
-    activities: conceptActivities(ck),
+    activities: conceptActivities(ck, young),
     prompt: '',
     difficulty: difficultyForAge(age),
   }
@@ -954,9 +962,12 @@ const SPAG: Record<string, { title: string; detect: RegExp; build: SpagBuild }> 
     title: 'Adverbs',
     detect: /\badverbs?\b/i,
     build: () => [
-      { type: 'note', text: 'An adverb tells how something is done' },
+      { type: 'note', text: 'Many adverbs add -ly to an adjective' },
       { type: 'circleWords', instruction: 'Circle the adverbs', words: ['quickly', 'dog', 'slowly', 'run', 'softly', 'blue', 'loudly', 'jump'] },
-      { type: 'matchLines', instruction: 'Match the verb to an adverb', left: ['whisper', 'sprint', 'giggle', 'stamp'], right: ['quietly', 'fast', 'happily', 'loudly'] },
+      // Adverb -> its adjective root: one correct answer each (and it shows how
+      // the adverb is built), unlike verb->adverb where several adverbs fit.
+      { type: 'matchLines', instruction: 'Match the adverb to its adjective', left: ['quickly', 'slowly', 'loudly', 'softly', 'happily', 'brightly'], right: ['quick', 'slow', 'loud', 'soft', 'happy', 'bright'] },
+      { type: 'writeLines', instruction: 'Add -ly to make an adverb: slow, kind, quiet', count: 3 },
       { type: 'sentence', instruction: 'Write a sentence with an adverb', lines: 2 },
     ],
   },
