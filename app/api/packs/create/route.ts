@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getUserPlan } from '@/lib/pro-gating'
 import { getServerUser } from '@/lib/supabase/auth-server'
 import { packPlan } from '@/lib/topic-prompt'
-import { buildComposedSheet } from '@/lib/topic-render'
+import { buildComposedSheet, sheetHasAnswers } from '@/lib/topic-render'
 import { renderMultiPagePdf, renderA4Preview } from '@/lib/pdf-renderer'
 import { findBlockedTerm } from '@/lib/blocklist'
 import type { PhotoJobSettings } from '@/types/photo-job'
@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
 
     // Render every sheet deterministically (no image model → no genPicture).
     const buffers: Buffer[] = []
+    const answerPages: Buffer[] = []
     for (const sheet of pack.sheets) {
       const settings: PhotoJobSettings = {
         orientation: 'portrait',
@@ -72,8 +73,16 @@ export async function POST(request: NextRequest) {
         detailLevel: sheet.difficulty.detailLevel,
         source: 'topic',
       }
-      buffers.push(await buildComposedSheet(sheet.title, sheet.activities || [], settings))
+      const acts = sheet.activities || []
+      buffers.push(await buildComposedSheet(sheet.title, acts, settings))
+      // Build an answer page for sheets with computable answers (maths). The
+      // same activities + order reproduce the same questions, now with answers.
+      if (sheetHasAnswers(acts)) {
+        answerPages.push(await buildComposedSheet(`Answers — ${sheet.subject}`, acts, settings, undefined, undefined, true))
+      }
     }
+    // Answer key pages go at the end of the pack.
+    buffers.push(...answerPages)
 
     // Pro downloads are unbranded, full-DPI.
     const pdf = await renderMultiPagePdf(buffers, { footer: false })
@@ -92,7 +101,8 @@ export async function POST(request: NextRequest) {
       id,
       title: pack.title,
       subject: pack.subject,
-      pages: pack.sheets.length,
+      pages: buffers.length,
+      answerPages: answerPages.length,
       sheetTitles: pack.sheets.map((s) => s.title),
       pdfUrl,
       coverUrl: pngUrl,
