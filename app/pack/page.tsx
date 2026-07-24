@@ -11,6 +11,7 @@ import { useSessionId } from '@/hooks/useSessionId'
 interface PackResult {
   title: string
   pages: number
+  answerPages?: number
   sheetTitles: string[]
   pdfUrl: string
   coverUrl: string
@@ -121,7 +122,9 @@ export default function PackPage() {
             {result && (
               <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 mt-6">
                 <h2 className="text-lg font-bold mb-1">{result.title}</h2>
-                <p className="text-sm text-gray-400 mb-4">{result.pages} pages</p>
+                <p className="text-sm text-gray-400 mb-4">
+                  {result.pages} pages{result.answerPages ? ` · includes ${result.answerPages} answer ${result.answerPages === 1 ? 'sheet' : 'sheets'}` : ''}
+                </p>
                 <div className="grid sm:grid-cols-2 gap-4 items-start">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={result.coverUrl} alt="Pack cover" className="w-full rounded-xl border border-zinc-700 bg-white" />

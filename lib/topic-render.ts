@@ -1067,7 +1067,7 @@ function opGlyph(kind: '+' | '-' | '=' | '×' | '÷', cx: number, cy: number, si
 // A times-table block: `table × k = [box]` for k = 1..upTo, in order (a ladder to
 // learn) or shuffled (mixed practice); `op:'divide'` renders the inverse
 // `(table·k) ÷ table = [box]`. All facts are correct by construction.
-function timesTableBlock(table: number, upTo: number, op: 'multiply' | 'divide', shuffle: boolean, x: number, top: number, w: number, h: number, salt = 0): string {
+function timesTableBlock(table: number, upTo: number, op: 'multiply' | 'divide', shuffle: boolean, x: number, top: number, w: number, h: number, salt = 0, ans = false): string {
   const n = Math.max(2, Math.min(12, Math.round(upTo)))
   const ks = Array.from({ length: n }, (_, i) => i + 1)
   if (shuffle) {
@@ -1111,6 +1111,7 @@ function timesTableBlock(table: number, upTo: number, op: 'multiply' | 'divide',
     s += numberSvg(String(it.b), cx, rowTop, gh, st); cx += numberWidth(String(it.b), gh) + gap
     s += opGlyph('=', cx + eqSym / 2, midY, eqSym, st); cx += eqSym + gap
     s += `<rect x="${cx.toFixed(1)}" y="${rowTop.toFixed(1)}" width="${(gh * 1.15).toFixed(1)}" height="${gh.toFixed(1)}" rx="10" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    if (ans) { const v = String(it.sign === '÷' ? it.a / it.b : it.a * it.b); s += numberSvg(v, cx + (gh * 1.15 - numberWidth(v, gh)) / 2, rowTop, gh, st) }
     return s
   }).join('')
 }
@@ -1119,7 +1120,7 @@ function timesTableBlock(table: number, upTo: number, op: 'multiply' | 'divide',
 // `table` countable circles (k lots of `table`), with the equation and an answer
 // box. Shows what multiplication MEANS (repeated groups) the way the sums block
 // uses countable dots — so a 5–7 year old can count the groups to find each answer.
-function multiplyGroupsBlock(table: number, upTo: number, x: number, top: number, w: number, h: number): string {
+function multiplyGroupsBlock(table: number, upTo: number, x: number, top: number, w: number, h: number, ans = false): string {
   const kMax = Math.max(2, Math.min(6, Math.round(upTo)))
   const ks = Array.from({ length: kMax }, (_, i) => i + 1)
   // Cap the row pitch so the groups cluster directly under the heading rather
@@ -1159,6 +1160,7 @@ function multiplyGroupsBlock(table: number, upTo: number, x: number, top: number
     s += numberSvg(String(k), cx, rowMid - gh / 2, gh, st); cx += numberWidth(String(k), gh) + gap
     s += opGlyph('=', cx + eqSym / 2, rowMid, eqSym, st); cx += eqSym + gap
     s += `<rect x="${cx.toFixed(1)}" y="${(rowMid - gh / 2).toFixed(1)}" width="${(gh * 1.15).toFixed(1)}" height="${gh.toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    if (ans) { const v = String(table * k); s += numberSvg(v, cx + (gh * 1.15 - numberWidth(v, gh)) / 2, rowMid - gh / 2, gh, st) }
   })
   return s
 }
@@ -1167,14 +1169,18 @@ function multiplyGroupsBlock(table: number, upTo: number, x: number, top: number
 // shared glyph height, left-to-right from x. Used by the number-bond block so a
 // blank can sit anywhere in the sentence ("7 + ▢ = 10", "▢ + 3 = 10", "10 − 4 = ▢").
 type EqTok = number | '+' | '-' | '=' | 'box'
-function equationTokens(tokens: EqTok[], x: number, midY: number, gh: number, st: number): { svg: string; width: number } {
+function equationTokens(tokens: EqTok[], x: number, midY: number, gh: number, st: number, boxVal?: number): { svg: string; width: number } {
   const gap = gh * 0.3, opW = gh * 0.6, eqSym = gh * 0.66, box = gh * 1.15
   const tokW = (t: EqTok): number => typeof t === 'number' ? numberWidth(String(t), gh) : t === 'box' ? box : t === '=' ? eqSym : opW
   const width = tokens.reduce((acc: number, t, i) => acc + tokW(t) + (i < tokens.length - 1 ? gap : 0), 0)
   let cx = x, s = ''
   for (const t of tokens) {
     if (typeof t === 'number') { s += numberSvg(String(t), cx, midY - gh / 2, gh, st); cx += numberWidth(String(t), gh) + gap }
-    else if (t === 'box') { s += `<rect x="${cx.toFixed(1)}" y="${(midY - gh / 2).toFixed(1)}" width="${box.toFixed(1)}" height="${gh.toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`; cx += box + gap }
+    else if (t === 'box') {
+      s += `<rect x="${cx.toFixed(1)}" y="${(midY - gh / 2).toFixed(1)}" width="${box.toFixed(1)}" height="${gh.toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+      if (boxVal != null) s += numberSvg(String(boxVal), cx + (box - numberWidth(String(boxVal), gh)) / 2, midY - gh / 2, gh, st)
+      cx += box + gap
+    }
     else { const sym = t === '=' ? eqSym : opW; s += opGlyph(t, cx + sym / 2, midY, sym, st); cx += sym + gap }
   }
   return { svg: s, width }
@@ -1256,7 +1262,7 @@ function partWholeBlock(whole: number, count: number, x: number, top: number, w:
 // Number-fact sentences with a blank anywhere. 'missing' = addition bonds
 // ("a + ▢ = W", "▢ + b = W"); 'subtract' = the inverse ("W − a = ▢",
 // "W − ▢ = a"). All correct by construction.
-function bondsBlock(whole: number, count: number, style: 'missing' | 'subtract', x: number, top: number, w: number, h: number, salt = 0): string {
+function bondsBlock(whole: number, count: number, style: 'missing' | 'subtract', x: number, top: number, w: number, h: number, salt = 0, ans = false): string {
   const W = Math.max(5, Math.min(100, Math.round(whole)))
   const n = Math.max(2, Math.min(12, Math.round(count)))
   const rng = makeRng(W * 131 + n * 17 + (style === 'subtract' ? 5 : 3) + salt * 7919)
@@ -1285,7 +1291,10 @@ function bondsBlock(whole: number, count: number, style: 'missing' | 'subtract',
     const midY = top + row * rowPitch + rowPitch / 2
     const { width } = equationTokens(tokens, 0, midY, gh, st)
     const startX = x + col * cellW + (cellW - width) / 2
-    return equationTokens(tokens, startX, midY, gh, st).svg
+    // The blank is always W − a, where a is the numeric token that isn't W.
+    let boxVal: number | undefined
+    if (ans) { const a = tokens.find((t): t is number => typeof t === 'number' && t !== W); boxVal = a != null ? W - a : undefined }
+    return equationTokens(tokens, startX, midY, gh, st, boxVal).svg
   }).join('')
 }
 
@@ -1509,7 +1518,7 @@ function fractionBar(k: number, d: number, x: number, y: number, w: number, barH
 // Fraction shapes. mode 'write': the fraction is shaded, child writes n/d in a
 // box. mode 'shade': the bar is blank with the fraction printed, child colours
 // that many parts. Two columns so the block packs the page.
-function fractionShadeBlock(fractions: { n: number; d: number }[], mode: 'shade' | 'write', x: number, top: number, w: number, h: number): string {
+function fractionShadeBlock(fractions: { n: number; d: number }[], mode: 'shade' | 'write', x: number, top: number, w: number, h: number, ans = false): string {
   const list = fractions.slice(0, 6)
   const cols = list.length > 3 ? 2 : 1
   const rows = Math.ceil(list.length / cols)
@@ -1534,6 +1543,7 @@ function fractionShadeBlock(fractions: { n: number; d: number }[], mode: 'shade'
       s += opGlyph('=', eqX, midY, gh * 0.7, Math.max(6, gh * 0.14))
       const boxX = eqX + gh * 0.7
       s += `<rect x="${boxX.toFixed(1)}" y="${(midY - gh * 0.7).toFixed(1)}" width="${(gh * 1.15).toFixed(1)}" height="${(gh * 1.4).toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+      if (ans) s += fractionGlyph(f.n, f.d, boxX + gh * 1.15 / 2, midY, gh * 0.6, Math.max(5, gh * 0.1))
     } else {
       // Print the fraction to colour.
       const gh = Math.min(barH * 0.42, 46)
@@ -1545,7 +1555,7 @@ function fractionShadeBlock(fractions: { n: number; d: number }[], mode: 'shade'
 
 // "n/d of W = [box]", each with W countable dots grouped into d rings so the
 // child can share them out. Deterministic, correct by construction.
-function fractionOfBlock(problems: { n: number; d: number; whole: number }[], x: number, top: number, w: number, h: number): string {
+function fractionOfBlock(problems: { n: number; d: number; whole: number }[], x: number, top: number, w: number, h: number, ans = false): string {
   const list = problems.slice(0, 5)
   const rowH = Math.min(h / list.length, 150)
   const yOff = Math.max(0, (h - rowH * list.length) / 2)
@@ -1565,6 +1575,7 @@ function fractionOfBlock(problems: { n: number; d: number; whole: number }[], x:
     s += numberSvg(String(p.whole), cx, midY - gh / 2, gh, st); cx += numberWidth(String(p.whole), gh) + gh * 0.3
     s += opGlyph('=', cx + gh * 0.35, midY, gh * 0.7, st); cx += gh * 0.7 + gh * 0.3
     s += `<rect x="${cx.toFixed(1)}" y="${(midY - gh / 2).toFixed(1)}" width="${(gh * 1.2).toFixed(1)}" height="${gh.toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    if (ans) { const v = String(Math.round(p.n * p.whole / p.d)); s += numberSvg(v, cx + (gh * 1.2 - numberWidth(v, gh)) / 2, midY - gh / 2, gh, st) }
     cx += gh * 1.2 + gh * 0.6
     // Countable dots for the whole (up to 20), so the child can share them out.
     if (p.whole <= 20) {
@@ -1607,7 +1618,7 @@ function compareLegend(x: number, y: number, w: number, gh: number): string {
   return s
 }
 
-function compareBlock(pairs: { a: number; b: number }[], x: number, top: number, w: number, h: number): string {
+function compareBlock(pairs: { a: number; b: number }[], x: number, top: number, w: number, h: number, ans = false): string {
   const list = pairs.slice(0, 12)
   const legendH = Math.min(h * 0.12, 44)
   let s = compareLegend(x, top, w, legendH)
@@ -1630,6 +1641,7 @@ function compareBlock(pairs: { a: number; b: number }[], x: number, top: number,
     let cx = cellX + (cellW - totalW) / 2
     s += numberSvg(String(p.a), cx, midY - gh / 2, gh, st); cx += aw + gh * 0.5
     s += `<rect x="${cx.toFixed(1)}" y="${(midY - gh / 2).toFixed(1)}" width="${boxW.toFixed(1)}" height="${gh.toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    if (ans) s += signGlyph(p.a > p.b ? '>' : p.a < p.b ? '<' : '=', cx + boxW / 2, midY, gh * 0.7, st)
     cx += boxW + gh * 0.5
     s += numberSvg(String(p.b), cx, midY - gh / 2, gh, st)
   })
@@ -1640,7 +1652,7 @@ function compareBlock(pairs: { a: number; b: number }[], x: number, top: number,
 
 // Base-ten picture: `tens` vertical "long" rods (each a tall bar of 10) and
 // `units` single cubes, then "TENS ▢ UNITS ▢ = ▢" to write the number.
-function placeValueBlock(numbers: number[], x: number, top: number, w: number, h: number): string {
+function placeValueBlock(numbers: number[], x: number, top: number, w: number, h: number, ans = false): string {
   const list = numbers.slice(0, 4).map((v) => Math.max(0, Math.min(99, Math.round(v))))
   const rowH = Math.min(h / list.length, 220)
   const yOff = Math.max(0, (h - rowH * list.length) / 2)
@@ -1674,18 +1686,20 @@ function placeValueBlock(numbers: number[], x: number, top: number, w: number, h
     const gh = Math.min(rowH * 0.24, 38)
     const st = Math.max(5, gh * 0.14)
     const lx = x + w * 0.52
-    const boxOf = (lbl: string, bx: number, byMid: number): string => {
+    const boxOf = (lbl: string, bx: number, byMid: number, val?: number): string => {
       let o = textSvg(lbl, bx, byMid - gh / 2, gh, st)
       const bxx = bx + textWidth(lbl, gh) + gh * 0.4
       o += `<rect x="${bxx.toFixed(1)}" y="${(byMid - gh / 2).toFixed(1)}" width="${(gh * 1.2).toFixed(1)}" height="${gh.toFixed(1)}" rx="6" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+      if (ans && val != null) o += numberSvg(String(val), bxx + (gh * 1.2 - numberWidth(String(val), gh)) / 2, byMid - gh / 2, gh, st)
       return o
     }
-    s += boxOf('TENS', lx, midY - gh)
-    s += boxOf('UNITS', lx, midY + gh)
+    s += boxOf('TENS', lx, midY - gh, tens)
+    s += boxOf('UNITS', lx, midY + gh, units)
     // "= [box]" for the whole number.
     const eqX = x + w * 0.8
     s += opGlyph('=', eqX, midY, gh * 0.8, st)
     s += `<rect x="${(eqX + gh * 0.55).toFixed(1)}" y="${(midY - gh * 0.7).toFixed(1)}" width="${(gh * 1.7).toFixed(1)}" height="${(gh * 1.4).toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3.5"/>`
+    if (ans) s += numberSvg(String(num), eqX + gh * 0.55 + (gh * 1.7 - numberWidth(String(num), gh)) / 2, midY - gh / 2, gh, st)
   })
   return s
 }
@@ -1695,7 +1709,7 @@ function placeValueBlock(numbers: number[], x: number, top: number, w: number, h
 // A track of joined boxes; some hold the number, the rest are blank to fill.
 // The sequence is start, start+step, … The first two are always filled to model
 // the pattern, then a deterministic mix of shown/blank.
-function numberTrackBlock(start: number, step: number, count: number, x: number, top: number, w: number, h: number): string {
+function numberTrackBlock(start: number, step: number, count: number, x: number, top: number, w: number, h: number, ans = false): string {
   const n = Math.max(3, Math.min(30, count))
   // Aim for ~6 boxes per row so they're big enough to write in comfortably.
   const perRow = n > 6 ? Math.ceil(n / Math.ceil(n / 6)) : n
@@ -1715,7 +1729,8 @@ function numberTrackBlock(start: number, step: number, count: number, x: number,
     const cy = top + yOff + row * rowH + (rowH - boxH) / 2
     const val = start + i * step
     // First two of each row shown; then ~45% shown, rest blank to fill.
-    const shown = (i % perRow) < 2 || rng() < 0.45
+    // In answer mode every box is filled.
+    const shown = ans || (i % perRow) < 2 || rng() < 0.45
     s += `<rect x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="${boxW.toFixed(1)}" height="${boxH.toFixed(1)}" rx="10" fill="none" stroke="${shown ? '#111' : '#c9c4ba'}" stroke-width="3"/>`
     if (shown) {
       const vw = numberWidth(String(val), gh)
@@ -1739,7 +1754,7 @@ function coinSvg(value: number, cx: number, cy: number, r: number): string {
 }
 
 // Each group is a purse of coins; the child totals them into a "= ▢ P" box.
-function coinsBlock(groups: number[][], x: number, top: number, w: number, h: number): string {
+function coinsBlock(groups: number[][], x: number, top: number, w: number, h: number, ans = false): string {
   const list = groups.slice(0, 5)
   const rowH = Math.min(h / list.length, 170)
   const yOff = Math.max(0, (h - rowH * list.length) / 2)
@@ -1757,6 +1772,7 @@ function coinsBlock(groups: number[][], x: number, top: number, w: number, h: nu
     s += opGlyph('=', eqX, midY, gh * 0.7, st)
     const boxX = eqX + gh * 0.6
     s += `<rect x="${boxX.toFixed(1)}" y="${(midY - gh / 2).toFixed(1)}" width="${(gh * 1.7).toFixed(1)}" height="${gh.toFixed(1)}" rx="8" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    if (ans) { const tot = String(cs.reduce((a, b) => a + b, 0)); s += numberSvg(tot, boxX + (gh * 1.7 - numberWidth(tot, gh)) / 2, midY - gh / 2, gh, st) }
     s += numberSvg('P', boxX + gh * 1.9, midY - gh / 2, gh, st)
   })
   return s
@@ -1796,7 +1812,7 @@ function countDots(n: number, cx: number, top: number, r: number): string {
 
 // A grid of correct addition/subtraction sums with a box to write the answer.
 // `salt` varies the generated sums between two sums blocks on the same sheet.
-function sumsBlock(op: 'add' | 'subtract' | 'mixed', maxValue: number, count: number, dots: boolean, x: number, top: number, w: number, h: number, salt = 0): string {
+function sumsBlock(op: 'add' | 'subtract' | 'mixed', maxValue: number, count: number, dots: boolean, x: number, top: number, w: number, h: number, salt = 0, ans = false): string {
   const maxV = Math.max(5, Math.min(100, Math.round(maxValue)))
   const n = Math.max(2, Math.min(15, Math.round(count)))
   const rng = makeRng(maxV * 131 + n * 17 + (op === 'add' ? 1 : op === 'subtract' ? 2 : 3) + salt * 7919)
@@ -1860,6 +1876,7 @@ function sumsBlock(op: 'add' | 'subtract' | 'mixed', maxValue: number, count: nu
     s += opGlyph('=', cx + eqSym / 2, midY, eqSym, st)
     cx += eqSym + gap
     s += `<rect x="${cx.toFixed(1)}" y="${rowTop.toFixed(1)}" width="${(gh * 1.15).toFixed(1)}" height="${gh.toFixed(1)}" rx="10" fill="none" stroke="#c9c4ba" stroke-width="3"/>`
+    if (ans) { const v = String(it.sign === '+' ? it.a + it.b : it.a - it.b); s += numberSvg(v, cx + (gh * 1.15 - numberWidth(v, gh)) / 2, rowTop, gh, st) }
     return s
   }).join('')
 }
@@ -2107,6 +2124,12 @@ const ACTIVITY_WEIGHT: Record<string, number> = {
  * varied worksheet: the planner picks the blocks, we lay them out top-to-bottom.
  * Free sheets drop any block flagged `pro`.
  */
+// Which activity blocks can render a computed answer in answer-key mode.
+const ANSWERABLE = new Set(['sums', 'timesTable', 'multiplyGroups', 'fractionOf', 'compareNumbers', 'placeValue', 'numberTrack', 'coins', 'bonds'])
+export function sheetHasAnswers(activities: Activity[]): boolean {
+  return activities.some((a) => ANSWERABLE.has(a.type) || (a.type === 'fractionShade' && a.mode === 'write'))
+}
+
 export async function buildComposedSheet(
   title: string | undefined,
   activities: Activity[],
@@ -2114,7 +2137,11 @@ export async function buildComposedSheet(
   genPicture?: (obj: string) => Promise<Buffer | null>,
   // Fires as each unique object finishes so the caller can show honest progress
   // during the (otherwise silent) picture-generation phase.
-  onPicProgress?: (done: number, total: number) => void
+  onPicProgress?: (done: number, total: number) => void,
+  // Answer-key mode: the numeric blocks fill their answer boxes with the correct
+  // answer (reusing the exact same question generation) instead of leaving them
+  // blank. Used to render the ANSWERS page of a pack.
+  answers = false
 ): Promise<Buffer> {
   // Every sheet renders ALL its activities — free and Pro are identical in
   // content. Quality is for everyone; Pro is more sheets, not better ones.
@@ -2259,23 +2286,23 @@ export async function buildComposedSheet(
         case 'readWords': overlay += readWordsBlock(a.words.map(up), bodyX, nextY, bodyW, ch); break
         case 'writeLines': overlay += writeLinesBlock(a.count, bodyX, nextY, bodyW, ch); break
         case 'sentence': overlay += sentenceLinesBlock(a.lines, bodyX, nextY, bodyW, ch); break
-        case 'sums': overlay += sumsBlock(a.op, a.maxValue, a.count, !!a.dots, bodyX, nextY, bodyW, ch, blockIndex); break
-        case 'timesTable': overlay += timesTableBlock(a.table, a.upTo, a.op, a.shuffle, bodyX, nextY, bodyW, ch, blockIndex); break
-        case 'multiplyGroups': overlay += multiplyGroupsBlock(a.table, a.upTo, bodyX, nextY, bodyW, ch); break
+        case 'sums': overlay += sumsBlock(a.op, a.maxValue, a.count, !!a.dots, bodyX, nextY, bodyW, ch, blockIndex, answers); break
+        case 'timesTable': overlay += timesTableBlock(a.table, a.upTo, a.op, a.shuffle, bodyX, nextY, bodyW, ch, blockIndex, answers); break
+        case 'multiplyGroups': overlay += multiplyGroupsBlock(a.table, a.upTo, bodyX, nextY, bodyW, ch, answers); break
         case 'tenFrame': overlay += tenFrameBlock(a.whole, a.count, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'partWhole': overlay += partWholeBlock(a.whole, a.count, bodyX, nextY, bodyW, ch, blockIndex); break
-        case 'bonds': overlay += bondsBlock(a.whole, a.count, a.style, bodyX, nextY, bodyW, ch, blockIndex); break
+        case 'bonds': overlay += bondsBlock(a.whole, a.count, a.style, bodyX, nextY, bodyW, ch, blockIndex, answers); break
         case 'shapeGallery': overlay += shapeGalleryBlock(a.shapes, a.label, bodyX, nextY, bodyW, ch); break
         case 'shapeProps': overlay += shapePropsBlock(a.shapes, a.dims, bodyX, nextY, bodyW, ch); break
         case 'shapeSort': overlay += shapeSortBlock(a.shapes, bodyX, nextY, bodyW, ch); break
         case 'sortTwoGroups': overlay += sortTwoGroupsBlock(a.items, a.labelA, a.labelB, bodyX, nextY, bodyW, ch); break
         case 'matchLines': overlay += matchLinesBlock(a.left, a.right, bodyX, nextY, bodyW, ch); break
-        case 'fractionShade': overlay += fractionShadeBlock(a.fractions, a.mode, bodyX, nextY, bodyW, ch); break
-        case 'fractionOf': overlay += fractionOfBlock(a.problems, bodyX, nextY, bodyW, ch); break
-        case 'compareNumbers': overlay += compareBlock(a.pairs, bodyX, nextY, bodyW, ch); break
-        case 'placeValue': overlay += placeValueBlock(a.numbers, bodyX, nextY, bodyW, ch); break
-        case 'numberTrack': overlay += numberTrackBlock(a.start, a.step, a.count, bodyX, nextY, bodyW, ch); break
-        case 'coins': overlay += coinsBlock(a.groups, bodyX, nextY, bodyW, ch); break
+        case 'fractionShade': overlay += fractionShadeBlock(a.fractions, a.mode, bodyX, nextY, bodyW, ch, answers && a.mode === 'write'); break
+        case 'fractionOf': overlay += fractionOfBlock(a.problems, bodyX, nextY, bodyW, ch, answers); break
+        case 'compareNumbers': overlay += compareBlock(a.pairs, bodyX, nextY, bodyW, ch, answers); break
+        case 'placeValue': overlay += placeValueBlock(a.numbers, bodyX, nextY, bodyW, ch, answers); break
+        case 'numberTrack': overlay += numberTrackBlock(a.start, a.step, a.count, bodyX, nextY, bodyW, ch, answers); break
+        case 'coins': overlay += coinsBlock(a.groups, bodyX, nextY, bodyW, ch, answers); break
         case 'bigLetter': overlay += bigLetterBlock(a.letter, bodyX, nextY, bodyW, ch); break
         case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'traceNumbers': overlay += traceNumbersBlock(a.upTo, bodyX, nextY, bodyW, ch); break
