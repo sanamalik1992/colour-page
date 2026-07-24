@@ -8,8 +8,10 @@ import {
   Loader2,
   Sparkles,
   Infinity as InfinityIcon,
-  Palette,
   ShieldCheck,
+  Layers,
+  BadgeCheck,
+  UserRound,
   Lock,
   X,
 } from 'lucide-react'
@@ -28,10 +30,12 @@ const PLANS = {
 } as const
 
 const FEATURES = [
+  { icon: Layers, color: 'text-brand-primary', bg: 'bg-amber-50', title: 'One-click activity packs', desc: 'A coordinated week of sheets for a topic, not one at a time' },
   { icon: Sparkles, color: 'text-sky-500', bg: 'bg-sky-50', title: 'Unlimited learning sheets', desc: 'Every topic, every day — no limit' },
-  { icon: InfinityIcon, color: 'text-emerald-500', bg: 'bg-emerald-50', title: 'Generous photo & dot-to-dot', desc: 'Plenty of AI creations for the whole family' },
-  { icon: ShieldCheck, color: 'text-amber-500', bg: 'bg-amber-50', title: 'HD downloads, no branding', desc: 'Full 300-DPI A4 PDF & PNG, footer-free' },
-  { icon: Crown, color: 'text-violet-500', bg: 'bg-violet-50', title: 'Saved to your account', desc: 'Your library on every device you sign in on' },
+  { icon: BadgeCheck, color: 'text-emerald-500', bg: 'bg-emerald-50', title: 'Answer sheets', desc: 'A ready answer key for every maths pack' },
+  { icon: UserRound, color: 'text-violet-500', bg: 'bg-violet-50', title: 'Personalised for your child', desc: "Their name on headings, tracing and reward sheets" },
+  { icon: ShieldCheck, color: 'text-orange-500', bg: 'bg-orange-50', title: 'HD downloads, no branding', desc: 'Full 300-DPI A4 PDF & PNG, footer-free' },
+  { icon: InfinityIcon, color: 'text-teal-500', bg: 'bg-teal-50', title: 'Generous photo & dot-to-dot', desc: 'Plenty of AI creations for the whole family' },
 ]
 
 export default function ProPage() {
@@ -226,7 +230,9 @@ export default function ProPage() {
                 ['Learning sheets', '3 / day', 'Unlimited'],
                 ['Photo colouring', '1 / day', 'Unlimited'],
                 ['Dot-to-dot', '1 / day', 'Unlimited'],
-                ['Full activity sheets', 'Yes', 'Yes'],
+                ['Activity packs', '—', 'Yes'],
+                ['Answer sheets', '—', 'Yes'],
+                ['Personalise with a name', '—', 'Yes'],
                 ['Downloads', 'A4 · footer', 'HD · no branding'],
               ].map(([label, free, pro], i) => (
                 <div key={label} className="contents">
