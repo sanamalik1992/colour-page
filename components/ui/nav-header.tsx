@@ -2,11 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Sparkles, ImagePlus, Crown, LayoutGrid, FolderHeart, Printer, UserCircle2, LogIn } from 'lucide-react'
+import { Sparkles, ImagePlus, Crown, LayoutGrid, FolderHeart, Printer, UserCircle2, LogIn, Layers } from 'lucide-react'
 import { useMe } from '@/hooks/useMe'
 
 interface NavHeaderProps {
-  active?: 'create' | 'library' | 'print-pages' | 'dot-to-dot' | 'pro'
+  active?: 'create' | 'pack' | 'library' | 'print-pages' | 'dot-to-dot' | 'pro'
   // Optional override; when omitted the header resolves Pro from the session.
   isPro?: boolean
 }
@@ -19,6 +19,7 @@ const NAV_ITEMS: {
   showLabel: 'sm' | 'md'
 }[] = [
   { key: 'create', href: '/', label: 'Create', icon: ImagePlus, showLabel: 'sm' },
+  { key: 'pack', href: '/pack', label: 'Packs', icon: Layers, showLabel: 'sm' },
   { key: 'print-pages', href: '/print-pages', label: 'Gallery', icon: LayoutGrid, showLabel: 'sm' },
   { key: 'library', href: '/library', label: 'My Pages', icon: FolderHeart, showLabel: 'sm' },
   { key: 'printer', href: '/printer', label: 'Printer', icon: Printer, showLabel: 'md' },

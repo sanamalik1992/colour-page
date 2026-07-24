@@ -1762,6 +1762,22 @@ function coinsBlock(groups: number[][], x: number, top: number, w: number, h: nu
   return s
 }
 
+// A big letter to trace: one large solid model at the top, then rows of dotted
+// letters to write over. The core early-years letter-formation activity, fully
+// deterministic (our glyph font).
+function bigLetterBlock(letter: string, x: number, top: number, w: number, h: number): string {
+  const L = letter.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 2) || 'A'
+  const modelH = Math.min(h * 0.42, 460)
+  const mw = numberWidth(L, modelH)
+  let s = numberSvg(L, x + (w - mw) / 2, top, modelH, Math.max(12, modelH * 0.12))
+  const rowsTop = top + modelH + h * 0.05
+  const rowsH = h - modelH - h * 0.05
+  const nRows = Math.max(1, Math.min(3, Math.floor(rowsH / 220)))
+  const rh = rowsH / nRows
+  for (let i = 0; i < nRows; i++) s += traceGraphemeRow(L, x, rowsTop + i * rh, w, rh)
+  return s
+}
+
 // Countable dots under an operand (visual aid for the youngest children).
 function countDots(n: number, cx: number, top: number, r: number): string {
   if (n < 1) return ''
@@ -2074,7 +2090,7 @@ function clocksBlock(
 }
 
 const ACTIVITY_WEIGHT: Record<string, number> = {
-  note: 0.6, pictures: 4.4, circleWords: 1.8, traceWords: 1.6,
+  note: 0.6, pictures: 4.4, circleWords: 1.8, traceWords: 1.6, bigLetter: 5,
   wordSearch: 2.6, readWords: 1.8, writeLines: 1.4, sentence: 1.4, sums: 3.2,
   countObjects: 2.6, countPictures: 3, traceNumbers: 1.8, clocks: 3.2,
   timesTable: 3.6, multiplyGroups: 4.2,
@@ -2260,6 +2276,7 @@ export async function buildComposedSheet(
         case 'placeValue': overlay += placeValueBlock(a.numbers, bodyX, nextY, bodyW, ch); break
         case 'numberTrack': overlay += numberTrackBlock(a.start, a.step, a.count, bodyX, nextY, bodyW, ch); break
         case 'coins': overlay += coinsBlock(a.groups, bodyX, nextY, bodyW, ch); break
+        case 'bigLetter': overlay += bigLetterBlock(a.letter, bodyX, nextY, bodyW, ch); break
         case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'traceNumbers': overlay += traceNumbersBlock(a.upTo, bodyX, nextY, bodyW, ch); break
       }

@@ -153,6 +153,49 @@ export async function renderA4Pdf(
 }
 
 /**
+ * Combine several full-page images into ONE multi-page A4 PDF (one image per
+ * page). Used for activity packs. Footer/no-branding applies to every page.
+ */
+export async function renderMultiPagePdf(
+  imageBuffers: Buffer[],
+  options: PdfRenderOptions = {}
+): Promise<Buffer> {
+  const { footer = true, landscape = false } = options
+  const pageWidth = landscape ? A4_HEIGHT_PT : A4_WIDTH_PT
+  const pageHeight = landscape ? A4_WIDTH_PT : A4_HEIGHT_PT
+  const pdfDoc = await PDFDocument.create()
+  const font = footer ? await pdfDoc.embedFont(StandardFonts.Helvetica) : null
+
+  for (const imageBuffer of imageBuffers) {
+    const resizedPng = await resizeToA4(imageBuffer, landscape)
+    const meta = await sharp(resizedPng).metadata()
+    const imgW = meta.width || 0
+    const imgH = meta.height || 0
+    const page = pdfDoc.addPage([pageWidth, pageHeight])
+    const pngImage = await pdfDoc.embedPng(resizedPng)
+    const printableW = pageWidth - MARGIN_PT * 2
+    const printableH = pageHeight - MARGIN_PT * 2
+    const scale = Math.min(printableW / imgW, printableH / imgH)
+    const drawW = imgW * scale
+    const drawH = imgH * scale
+    page.drawImage(pngImage, {
+      x: MARGIN_PT + (printableW - drawW) / 2,
+      y: MARGIN_PT + (printableH - drawH) / 2,
+      width: drawW,
+      height: drawH,
+    })
+    if (footer && font) {
+      const size = 8
+      const tw = font.widthOfTextAtSize(FOOTER_TEXT, size)
+      page.drawText(FOOTER_TEXT, { x: pageWidth / 2 - tw / 2, y: 12, size, font, color: rgb(0.75, 0.75, 0.75) })
+    }
+  }
+
+  const pdfBytes = await pdfDoc.save()
+  return Buffer.from(pdfBytes)
+}
+
+/**
  * Generate A4 PNG preview (lower resolution for web display).
  */
 export async function renderA4Preview(
