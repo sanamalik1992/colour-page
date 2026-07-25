@@ -228,7 +228,7 @@ export default function ProPage() {
               {[
                 ['Ready-made gallery', 'Unlimited', 'Unlimited'],
                 ['Learning sheets', '3 / day', 'Unlimited'],
-                ['Photo colouring', '1 / day', 'Unlimited'],
+                ['Photo colouring', '2 / day', 'Unlimited'],
                 ['Dot-to-dot', '1 / day', 'Unlimited'],
                 ['Activity packs', '—', 'Yes'],
                 ['Answer sheets', '—', 'Yes'],
