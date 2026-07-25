@@ -25,7 +25,7 @@ export const USAGE_LIMITS_DISABLED = process.env.DISABLE_USAGE_LIMITS === 'true'
 // daily use. Pro Family lifts these (learning sheets unlimited; photo+dot metered
 // monthly). The gallery of ready-made sheets stays unlimited for everyone.
 export const FREE_LIMITS = {
-  photo_coloring: 1,
+  photo_coloring: 2,
   topic_sheet: 3,
   dot_to_dot: 1,
 }
