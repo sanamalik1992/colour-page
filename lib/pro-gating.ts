@@ -30,6 +30,43 @@ export const FREE_LIMITS = {
   dot_to_dot: 1,
 }
 
+// Pro cost-control: a Pro Family plan is "unlimited" on the deterministic
+// learning sheets and packs (near-zero cost), but the AI image paths — photo
+// colourings and dot-to-dots (Replicate) — are metered at 100 per calendar
+// month combined, so a runaway can't produce an unbounded bill. 100 feels
+// effectively unlimited for a real family. Resets on the 1st.
+export const PRO_MONTHLY_AI_LIMIT = 100
+
+/**
+ * How many AI creations (photo colourings + dot-to-dots) the user has made this
+ * calendar month, for the Pro monthly cap. Matched by account email when signed
+ * in (so it follows the Pro subscriber across devices), else by session.
+ */
+export async function countThisMonthAiUsage(sessionId: string, email?: string | null): Promise<number> {
+  const now = new Date()
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+  const em = email ? email.toLowerCase() : null
+
+  let pq = supabase
+    .from('photo_jobs')
+    .select('*', { count: 'exact', head: true })
+    .gte('created_at', startOfMonth)
+    .in('status', COUNTED_STATUSES as unknown as string[])
+    .not('input_storage_path', 'ilike', 'topic/%') // photo colourings only, not learning sheets
+  pq = em ? pq.eq('email', em) : pq.eq('user_id', sessionId)
+  const { count: photoCount } = await pq
+
+  let dq = supabase
+    .from('dot_jobs')
+    .select('*', { count: 'exact', head: true })
+    .gte('created_at', startOfMonth)
+    .in('status', ['processing', 'done'])
+  dq = em ? dq.eq('email', em) : dq.eq('user_id', sessionId)
+  const { count: dotCount } = await dq
+
+  return (photoCount || 0) + (dotCount || 0)
+}
+
 // Only jobs that actually did work count against a free allowance. A job that
 // failed, or was created but never started (e.g. a dropped trigger, later
 // reaped to 'failed'), must NOT consume one of the user's daily generations —

@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       if (used >= FREE_LIMITS.topic_sheet) {
         return NextResponse.json(
           {
-            error: `You've made your ${FREE_LIMITS.topic_sheet} free learning sheets for today — Pro unlocks unlimited.`,
+            error: `You're on a roll! 🎨 That's your ${FREE_LIMITS.topic_sheet} free learning sheets for today. Pro Family unlocks unlimited sheets plus one-click activity packs.`,
             isPro: false,
             limitReached: true,
             feature: 'topic_sheet',

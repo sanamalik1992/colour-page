@@ -52,7 +52,7 @@ function SuccessContent() {
         </h1>
 
         <p className="text-gray-400 mb-8">
-          Thank you for subscribing! You now have unlimited learning sheets, generous photo &amp; dot-to-dot creations, and clean HD downloads with no branding — saved to your account on every device.
+          Thank you for subscribing! You now have unlimited learning sheets, one-click activity packs, answer sheets and personalised name sheets.
         </p>
 
         {/* Benefits */}
@@ -62,22 +62,12 @@ function SuccessContent() {
             Your Pro Benefits
           </h3>
           <ul className="space-y-3 text-gray-300">
-            <li className="flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-              Unlimited colouring page conversions
-            </li>
-            <li className="flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-              High-resolution A4 print quality
-            </li>
-            <li className="flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-              Priority processing
-            </li>
-            <li className="flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-              Access to full print library
-            </li>
+            {['Unlimited learning sheets', 'One-click activity packs', 'Answer sheets for every maths pack', 'Personalised name sheets & certificates'].map((b) => (
+              <li key={b} className="flex items-center gap-3">
+                <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                {b}
+              </li>
+            ))}
           </ul>
         </div>
 

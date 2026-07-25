@@ -532,17 +532,23 @@ function traceGraphemeRow(chars: string, x: number, top: number, w: number, h: n
 
 // A compact word-search grid (used as a Pro bonus on the 6–8 sheet).
 function miniWordSearchBlock(words: string[], x: number, top: number, w: number, h: number): string {
-  const list = words.map((word) => word.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean).slice(0, 4)
+  const list = words.map((word) => word.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean).slice(0, 6)
   if (!list.length) return ''
   // Size to the LONGEST word so every listed word fits and can be placed.
   const maxLen = list.reduce((m, word) => Math.max(m, word.length), 0)
-  const size = Math.max(7, Math.min(10, maxLen + 2))
-  const { grid } = makeWordSearch(list, size)
-  const gridMax = Math.min(w, h)
+  const size = Math.max(7, Math.min(11, maxLen + 2))
+  const { grid, placed } = makeWordSearch(list, size)
+  // Only ever list the words that were ACTUALLY placed in the grid — never ask
+  // the child to find a word that isn't there.
+  const find = (placed.length ? placed : list).slice(0, 6)
+  // Reserve the bottom of the slice for the FIND list.
+  const listH = Math.min(h * 0.2, 130)
+  const gridArea = h - listH
+  const gridMax = Math.min(w, gridArea)
   const cell = Math.floor(gridMax / size)
   const gs = cell * size
   const gx = x + (w - gs) / 2
-  const gy = top + (h - gs) / 2
+  const gy = top + (gridArea - gs) / 2
   let s = `<rect x="${gx.toFixed(1)}" y="${gy.toFixed(1)}" width="${gs}" height="${gs}" fill="none" stroke="#d8d3c9" stroke-width="3" rx="18"/>`
   const lh = Math.round(cell * 0.6)
   for (let r = 0; r < size; r++) {
@@ -551,6 +557,12 @@ function miniWordSearchBlock(words: string[], x: number, top: number, w: number,
       s += numberSvg(ch, gx + c * cell + (cell - numberWidth(ch, lh)) / 2, gy + r * cell + (cell - lh) / 2, lh, 8)
     }
   }
+  // FIND list, centred across the reserved strip — only the placed words.
+  let bh = Math.min(listH * 0.4, 44)
+  const bank = ['FIND', ...find].join('   ')
+  while (textWidth(bank, bh) > w * 0.96 && bh > 22) bh -= 2
+  const bw = textWidth(bank, bh)
+  s += textSvg(bank, x + Math.max(0, (w - bw) / 2), top + gridArea + (listH - bh) / 2, bh, 9, { color: '#111' })
   return s
 }
 

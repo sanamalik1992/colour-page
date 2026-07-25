@@ -839,7 +839,7 @@ export default function Home() {
                   <p className="text-sm font-bold text-white mb-1">You&apos;re on a roll! 🎨</p>
                   <p className="text-xs text-gray-400 mb-4">{error}</p>
                   <Link href="/pro" className="btn-primary w-full">
-                    <Crown className="w-4 h-4" /> Go unlimited with Pro
+                    <Crown className="w-4 h-4" /> Unlock Pro Family
                   </Link>
                   <button onClick={handleReset} className="block mx-auto text-xs text-gray-500 hover:text-gray-300 mt-3">
                     Maybe tomorrow
