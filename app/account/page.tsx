@@ -170,7 +170,7 @@ export default function AccountPage() {
             <Crown className="w-5 h-5 text-amber-400" /> Pro Family benefits
           </h2>
           <ul className="space-y-3 text-gray-300">
-            {['Unlimited learning sheets', 'Generous photo & dot-to-dot each month', 'HD A4 downloads — no branding', 'Your library saved on every device'].map((b) => (
+            {['Unlimited learning sheets', 'One-click activity packs', 'Answer sheets for every maths pack', 'Personalised name sheets & certificates'].map((b) => (
               <li key={b} className="flex items-center gap-3">
                 <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" /> {b}
               </li>

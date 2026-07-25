@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { USAGE_LIMITS_DISABLED, FREE_LIMITS, getUserPlan, countTodaysUsage } from '@/lib/pro-gating'
+import { USAGE_LIMITS_DISABLED, FREE_LIMITS, getUserPlan, countTodaysUsage, countThisMonthAiUsage, PRO_MONTHLY_AI_LIMIT } from '@/lib/pro-gating'
 import { getServerUser } from '@/lib/supabase/auth-server'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
@@ -51,8 +51,23 @@ export async function POST(request: NextRequest) {
       if (used >= FREE_DAILY_LIMIT) {
         return NextResponse.json(
           {
-            error: `You've made your ${FREE_DAILY_LIMIT} free colouring pages for today — Pro unlocks unlimited.`,
+            error: `You're on a roll! 🎨 That's your ${FREE_DAILY_LIMIT} free colouring pages for today. Pro Family unlocks unlimited pages plus activity packs.`,
             isPro: false,
+            limitReached: true,
+            feature: 'photo_coloring',
+          },
+          { status: 429 }
+        )
+      }
+    }
+    // Pro cost-control: 100 photo + dot-to-dot creations per month.
+    if (isPro && !USAGE_LIMITS_DISABLED) {
+      const usedMonth = await countThisMonthAiUsage(sessionId, email)
+      if (usedMonth >= PRO_MONTHLY_AI_LIMIT) {
+        return NextResponse.json(
+          {
+            error: `You've made ${PRO_MONTHLY_AI_LIMIT} photo & dot-to-dot creations this month — they reset on the 1st. Your learning sheets and activity packs stay unlimited in the meantime.`,
+            isPro: true,
             limitReached: true,
             feature: 'photo_coloring',
           },

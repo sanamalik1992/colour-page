@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getUserPlan, FREE_LIMITS, USAGE_LIMITS_DISABLED } from '@/lib/pro-gating'
+import { getUserPlan, FREE_LIMITS, USAGE_LIMITS_DISABLED, countThisMonthAiUsage, PRO_MONTHLY_AI_LIMIT } from '@/lib/pro-gating'
 import { generateDotToDot } from '@/lib/dot-to-dot-engine'
 import { processWithReplicate } from '@/lib/image-processing'
 import { isHeic, convertHeicToPng } from '@/lib/heic-convert'
@@ -76,8 +76,20 @@ export async function POST(request: NextRequest) {
         .in('status', ['processing', 'done'])
       if ((count || 0) >= FREE_LIMITS.dot_to_dot) {
         return NextResponse.json({
-          error: `You've used your ${FREE_LIMITS.dot_to_dot} free dot-to-dots for today — Pro unlocks unlimited.`,
+          error: `You're on a roll! 🎨 That's your ${FREE_LIMITS.dot_to_dot} free dot-to-dot for today. Pro Family unlocks unlimited plus activity packs.`,
           isPro: false,
+          limitReached: true,
+          feature: 'dot_to_dot',
+        }, { status: 429 })
+      }
+    }
+    // Pro cost-control: 100 photo + dot-to-dot creations per month.
+    if (isPro && !USAGE_LIMITS_DISABLED) {
+      const usedMonth = await countThisMonthAiUsage(sessionId, email)
+      if (usedMonth >= PRO_MONTHLY_AI_LIMIT) {
+        return NextResponse.json({
+          error: `You've made ${PRO_MONTHLY_AI_LIMIT} photo & dot-to-dot creations this month — they reset on the 1st. Your learning sheets and activity packs stay unlimited in the meantime.`,
+          isPro: true,
           limitReached: true,
           feature: 'dot_to_dot',
         }, { status: 429 })
