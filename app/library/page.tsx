@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Printer,
+  Trash2,
 } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
@@ -47,6 +48,7 @@ export default function LibraryPage() {
   const sessionId = useSessionId()
   const [jobs, setJobs] = useState<LibraryJob[]>([])
   const [loading, setLoading] = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!sessionId) return
@@ -79,6 +81,27 @@ export default function LibraryPage() {
       hour: '2-digit',
       minute: '2-digit',
     })
+  }
+
+  const handleDelete = async (jobId: string) => {
+    if (!confirm('Delete this page for good? This removes the file from our servers and can’t be undone.')) return
+    setDeletingId(jobId)
+    try {
+      const res = await fetch('/api/pages/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId, sessionId }),
+      })
+      if (res.ok) {
+        setJobs((prev) => prev.filter((j) => j.id !== jobId))
+      } else {
+        alert('Sorry — couldn’t delete that page. Please try again.')
+      }
+    } catch {
+      alert('Sorry — couldn’t delete that page. Please try again.')
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   const handlePrint = (pngUrl: string, title: string) => {
@@ -189,9 +212,24 @@ export default function LibraryPage() {
                         {job.status === 'done' ? 'Ready' : job.status}
                       </span>
                     </div>
-                    <span className="text-xs text-gray-500">
-                      {formatDate(job.created_at)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">
+                        {formatDate(job.created_at)}
+                      </span>
+                      <button
+                        onClick={() => handleDelete(job.id)}
+                        disabled={deletingId === job.id}
+                        className="text-gray-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                        title="Delete this page"
+                        aria-label="Delete this page"
+                      >
+                        {deletingId === job.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                   {job.original_filename && (
                     <p className="text-xs text-gray-500 mt-1 truncate">
