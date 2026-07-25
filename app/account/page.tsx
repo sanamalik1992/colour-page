@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { CreditCard, Calendar, CheckCircle, AlertCircle, Loader2, Crown, LogOut, Mail } from 'lucide-react'
+import { CreditCard, Calendar, CheckCircle, AlertCircle, Loader2, Crown, LogOut, Mail, Trash2 } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 import { useMe } from '@/hooks/useMe'
@@ -23,6 +23,7 @@ export default function AccountPage() {
   const supabase = createClient()
   const [sub, setSub] = useState<SubscriptionStatus | null>(null)
   const [portalLoading, setPortalLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const email = me?.user?.email || ''
 
@@ -67,6 +68,29 @@ export default function AccountPage() {
     await supabase.auth.signOut()
     router.replace('/')
     router.refresh()
+  }
+
+  const deleteAccount = async () => {
+    const warning = isPro
+      ? 'Delete your account for good?\n\nThis permanently removes every page and photo you’ve made from our servers, and cancels your Pro subscription. This cannot be undone.'
+      : 'Delete your account for good?\n\nThis permanently removes every page and photo you’ve made from our servers. This cannot be undone.'
+    if (!confirm(warning)) return
+    if (!confirm('Just to be sure — permanently delete everything? There’s no way to get it back.')) return
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/account/delete', { method: 'POST' })
+      if (!res.ok) {
+        alert('Sorry — something went wrong deleting your account. Please try again or contact support.')
+        setDeleting(false)
+        return
+      }
+      await supabase.auth.signOut()
+      router.replace('/')
+      router.refresh()
+    } catch {
+      alert('Sorry — something went wrong deleting your account. Please try again or contact support.')
+      setDeleting(false)
+    }
   }
 
   const formatDate = (d: string) =>
@@ -176,6 +200,25 @@ export default function AccountPage() {
               </li>
             ))}
           </ul>
+        </div>
+
+        {/* Danger zone — delete account & all data */}
+        <div className="bg-zinc-800/30 border border-red-900/40 rounded-2xl p-6 mt-6">
+          <h2 className="text-lg font-semibold text-white mb-1 flex items-center gap-2">
+            <Trash2 className="w-5 h-5 text-red-400" /> Delete account
+          </h2>
+          <p className="text-sm text-gray-400 mb-4">
+            Permanently deletes your account and removes every page and photo you’ve made from our
+            servers. {isPro && 'Your Pro subscription will be cancelled. '}This can’t be undone.
+          </p>
+          <button
+            onClick={deleteAccount}
+            disabled={deleting}
+            className="h-11 px-5 bg-red-600/90 hover:bg-red-600 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            {deleting ? 'Deleting…' : 'Delete my account & data'}
+          </button>
         </div>
       </main>
 
