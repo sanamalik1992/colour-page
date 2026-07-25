@@ -98,6 +98,8 @@ export type ActivityKind =
   | { type: 'bigLetter'; instruction: string; letter: string }
   // A reward / certificate panel personalised with the child's name.
   | { type: 'reward'; instruction: string; name: string }
+  // The child's name big to colour, plus several dotted rows to trace over.
+  | { type: 'traceName'; instruction: string; name: string }
 
 // `pro` is retained on the type for schema stability but is no longer used to
 // gate content — every sheet renders all of its activities (free == Pro).
@@ -1130,7 +1132,7 @@ export function packPlan(rawTopic: string, age?: number, childName?: string): Ac
   if (!name) return base
   const d = difficultyForAge(age)
   const sheets = base.sheets.map((s) => ({ ...s, title: sheetTitle(`${name} ${s.subject}`) }))
-  sheets.push({ category: 'composed', subject: 'Trace your name', title: sheetTitle(`Trace your name`), activities: [{ type: 'note', text: `Trace your name, ${name}` }, { type: 'traceWords', instruction: 'Trace your name', words: [name] }], prompt: '', difficulty: d })
+  sheets.push({ category: 'composed', subject: 'My name', title: sheetTitle('My name'), activities: [{ type: 'note', text: 'Colour the big name, then trace' }, { type: 'traceName', instruction: 'Trace your name', name }, { type: 'writeLines', instruction: 'Now write it yourself', count: 2 }], prompt: '', difficulty: d })
   sheets.push({ category: 'composed', subject: 'Reward', title: sheetTitle('Well done'), activities: [{ type: 'reward', instruction: 'Colour your reward', name }], prompt: '', difficulty: d })
   return { title: `${name}'s ${base.subject} pack`, subject: base.subject, sheets }
 }
@@ -1158,40 +1160,37 @@ function basePackPlan(rawTopic: string, age?: number): ActivityPack | null {
     return { title: `Letter ${L} pack`, subject: `Letter ${L}`, sheets }
   }
 
-  // Times tables → count → groups → ladder → mixed → (÷).
+  // Times tables — each sheet pairs substantial blocks so it fills the page.
   const table = detectTimesTable(topic)
   if (table != null) {
-    const old = age == null || age >= 9
+    const rng = mkRng(table * 91 + 7)
+    const multMix = Array.from(new Set([...[1, 2, 3, 4, 5].map((m) => table * m), ...Array.from({ length: 5 }, () => table * (1 + Math.floor(rng() * 5)) + (rng() < 0.5 ? 1 : -1))])).filter((v) => v > 0).slice(0, 8).map(String)
     const sheets: TopicPlan[] = [
-      mk(`Count in ${table}s`, [{ type: 'note', text: `Count in ${table}s and fill the gaps` }, { type: 'numberTrack', instruction: `Count in ${table}s`, start: table, step: table, count: 18 }]),
-      mk(`Groups of ${table}`, [{ type: 'note', text: 'Count the groups to multiply' }, { type: 'multiplyGroups', instruction: 'Count the groups', table, upTo: 5 }]),
-      mk(`The ${table} times table`, [{ type: 'note', text: 'Multiply to find each answer' }, { type: 'timesTable', instruction: 'The table in order', table, upTo: 12, op: 'multiply', shuffle: false }]),
-      mk(`${table} times table mixed`, [{ type: 'note', text: 'Mixed practice' }, { type: 'timesTable', instruction: 'Mixed practice', table, upTo: 12, op: 'multiply', shuffle: true }]),
+      mk(`Count in ${table}s`, [{ type: 'note', text: `Count in ${table}s, count the groups, then circle the multiples` }, { type: 'numberTrack', instruction: `Count in ${table}s`, start: table, step: table, count: 24 }, { type: 'multiplyGroups', instruction: 'Count the groups', table, upTo: 6 }, { type: 'circleWords', instruction: `Circle the multiples of ${table}`, words: multMix }]),
+      mk(`The ${table} times table`, [{ type: 'note', text: 'Multiply to find each answer' }, { type: 'timesTable', instruction: 'The table in order', table, upTo: 12, op: 'multiply', shuffle: false }, { type: 'timesTable', instruction: 'Mixed practice', table, upTo: 8, op: 'multiply', shuffle: true }]),
+      mk(`${table} times table & dividing`, [{ type: 'note', text: 'Multiply and divide' }, { type: 'timesTable', instruction: 'Mixed practice', table, upTo: 12, op: 'multiply', shuffle: true }, { type: 'timesTable', instruction: 'Division facts', table, upTo: 12, op: 'divide', shuffle: true }]),
     ]
-    if (old) sheets.push(mk(`Dividing by ${table}`, [{ type: 'note', text: 'Use the table backwards to divide' }, { type: 'timesTable', instruction: 'Division facts', table, upTo: 12, op: 'divide', shuffle: true }]))
     return { title: `${table} times table pack`, subject: `${table} times table`, sheets }
   }
 
-  // Fractions → colour → name → of amounts (easy) → of amounts (harder).
+  // Fractions — colour+name, name+of-amounts, of-amounts (two sets).
   if (detectFractions(topic)) {
     const sheets: TopicPlan[] = [
-      mk('Colour the fraction', [{ type: 'note', text: 'Colour the fraction shown' }, { type: 'fractionShade', instruction: 'Colour the fraction', mode: 'shade', fractions: [{ n: 1, d: 2 }, { n: 1, d: 4 }, { n: 1, d: 3 }, { n: 3, d: 4 }] }]),
-      mk('Name the fraction', [{ type: 'note', text: 'Write the fraction that is shaded' }, { type: 'fractionShade', instruction: 'Write the shaded fraction', mode: 'write', fractions: [{ n: 1, d: 2 }, { n: 1, d: 3 }, { n: 1, d: 4 }, { n: 2, d: 3 }, { n: 3, d: 4 }, { n: 2, d: 5 }] }]),
-      mk('Fractions of amounts', [{ type: 'note', text: 'Find the fraction of each amount' }, { type: 'fractionOf', instruction: 'Find the fraction of each amount', problems: [{ n: 1, d: 2, whole: 8 }, { n: 1, d: 4, whole: 8 }, { n: 1, d: 3, whole: 9 }, { n: 1, d: 2, whole: 10 }, { n: 1, d: 5, whole: 10 }] }]),
-      mk('More fractions of amounts', [{ type: 'note', text: 'Find the fraction of each amount' }, { type: 'fractionOf', instruction: 'Find the fraction of each amount', problems: [{ n: 2, d: 3, whole: 12 }, { n: 3, d: 4, whole: 16 }, { n: 3, d: 5, whole: 20 }, { n: 5, d: 6, whole: 18 }, { n: 2, d: 5, whole: 15 }] }]),
+      mk('Colour and name fractions', [{ type: 'note', text: 'Colour the fraction, then name the shaded one' }, { type: 'fractionShade', instruction: 'Colour the fraction', mode: 'shade', fractions: [{ n: 1, d: 2 }, { n: 1, d: 4 }, { n: 1, d: 3 }, { n: 3, d: 4 }, { n: 2, d: 5 }, { n: 5, d: 6 }] }, { type: 'fractionShade', instruction: 'Write the shaded fraction', mode: 'write', fractions: [{ n: 1, d: 2 }, { n: 1, d: 3 }, { n: 2, d: 3 }, { n: 3, d: 4 }, { n: 2, d: 5 }, { n: 4, d: 6 }] }]),
+      mk('Name fractions & find amounts', [{ type: 'note', text: 'Name the shaded fraction, then find fractions of amounts' }, { type: 'fractionShade', instruction: 'Write the shaded fraction', mode: 'write', fractions: [{ n: 1, d: 2 }, { n: 1, d: 3 }, { n: 1, d: 4 }, { n: 2, d: 3 }, { n: 3, d: 4 }, { n: 2, d: 5 }] }, { type: 'fractionOf', instruction: 'Find the fraction of each amount', problems: [{ n: 1, d: 2, whole: 8 }, { n: 1, d: 4, whole: 8 }, { n: 1, d: 3, whole: 9 }, { n: 1, d: 2, whole: 10 }] }]),
+      mk('Fractions of amounts', [{ type: 'note', text: 'Find the fraction of each amount' }, { type: 'fractionOf', instruction: 'Simple fractions of amounts', problems: [{ n: 1, d: 2, whole: 12 }, { n: 1, d: 4, whole: 12 }, { n: 1, d: 3, whole: 12 }, { n: 1, d: 5, whole: 10 }, { n: 1, d: 2, whole: 16 }] }, { type: 'fractionOf', instruction: 'Harder fractions of amounts', problems: [{ n: 2, d: 3, whole: 12 }, { n: 3, d: 4, whole: 16 }, { n: 3, d: 5, whole: 20 }, { n: 5, d: 6, whole: 18 }, { n: 2, d: 5, whole: 15 }] }]),
     ]
     return { title: 'Fractions pack', subject: 'Fractions', sheets }
   }
 
-  // Number bonds → ten frame → part-whole → missing → subtraction.
+  // Number bonds — visual (ten frame + part-whole), missing numbers, subtraction.
   const W = detectNumberBonds(topic)
   if (W != null) {
     const w = Math.min(W, 20)
     const sheets: TopicPlan[] = [
-      mk(`Make ${w} — ten frame`, [{ type: 'note', text: 'Fill the ten frame and write the pair' }, { type: 'tenFrame', instruction: 'How many make the whole', whole: w, count: 4 }]),
-      mk(`Make ${w} — part-whole`, [{ type: 'note', text: 'Write the missing part' }, { type: 'partWhole', instruction: 'Write the missing part', whole: w, count: 3 }]),
-      mk(`Bonds to ${w} — missing number`, [{ type: 'note', text: 'Find the missing number' }, { type: 'bonds', instruction: 'Find the missing number', whole: w, count: 10, style: 'missing' }]),
-      mk(`Bonds to ${w} — subtraction`, [{ type: 'note', text: 'Complete the subtraction facts' }, { type: 'bonds', instruction: 'Subtraction facts', whole: w, count: 10, style: 'subtract' }]),
+      mk(`Make ${w} — ten frame`, [{ type: 'note', text: 'Fill the ten frame, then write the missing part' }, { type: 'tenFrame', instruction: 'How many make the whole', whole: w, count: 4 }, { type: 'partWhole', instruction: 'Write the missing part', whole: w, count: 3 }]),
+      mk(`Bonds to ${w} — missing numbers`, [{ type: 'note', text: 'Write the missing part, then the missing number' }, { type: 'partWhole', instruction: 'Write the missing part', whole: w, count: 3 }, { type: 'bonds', instruction: 'Find the missing number', whole: w, count: 10, style: 'missing' }]),
+      mk(`Bonds to ${w} — subtraction`, [{ type: 'note', text: 'Complete the number facts' }, { type: 'bonds', instruction: 'Missing numbers', whole: w, count: 8, style: 'missing' }, { type: 'bonds', instruction: 'Subtraction facts', whole: w, count: 8, style: 'subtract' }]),
     ]
     return { title: `Number bonds to ${w} pack`, subject: `Number bonds to ${w}`, sheets }
   }

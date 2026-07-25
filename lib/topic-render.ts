@@ -1794,34 +1794,76 @@ function bigLetterBlock(letter: string, x: number, top: number, w: number, h: nu
   return s
 }
 
+// The child's name big to colour at the top, then several dotted rows of the
+// name to trace over — a full, satisfying name-practice sheet.
+function traceNameBlock(name: string, x: number, top: number, w: number, h: number): string {
+  const N = name.toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 14) || 'NAME'
+  // Big solid model to colour, scaled to fit the width.
+  let modelH = Math.min(h * 0.26, 260)
+  while (numberWidth(N, modelH) > w * 0.92 && modelH > 60) modelH -= 6
+  const mw = numberWidth(N, modelH)
+  let s = numberSvg(N, x + (w - mw) / 2, top, modelH, Math.max(10, modelH * 0.1))
+  // Dotted trace rows fill the remaining height.
+  const rowsTop = top + modelH + h * 0.05
+  const rowsH = h - modelH - h * 0.05
+  const nRows = Math.max(2, Math.min(6, Math.floor(rowsH / 175)))
+  const rh = rowsH / nRows
+  for (let i = 0; i < nRows; i++) {
+    let gh = Math.min(rh * 0.6, 120)
+    while (numberWidth(N, gh) > w * 0.92 && gh > 30) gh -= 4
+    const gw = numberWidth(N, gh)
+    const rowTop = rowsTop + i * rh + (rh - gh) / 2
+    const baseY = rowTop + gh * 1.06
+    s += `<line x1="${x.toFixed(1)}" y1="${baseY.toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="#e0dbd0" stroke-width="3"/>`
+    s += numberSvg(N, x + (w - gw) / 2, rowTop, gh, 13, { dashed: true, color: '#9aa0a6' })
+  }
+  return s
+}
+
 // A reward certificate: a big star, "WELL DONE", the child's name, and a line to
 // colour. Personalises a pack's final page.
 function rewardBlock(name: string, x: number, top: number, w: number, h: number): string {
   const N = name.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim().slice(0, 12) || 'STAR'
   const cx = x + w / 2
-  // A rosette-style star at the top.
-  const starCy = top + h * 0.26
-  const R = Math.min(h * 0.2, w * 0.22)
-  const pts: string[] = []
-  for (let i = 0; i < 10; i++) {
-    const a = -Math.PI / 2 + i * Math.PI / 5
-    const rr = i % 2 === 0 ? R : R * 0.45
-    pts.push(`${(cx + Math.cos(a) * rr).toFixed(1)},${(starCy + Math.sin(a) * rr).toFixed(1)}`)
+  const star = (scx: number, scy: number, R: number, sw: number): string => {
+    const pts: string[] = []
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 5
+      const rr = i % 2 === 0 ? R : R * 0.45
+      pts.push(`${(scx + Math.cos(a) * rr).toFixed(1)},${(scy + Math.sin(a) * rr).toFixed(1)}`)
+    }
+    return `<polygon points="${pts.join(' ')}" fill="none" stroke="#111" stroke-width="${sw}" stroke-linejoin="round"/>`
   }
-  let s = `<polygon points="${pts.join(' ')}" fill="none" stroke="#111" stroke-width="6" stroke-linejoin="round"/>`
+  // A colour-in certificate border framing the whole panel.
+  let s = `<rect x="${(x + 8).toFixed(1)}" y="${(top + 8).toFixed(1)}" width="${(w - 16).toFixed(1)}" height="${(h - 16).toFixed(1)}" rx="26" fill="none" stroke="#F2A81E" stroke-width="6"/>`
+  s += `<rect x="${(x + 22).toFixed(1)}" y="${(top + 22).toFixed(1)}" width="${(w - 44).toFixed(1)}" height="${(h - 44).toFixed(1)}" rx="18" fill="none" stroke="#e0dbd0" stroke-width="2.5"/>`
+  // Big central star to colour, flanked by two small ones.
+  const R = Math.min(h * 0.17, w * 0.2)
+  const starCy = top + h * 0.28
+  s += star(cx, starCy, R, 6) + star(cx - w * 0.3, starCy, R * 0.42, 4) + star(cx + w * 0.3, starCy, R * 0.42, 4)
   // "WELL DONE"
-  const wh = Math.min(h * 0.1, 70)
+  const wh = Math.min(h * 0.09, 66)
   const ww = textWidth('WELL DONE', wh)
-  s += textSvg('WELL DONE', cx - ww / 2, top + h * 0.5, wh, Math.max(6, wh * 0.14), { color: '#B26A00' })
-  // The child's name, big.
-  const nh = Math.min(h * 0.16, 150)
-  let nhh = nh
-  while (numberWidth(N, nhh) > w * 0.9 && nhh > 40) nhh -= 4
+  s += textSvg('WELL DONE', cx - ww / 2, top + h * 0.47, wh, Math.max(6, wh * 0.14), { color: '#B26A00' })
+  // The child's name, big, to colour.
+  let nhh = Math.min(h * 0.17, 150)
+  while (numberWidth(N, nhh) > w * 0.82 && nhh > 40) nhh -= 4
   const nw = numberWidth(N, nhh)
-  s += numberSvg(N, cx - nw / 2, top + h * 0.6, nhh, Math.max(8, nhh * 0.12))
-  // A ribbon line to colour / sign.
-  const ly = top + h * 0.88
-  s += `<line x1="${(cx - w * 0.32).toFixed(1)}" y1="${ly.toFixed(1)}" x2="${(cx + w * 0.32).toFixed(1)}" y2="${ly.toFixed(1)}" stroke="#c9c4ba" stroke-width="3"/>`
+  s += numberSvg(N, cx - nw / 2, top + h * 0.56, nhh, Math.max(8, nhh * 0.12))
+  // Subtitle.
+  const sh = Math.min(h * 0.05, 34)
+  const sub = 'FOR WORKING SO HARD'
+  const sw2 = textWidth(sub, sh)
+  s += textSvg(sub, cx - sw2 / 2, top + h * 0.76, sh, Math.max(4, sh * 0.14), { color: '#9aa0a6' })
+  // A signature line + label.
+  const ly = top + h * 0.87
+  s += `<line x1="${(cx - w * 0.34).toFixed(1)}" y1="${ly.toFixed(1)}" x2="${(cx + w * 0.34).toFixed(1)}" y2="${ly.toFixed(1)}" stroke="#c9c4ba" stroke-width="3"/>`
+  const sigH = Math.min(h * 0.032, 24)
+  s += textSvg('SIGNED', cx - textWidth('SIGNED', sigH) / 2, ly + 14, sigH, Math.max(3, sigH * 0.14), { color: '#c9c4ba' })
+  // A little row of stars to colour along the bottom.
+  const by = top + h * 0.955
+  const sr = Math.min(h * 0.028, 22)
+  for (let i = -3; i <= 3; i++) s += star(cx + i * (sr * 3.1), by, sr, 3)
   return s
 }
 
@@ -2138,7 +2180,7 @@ function clocksBlock(
 }
 
 const ACTIVITY_WEIGHT: Record<string, number> = {
-  note: 0.6, pictures: 4.4, circleWords: 1.8, traceWords: 1.6, bigLetter: 5, reward: 5,
+  note: 0.6, pictures: 4.4, circleWords: 1.8, traceWords: 1.6, bigLetter: 5, reward: 5, traceName: 5,
   wordSearch: 2.6, readWords: 1.8, writeLines: 1.4, sentence: 1.4, sums: 3.2,
   countObjects: 2.6, countPictures: 3, traceNumbers: 1.8, clocks: 3.2,
   timesTable: 3.6, multiplyGroups: 4.2,
@@ -2240,8 +2282,13 @@ export async function buildComposedSheet(
   // rows apart. So each "tidy" block reports a NATURAL height; "flexible" blocks
   // (pictures, sums, sorting bins, word searches — designed to grow) return
   // Infinity. The estimate is generous, so a dense block is never capped.
+  // If a sheet has just ONE content block (common in packs), let it fill the
+  // whole page rather than capping it — otherwise a lone tidy block leaves a big
+  // margin. (Its own internal row-pitch cap still prevents extreme stretch.)
+  const contentBlocks = live.filter((a) => a.type !== 'note').length
   const naturalMaxH = (a: Activity): number => {
     if (a.type === 'note') return 150
+    if (contentBlocks <= 1) return Infinity
     if (a.type === 'timesTable') {
       const items = Math.max(2, Math.min(12, Math.round(a.upTo)))
       const rows = Math.ceil(items / (items > 4 ? 2 : 1))
@@ -2336,6 +2383,7 @@ export async function buildComposedSheet(
         case 'coins': overlay += coinsBlock(a.groups, bodyX, nextY, bodyW, ch, answers); break
         case 'bigLetter': overlay += bigLetterBlock(a.letter, bodyX, nextY, bodyW, ch); break
         case 'reward': overlay += rewardBlock(a.name, bodyX, nextY, bodyW, ch); break
+        case 'traceName': overlay += traceNameBlock(a.name, bodyX, nextY, bodyW, ch); break
         case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex); break
         case 'traceNumbers': overlay += traceNumbersBlock(a.upTo, bodyX, nextY, bodyW, ch); break
       }
