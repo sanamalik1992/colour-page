@@ -881,17 +881,17 @@ export default function Home() {
 
                   <div className="flex items-center gap-2 text-brand-primary">
                     <CheckCircle2 className="w-5 h-5" />
-                    <span className="font-semibold">Your colouring page is ready!</span>
+                    <span className="font-semibold">Your {genMode === 'photo' ? 'colouring page' : 'learning sheet'} is ready!</span>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     {pdfUrl && (
-                      <a href={pdfUrl} download="colouring-page.pdf" className="btn-primary">
+                      <a href={pdfUrl} download={genMode === 'photo' ? 'colouring-page.pdf' : 'learning-sheet.pdf'} className="btn-primary">
                         <FileText className="w-5 h-5" /> PDF
                       </a>
                     )}
                     {pngUrl && (
-                      <a href={pngUrl} download="colouring-page.png" className="btn-secondary">
+                      <a href={pngUrl} download={genMode === 'photo' ? 'colouring-page.png' : 'learning-sheet.png'} className="btn-secondary">
                         <ImageIcon className="w-5 h-5" /> PNG
                       </a>
                     )}
@@ -906,6 +906,14 @@ export default function Home() {
                     </Link>
                   </div>
 
+                  {/* Jump straight to the OTHER feature without going back home. */}
+                  <button
+                    onClick={() => { const next = genMode === 'photo' ? 'topic' : 'photo'; handleReset(); setGenMode(next); if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                    className="btn-outline w-full"
+                  >
+                    <Sparkles className="w-4 h-4" /> {genMode === 'photo' ? 'Make a learning sheet' : 'Colour a photo instead'}
+                  </button>
+
                   {/* Gentle, honest nudge — no watermark, no nag; free sheets are
                       complete. Pro's pitch is simply "make as many as you like". */}
                   {!isPro && limitsEnforced && (
@@ -914,7 +922,8 @@ export default function Home() {
                     </Link>
                   )}
 
-                  {/* Turn into a dot-to-dot (uses the clean line art we just made) */}
+                  {/* Turn into a dot-to-dot — photo pages only (dotting a text learning sheet makes no sense). */}
+                  {genMode === 'photo' && (
                   <div className="border-t border-gray-100 pt-5">
                     {dotState === 'done' && dotPngUrl ? (
                       <div className="space-y-4">
@@ -965,6 +974,7 @@ export default function Home() {
                       </>
                     )}
                   </div>
+                  )}
                 </div>
               )}
             </div>
