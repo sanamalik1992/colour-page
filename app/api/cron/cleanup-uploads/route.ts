@@ -3,14 +3,19 @@ import { createClient } from '@supabase/supabase-js'
 import { deleteInputStorage, DELETED_SENTINEL } from '@/lib/storage-cleanup'
 
 // Retention: an uploaded photo only needs to exist long enough to generate the
-// sheet. This cron deletes input photos from the uploads bucket 48h after they
-// were created. Generated sheets (outputs) are kept — those are what users
-// download. Runs a bounded batch each invocation; nulls the path to a sentinel
-// so it's never reprocessed and can never point at a real file again.
+// sheet. This cron deletes input photos from the uploads bucket. Generated
+// sheets (outputs) are kept — those are what users download. Runs a bounded
+// batch each invocation; nulls the path to a sentinel so it's never reprocessed
+// and can never point at a real file again.
+//
+// The privacy policy promises deletion "within 48 hours of processing". To make
+// that a hard guarantee, a photo becomes eligible a couple of hours under 48h
+// and this cron runs hourly (see vercel.json) — so even if one run is skipped,
+// deletion still lands inside the 48-hour window.
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const RETENTION_HOURS = 48
+const RETENTION_HOURS = 46
 const BATCH = 500
 
 const supabase = createClient(
