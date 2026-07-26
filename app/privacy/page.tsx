@@ -35,7 +35,7 @@ export default function PrivacyPage() {
             <li><strong className="text-white">What we do with your photo.</strong> When you upload a photo, it is stored securely and sent to our AI processing partner (Replicate) to convert it into line art. That is the only purpose it is used for.</li>
             <li><strong className="text-white">Who can see it.</strong> Your photos and generated pages are stored in private storage. They are not published, not shown to other users, and not browsable by anyone else. Files are only accessible through temporary, expiring secure links.</li>
             <li><strong className="text-white">We do not use your photos to train AI models</strong>, and we do not sell or share them for advertising or any other commercial purpose.</li>
-            <li><strong className="text-white">How long we keep it.</strong> We keep uploaded photos and generated pages in secure private storage so you can access your downloads. If you have an account, you can delete any page — or your whole account and all its content — at any time. Without an account, email us and we will delete your files on request.</li>
+            <li><strong className="text-white">How long we keep it.</strong> Uploaded photos are automatically deleted from our systems within 48 hours of processing. The colouring pages and activity sheets you generate are yours to download and keep. If you have an account, you can delete any page — or your entire account and all its content — at any time, and this removes the actual files, not just the records.</li>
             <li><strong className="text-white">Children do not create accounts.</strong> colour.page is intended for parents, carers and teachers. Accounts are for adults only. We do not knowingly collect personal data directly from children. If you believe a child has created an account, contact us and we will delete it.</li>
           </ul>
         </Section>
@@ -145,9 +145,11 @@ export default function PrivacyPage() {
           </ul>
           <p className="mb-2"><strong className="text-white">How to delete your data:</strong></p>
           <ul className="list-disc pl-5 space-y-1 mb-4">
-            <li>If you have an account, you can delete individual pages, or delete your entire account and all associated content, from your account settings</li>
-            <li>Without an account, or for any other request, email <a href={`mailto:${CONTACT}`} className="text-brand-primary hover:underline">{CONTACT}</a> and we will action it within one month</li>
+            <li><strong className="text-white">Delete a single page.</strong> In your library, use the delete button on any page to remove it and its files.</li>
+            <li><strong className="text-white">Delete your whole account.</strong> On your account page there is a &ldquo;Delete account&rdquo; option that permanently removes your account together with every page and photo you have made.</li>
+            <li><strong className="text-white">Ask us to do it.</strong> Without an account, or for any other request, email <a href={`mailto:${CONTACT}`} className="text-brand-primary hover:underline">{CONTACT}</a> and we will action it within one month.</li>
           </ul>
+          <p className="mb-4">In every case, deletion removes the actual image files from our storage, not just the database records.</p>
           <p><strong className="text-white">Complaints:</strong> If you&rsquo;re unhappy with how we&rsquo;ve handled your data, please contact us first — we&rsquo;d genuinely like to put it right. You also have the right to complain to the Information Commissioner&rsquo;s Office (ICO), the UK&rsquo;s data protection regulator, at <a href="https://ico.org.uk" className="text-brand-primary hover:underline">ico.org.uk</a>.</p>
         </Section>
 
@@ -161,7 +163,7 @@ export default function PrivacyPage() {
           <p><strong className="text-white">Post:</strong> Ozeco Ltd, Unit A James Carter Road, Mildenhall, Bury St. Edmunds, England, IP28 7DE</p>
         </Section>
 
-        <p className="text-gray-500 text-sm italic mt-10">This policy is provided in good faith and in plain English. It is not legal advice; as colour.page grows it&rsquo;s worth having a solicitor review it.</p>
+        <p className="text-gray-500 text-sm italic mt-10">This policy is provided in good faith and in plain English.</p>
       </main>
 
       <PageFooter />
