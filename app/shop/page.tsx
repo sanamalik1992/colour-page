@@ -14,6 +14,9 @@ const PRODUCTS: {
   blurb: string
   includes: string[]
   image?: string
+  // Product shot on a white studio background — show it on a white tile so it
+  // sits cleanly on the dark page instead of on a dark tile.
+  lightImage?: boolean
   icon: typeof Printer
   badge?: string
 }[] = [
@@ -35,6 +38,7 @@ const PRODUCTS: {
       'The printer plus everything you need to print and colour, in one box — matching A4 thermal paper, a black A4 clipboard and a felt-tip pen pack.',
     includes: ['Printer', 'A4 thermal paper', 'Black A4 clipboard', 'Felt-tip pack'],
     image: '/shop/bundle.webp',
+    lightImage: true,
     icon: Package,
     badge: 'Best value',
   },
@@ -60,10 +64,10 @@ export default function ShopPage() {
               href={p.href}
               className="group flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-hidden hover:border-brand-primary/60 transition-colors"
             >
-              <div className="relative aspect-[4/3] bg-zinc-950/40 flex items-center justify-center overflow-hidden">
+              <div className={`relative aspect-[4/3] flex items-center justify-center overflow-hidden ${p.lightImage ? 'bg-white p-3' : 'bg-zinc-950/40'}`}>
                 {p.image ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+                  <img src={p.image} alt={p.name} className={`w-full h-full ${p.lightImage ? 'object-contain' : 'object-cover'}`} />
                 ) : (
                   <p.icon className="w-16 h-16 text-gray-600" />
                 )}
