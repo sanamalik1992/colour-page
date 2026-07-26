@@ -16,8 +16,11 @@ import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 
 // Product photos live in /public/printer. Leave src empty to show a labelled
-// placeholder slot instead.
-const GALLERY: { src?: string; label: string }[] = [
+// placeholder slot instead. `light` = a studio shot on a white background, shown
+// on a white tile so it sits cleanly; the lifestyle shots stay on a dark tile.
+const GALLERY: { src?: string; label: string; light?: boolean }[] = [
+  { src: '/printer/main.webp', label: 'Print colouring pages from your phone', light: true },
+  { src: '/printer/product.webp', label: 'Sleek, compact A4 thermal printer', light: true },
   { src: '/printer/1-easy-for-parents.webp', label: 'Easy for parents, fun for kids' },
   { src: '/printer/2-print-anywhere.webp', label: 'Print colouring pages anywhere' },
   { src: '/printer/3-print-colour-enjoy.webp', label: 'Print, colour, enjoy' },
@@ -78,10 +81,10 @@ export default function PrinterPage() {
         <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-8 lg:gap-12">
           {/* Gallery */}
           <div>
-            <div className="aspect-square rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden flex items-center justify-center">
+            <div className={`aspect-square rounded-2xl border overflow-hidden flex items-center justify-center ${GALLERY[active].light ? 'bg-white border-zinc-200 p-4' : 'bg-zinc-900 border-zinc-800'}`}>
               {GALLERY[active].src ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={GALLERY[active].src} alt={GALLERY[active].label} className="w-full h-full object-cover" />
+                <img src={GALLERY[active].src} alt={GALLERY[active].label} className={`w-full h-full ${GALLERY[active].light ? 'object-contain' : 'object-cover'}`} />
               ) : (
                 <div className="text-center text-gray-500 px-6">
                   <Printer className="w-14 h-14 mx-auto mb-3 opacity-60" />
@@ -96,13 +99,13 @@ export default function PrinterPage() {
                   key={i}
                   onClick={() => setActive(i)}
                   aria-label={g.label}
-                  className={`aspect-square rounded-lg border flex items-center justify-center overflow-hidden transition-colors ${
+                  className={`aspect-square rounded-lg border flex items-center justify-center overflow-hidden transition-colors ${g.light ? 'bg-white p-1.5' : ''} ${
                     active === i ? 'border-brand-primary' : 'border-zinc-800 hover:border-zinc-600'
                   }`}
                 >
                   {g.src ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={g.src} alt={g.label} className="w-full h-full object-cover" />
+                    <img src={g.src} alt={g.label} className={`w-full h-full ${g.light ? 'object-contain' : 'object-cover'}`} />
                   ) : (
                     <Printer className="w-5 h-5 text-gray-600" />
                   )}
