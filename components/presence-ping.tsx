@@ -10,7 +10,7 @@ function activityFor(path: string): string {
   if (path.startsWith('/print-pages') || path.startsWith('/colouring-pages')) return 'gallery'
   if (path.startsWith('/library')) return 'my-pages'
   if (path.startsWith('/pro')) return 'pro'
-  if (path.startsWith('/printer')) return 'printer'
+  if (path.startsWith('/shop') || path.startsWith('/printer') || path.startsWith('/bundle')) return 'shop'
   if (path.startsWith('/result')) return 'result'
   return 'browsing'
 }
