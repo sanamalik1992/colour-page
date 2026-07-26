@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { preprocessImage, processWithReplicate, generateFromText, generateFromTextOnce, scoreObject, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
+import { preprocessImage, processWithReplicate, generateFromText, generateFromTextOnce, scoreObject, hasDarkSurround, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
 import { verifyObjectImage } from '@/lib/object-verify'
 import { verifySheet } from '@/lib/sheet-verify'
 import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet, buildWordPracticeSheet, buildComposedSheet } from '@/lib/topic-render'
@@ -71,9 +71,10 @@ async function uploadOutput(path: string, buf: Buffer, ct: string) {
 // instant download. The library warms itself as new objects are requested.
 function objectCacheKey(obj: string): string {
   const slug = obj.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
-  // v2 namespace: forces a one-time re-generation of every object through the
-  // vision-recognisability gate, so pre-check cached blobs are left behind.
-  return `object-cache/v2/${slug || 'obj'}.png`
+  // v3 namespace: forces a one-time re-generation of every object through the
+  // dark-background/border gate (added after the "caterpillar in a black box"
+  // report), so any previously-cached bad blob is left behind.
+  return `object-cache/v3/${slug || 'obj'}.png`
 }
 
 // Hard per-object budget. Objects generate in parallel, so ANY single object
@@ -110,6 +111,10 @@ async function generateOneObject(obj: string, settings: PhotoJobSettings, key: s
     }
     const { usable } = await scoreObject(buf)
     if (!usable) continue // blank/blob — cheap retry
+    // Reject a dark background or black box/border and try again. If every
+    // attempt is bordered we return null below and the sheet renders WITHOUT
+    // this picture — a clean gap beats a broken-looking black box.
+    if (await hasDarkSurround(buf)) { console.warn(`object "${obj}" has a dark background/border — regenerating`); continue }
     chosen = buf
     break
   }
@@ -263,7 +268,10 @@ export async function POST(request: NextRequest) {
         } else {
           if (!hasReplicate) throw new Error('Text-to-image generation is not configured')
           await updateJob(jobId, { progress: 20 })
-          const letterObjs = settings.objects.slice(0, 6)
+          // The builders show 2 (young) or 3 (6–8) BIG pictures; generate a
+          // couple extra as backup in case one drops (dark-surround/vision gate)
+          // — but not all six, which would be wasted model calls.
+          const letterObjs = settings.objects.slice(0, 4)
           let picDone = 0
           const pics = (await Promise.all(
             letterObjs.map(async (obj) => {

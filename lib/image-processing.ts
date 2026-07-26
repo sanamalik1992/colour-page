@@ -389,6 +389,57 @@ export async function scoreObject(buf: Buffer): Promise<{ ink: number; usable: b
 }
 
 /**
+ * Detect a generation that came back on a DARK background or inside a black
+ * box/border. Our prompt asks for "pure white background, no border frame", but
+ * the diffusion model occasionally ignores it — the reported "caterpillar in a
+ * black box" bug. A global ink check can't catch this (a thin frame barely moves
+ * the total), so we look specifically at the EDGE band of the image: clean line
+ * art has a near-white margin all the way round, whereas a dark background or a
+ * box frame leaves that border band mostly dark.
+ *
+ * Returns true when the image should be rejected (and regenerated / dropped).
+ * Fails safe: any measurement error returns false so a good picture is never
+ * blocked by a transient problem.
+ */
+export async function hasDarkSurround(buffer: Buffer): Promise<boolean> {
+  try {
+    const N = 120
+    const { data, info } = await sharp(buffer)
+      .greyscale()
+      .resize(N, N, { fit: 'fill' })
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const w = info.width
+    const h = info.height
+    // A frame ~7% of the smaller side — wide enough to sample the margin, narrow
+    // enough that a centred picture's own outline rarely reaches it.
+    const band = Math.max(2, Math.round(Math.min(w, h) * 0.07))
+    let sum = 0
+    let count = 0
+    let dark = 0
+    for (let y = 0; y < h; y++) {
+      const edgeRow = y < band || y >= h - band
+      for (let x = 0; x < w; x++) {
+        if (!edgeRow && x >= band && x < w - band) continue // interior — skip
+        const v = data[y * w + x]
+        sum += v
+        count++
+        if (v < 120) dark++
+      }
+    }
+    if (!count) return false
+    const meanEdge = sum / count // 0 = black margin, 255 = pristine white margin
+    const darkFrac = dark / count // share of the border that is ink/dark
+    // Dark background: the whole margin is dim. Box frame: a large share of the
+    // border is ink even if the mean isn't rock-bottom. A clean sheet sits near
+    // meanEdge≈255 / darkFrac≈0.
+    return meanEdge < 175 || darkFrac > 0.5
+  } catch {
+    return false
+  }
+}
+
+/**
  * Generate a single-object picture, retrying to avoid malformed results (blank
  * frames, headless blobs). Returns as soon as one lands in the healthy band;
  * otherwise keeps the closest-to-ideal attempt. Because good objects are cached

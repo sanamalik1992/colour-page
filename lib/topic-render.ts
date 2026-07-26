@@ -23,6 +23,40 @@ function detail(settings: PhotoJobSettings): 'low' | 'medium' | 'high' {
 }
 
 /**
+ * How many colour-in pictures to show on a letter/phonics sheet, and in how many
+ * columns, so every picture is a genuinely generous, colourable size for the age.
+ *
+ * The rule is "fewer, bigger" for young hands: a 5-year-old gets three large
+ * drawings, not a 3×2 grid of six little ones. We NEVER use more than two
+ * columns here — two half-page-wide columns keep each picture big — and we cap
+ * the count by age band. (An earlier sizing pass fixed the theme/concept picture
+ * blocks but missed this letter/phonics path, so young letter sheets — and a
+ * six-object phonics digraph like "ch" — were still coming out tiny.)
+ */
+function isYoungBand(settings: PhotoJobSettings): boolean {
+  const age = settings.age
+  // Age wins when we have it; otherwise fall back to the detail band (low = the
+  // youngest sheets, medium = 6–8, high = 9–10).
+  return typeof age === 'number' ? age <= 5 : detail(settings) === 'low'
+}
+
+function letterPicLayout(available: number, settings: PhotoJobSettings): { count: number; cols: number } {
+  if (isYoungBand(settings)) {
+    // Youngest: TWO big pictures in a single row. On portrait A4 the letter +
+    // handwriting-trace band already takes ~a third of the page, so two columns
+    // in one row is the only way each picture is a genuinely colourable size
+    // (~2.7"); three would force a second row and halve their height.
+    const count = Math.max(1, Math.min(available, 2))
+    return { count, cols: count }
+  }
+  // 6–8: three picture cues in a SINGLE ROW. The writing is the focus here, but
+  // a single row keeps each picture a good size (a 2×2 grid halves the height and
+  // — with the word underneath each cell — crushes the pictures to ~1").
+  const count = Math.max(1, Math.min(available, 3))
+  return { count, cols: count }
+}
+
+/**
  * A counting worksheet for 1..maxN: each row is the numeral plus that many
  * outline circles to count and colour. Fully deterministic.
  */
@@ -303,18 +337,20 @@ export async function buildLetterStickerSheet(
   const { svg: topSvg, bodyTop } = renderLetterTop(chars, d, settings.title)
   const topPng = await sharp(Buffer.from(topSvg)).png().toBuffer()
 
-  const pics = objectPngs.slice(0, 6)
-  const count = Math.max(1, pics.length)
-  const cols = count <= 1 ? 1 : count <= 4 ? 2 : 3
+  // Fewer, BIGGER pictures for young hands (never a cramped 3-column grid).
+  const { count, cols } = letterPicLayout(objectPngs.length, settings)
+  const pics = objectPngs.slice(0, count)
   const rows = Math.ceil(count / cols)
 
   const bodyX = MARGIN
   const bodyY = bodyTop
   const bodyW = A4_W - MARGIN * 2
   const fullBodyH = A4_H - bodyTop - MARGIN
-  // Every sheet gets a colour grid + a "find the sound" activity (so free is
-  // never bare); Pro adds a third "trace it" activity, so the grid shrinks more.
-  const bodyH = Math.round(fullBodyH * (isPro ? 0.46 : 0.56))
+  // The colour-in pictures are the point of this sheet for the youngest band.
+  // With a single row of two, this share gives near-square cells (~2.7"
+  // pictures); the "colour every letter" (and Pro "trace it") activities fill
+  // the remainder so the page is never airy.
+  const bodyH = Math.round(fullBodyH * (isPro ? 0.5 : 0.52))
   const cellW = bodyW / cols
   const cellH = bodyH / rows
 
@@ -340,8 +376,8 @@ export async function buildLetterStickerSheet(
     overlay += doodleSvg(i + 2, fx + fw - doodleSize * 0.7, fy + fh - doodleSize * 0.7, doodleSize * 0.85)
 
     // picture, scaled to fill the cell interior, centred
-    const innerW = Math.round(fw * 0.82)
-    const innerH = Math.round(fh * 0.78)
+    const innerW = Math.round(fw * 0.9)
+    const innerH = Math.round(fh * 0.86)
     const pic = await sharp(pics[i])
       .greyscale()
       .resize(innerW, innerH, { fit: 'inside', background: '#ffffff' })
@@ -651,15 +687,17 @@ export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string
   const { svg: topSvg, bodyTop } = renderLetterTop(chars, d, settings.title)
   const topPng = await sharp(Buffer.from(topSvg)).png().toBuffer()
 
-  const pics = objectPngs.slice(0, 6)
-  const count = Math.max(1, pics.length)
-  const cols = count <= 4 ? 2 : 3
+  // Fewer, BIGGER picture cells for young hands (never a cramped 3-column grid).
+  const { count, cols } = letterPicLayout(objectPngs.length, settings)
+  const pics = objectPngs.slice(0, count)
   const rows = Math.ceil(count / cols)
   const bodyX = MARGIN, bodyY = bodyTop
   const bodyW = A4_W - MARGIN * 2
   const fullBodyH = A4_H - bodyTop - MARGIN
-  // Free adds a "trace the words" activity; Pro adds a mini word search too.
-  const bodyH = Math.round(fullBodyH * (isPro ? 0.5 : 0.62))
+  // Single row of picture-cues (picture + gapped word per cell). This share
+  // keeps each cell snug around its picture and word; the "trace the words" (and
+  // Pro word search) activities fill the rest so the page isn't airy.
+  const bodyH = Math.round(fullBodyH * (isPro ? 0.42 : 0.48))
   const cellW = bodyW / cols
   const cellH = bodyH / rows
 
@@ -675,9 +713,9 @@ export async function buildLetterWriteSheet(objectPngs: Buffer[], letter: string
     overlay += `<rect x="${fx.toFixed(1)}" y="${fy.toFixed(1)}" width="${fw.toFixed(1)}" height="${fh.toFixed(1)}" rx="46" fill="none" stroke="#e2ded6" stroke-width="4" stroke-dasharray="14 12"/>`
     // gapped word near the bottom of the cell
     if (words[i]) overlay += gappedWordSvg(words[i], chars, cx + cellW / 2, cy + cellH - wordH * 1.7, wordH, d === 'high' ? 12 : 15)
-    // picture in the upper part
-    const innerW = Math.round(fw * 0.72)
-    const innerH = Math.round(fh * 0.5)
+    // picture in the upper part (the gapped word sits below it in the cell)
+    const innerW = Math.round(fw * 0.9)
+    const innerH = Math.round(fh * 0.62)
     const pic = await sharp(pics[i]).greyscale().resize(innerW, innerH, { fit: 'inside', background: '#ffffff' }).flatten({ background: '#ffffff' }).toBuffer()
     const pm = await sharp(pic).metadata()
     const left = Math.round(cx + (cellW - (pm.width || innerW)) / 2)
@@ -1010,16 +1048,16 @@ async function picturesRowBlock(
   x: number,
   top: number,
   w: number,
-  h: number
+  h: number,
+  young = false
 ): Promise<{ svg: string; composites: sharp.OverlayOptions[] }> {
   const n = bufs.length
   if (!n) return { svg: '', composites: [] }
-  // Two columns is the sweet spot for big, comfortable colour-in pictures: the
-  // cells are half the page wide, and (with a tall flex-filled slice) the
-  // pictures come out large. 1–2 pictures sit in a single row; 3+ use 2 columns
-  // (so 3 is a 2-then-1 grid of BIG pictures, not a cramped 1×3 row). Five/six
-  // fall to 3 columns.
-  const cols = n <= 2 ? n : n <= 4 ? 2 : 3
+  // For the youngest, keep the pictures in a SINGLE ROW (up to three) so each
+  // gets the full slice height instead of being halved by a second row — the
+  // difference between a ~1.7" and a ~2.4"+ colour-in picture. Older sheets,
+  // where the writing is the point, use up to two columns (a 2×2 grid for four).
+  const cols = young ? Math.min(n, 3) : n <= 2 ? n : n <= 4 ? 2 : 3
   const rows = Math.ceil(n / cols)
   const cellW = w / cols
   const cellH = h / rows
@@ -2354,7 +2392,7 @@ export async function buildComposedSheet(
       const ch = y + sliceH - nextY
       switch (a.type) {
         case 'pictures': {
-          const { svg: ps, composites: comps } = await picturesRowBlock(picsFor(a), !!a.label, bodyX, nextY, bodyW, ch)
+          const { svg: ps, composites: comps } = await picturesRowBlock(picsFor(a), !!a.label, bodyX, nextY, bodyW, ch, isYoungBand(settings))
           overlay += ps
           composites.push(...comps)
           break
