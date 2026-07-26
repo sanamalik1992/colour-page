@@ -14,7 +14,6 @@ import {
   CheckCircle2,
   AlertCircle,
   RefreshCw,
-  Lock,
   Crown,
   BookOpen,
   Loader2,
@@ -718,16 +717,6 @@ export default function Home() {
                       )}
                     </div>
                   )}
-
-                  {/* Photo-privacy reassurance — parents hesitate before uploading
-                      photos of their children. Wording matches /privacy. */}
-                  <div className="mt-4 flex items-start gap-2 rounded-xl bg-gray-50 border border-gray-100 px-3.5 py-3">
-                    <Lock className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-gray-500 leading-relaxed">
-                      Your photos stay private — never shared, and never used to train AI. You can delete them any time.{' '}
-                      <Link href="/privacy" className="text-gray-600 font-semibold hover:underline">How we handle your data</Link>
-                    </p>
-                  </div>
                 </>
               )}
 
