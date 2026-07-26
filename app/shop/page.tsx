@@ -27,7 +27,8 @@ const PRODUCTS: {
     blurb:
       'Inkless thermal printer — print activity and colouring sheets straight from your phone over Bluetooth. A4 & 8.5×11.',
     includes: ['Just the printer', 'Bluetooth + USB-C', 'No ink, ever'],
-    image: '/printer/5-portable.webp',
+    image: '/printer/main.webp',
+    lightImage: true,
     icon: Printer,
   },
   {
