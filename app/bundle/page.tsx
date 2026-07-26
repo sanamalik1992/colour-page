@@ -72,9 +72,9 @@ export default function BundlePage() {
         <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-8 lg:gap-12">
           {/* Image */}
           <div>
-            <div className="aspect-[4/3] rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden flex items-center justify-center">
+            <div className="aspect-square rounded-2xl bg-white border border-zinc-200 overflow-hidden flex items-center justify-center p-4">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/shop/bundle.webp" alt="Everything Bundle: printer, A4 thermal paper, black A4 clipboard and felt-tip pack" className="w-full h-full object-cover" />
+              <img src="/shop/bundle.webp" alt="Everything Bundle: printer, A4 thermal paper, black A4 clipboard and felt-tip pack" className="w-full h-full object-contain" />
             </div>
           </div>
 
