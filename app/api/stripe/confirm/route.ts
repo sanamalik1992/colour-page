@@ -68,18 +68,26 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'email' })
 
-    // Record the subscription so /account shows the renewal date etc.
+    // Record the subscription so /account shows the renewal date etc. Period
+    // fields moved onto the subscription item in newer Stripe API versions, so
+    // read whichever is present and never throw on a missing value.
     if (subscription && customerId) {
-      await supabase.from('stripe_subscriptions').upsert({
+      const s = subscription as unknown as { current_period_start?: number; current_period_end?: number }
+      const item = subscription.items?.data?.[0] as unknown as { current_period_start?: number; current_period_end?: number } | undefined
+      const iso = (v?: number) => (typeof v === 'number' && Number.isFinite(v) ? new Date(v * 1000).toISOString() : null)
+      const start = iso(s.current_period_start ?? item?.current_period_start)
+      const end = iso(s.current_period_end ?? item?.current_period_end)
+      const { error: subErr } = await supabase.from('stripe_subscriptions').upsert({
         stripe_subscription_id: subscription.id,
         stripe_customer_id: customerId,
         status: subscription.status,
         plan_id: subscription.items.data[0]?.price.id || 'pro',
-        current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-        current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+        ...(start ? { current_period_start: start } : {}),
+        ...(end ? { current_period_end: end } : {}),
         cancel_at_period_end: subscription.cancel_at_period_end,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'stripe_subscription_id' })
+      if (subErr) console.error('confirm: stripe_subscriptions upsert failed (is_pro already set):', subErr)
     }
 
     return NextResponse.json({ isPro: true })

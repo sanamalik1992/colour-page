@@ -12,6 +12,18 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// current_period_start/end sit on the Subscription in older Stripe API versions
+// and on the first subscription ITEM in newer ones (2025-03-31.basil+). Read
+// whichever is present, and NEVER throw on a missing/NaN value — the previous
+// `new Date(undefined * 1000).toISOString()` was throwing RangeError and 500ing
+// the whole webhook, so paying customers never got Pro.
+function subPeriod(sub: Stripe.Subscription): { start: string | null; end: string | null } {
+  const s = sub as unknown as { current_period_start?: number; current_period_end?: number }
+  const item = sub.items?.data?.[0] as unknown as { current_period_start?: number; current_period_end?: number } | undefined
+  const iso = (v?: number) => (typeof v === 'number' && Number.isFinite(v) ? new Date(v * 1000).toISOString() : null)
+  return { start: iso(s.current_period_start ?? item?.current_period_start), end: iso(s.current_period_end ?? item?.current_period_end) }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
@@ -53,28 +65,33 @@ export async function POST(request: NextRequest) {
           // checkout carried one (so Pro follows the account, not just the email).
           const userId = session.metadata?.userId
           if (email) {
-            await supabase.from('stripe_customers').upsert({
+            const { error: custErr } = await supabase.from('stripe_customers').upsert({
               email: email.toLowerCase(),
               stripe_customer_id: customerId,
               ...(userId ? { user_id: userId } : {}),
               is_pro: true,
               updated_at: new Date().toISOString()
             }, { onConflict: 'email' })
+            if (custErr) console.error('stripe_customers is_pro upsert FAILED:', custErr)
           }
 
           // Fetch full subscription details
           const subscription = await stripe.subscriptions.retrieve(subscriptionId)
-          
-          await supabase.from('stripe_subscriptions').upsert({
+          const { start, end } = subPeriod(subscription)
+
+          const { error: subErr } = await supabase.from('stripe_subscriptions').upsert({
             stripe_subscription_id: subscription.id,
             stripe_customer_id: customerId,
             status: subscription.status,
             plan_id: subscription.items.data[0]?.price.id || 'pro',
-            current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+            ...(start ? { current_period_start: start } : {}),
+            ...(end ? { current_period_end: end } : {}),
             cancel_at_period_end: subscription.cancel_at_period_end,
             updated_at: new Date().toISOString()
           }, { onConflict: 'stripe_subscription_id' })
+          // Never let a subscription-detail write failure undo the Pro grant
+          // above — is_pro is already set; just log and carry on.
+          if (subErr) console.error('stripe_subscriptions upsert failed (is_pro already set):', subErr)
         }
 
         // Physical order (portable printer or everything bundle) — a one-off
@@ -130,16 +147,18 @@ export async function POST(request: NextRequest) {
 
         console.log('Subscription updated:', subscription.id, 'Status:', subscription.status)
 
-        await supabase.from('stripe_subscriptions').upsert({
+        const { start: subStart, end: subEnd } = subPeriod(subscription)
+        const { error: subUpsertErr } = await supabase.from('stripe_subscriptions').upsert({
           stripe_subscription_id: subscription.id,
           stripe_customer_id: customerId,
           status: subscription.status,
           plan_id: subscription.items.data[0]?.price.id || 'pro',
-          current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+          ...(subStart ? { current_period_start: subStart } : {}),
+          ...(subEnd ? { current_period_end: subEnd } : {}),
           cancel_at_period_end: subscription.cancel_at_period_end,
           updated_at: new Date().toISOString()
         }, { onConflict: 'stripe_subscription_id' })
+        if (subUpsertErr) console.error('stripe_subscriptions upsert failed:', subUpsertErr)
 
         // Update is_pro flag on customer, and link the auth user if the
         // subscription carried one in metadata.
