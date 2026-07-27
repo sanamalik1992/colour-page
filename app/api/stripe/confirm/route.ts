@@ -64,8 +64,7 @@ export async function POST(request: NextRequest) {
       email,
       ...(customerId ? { stripe_customer_id: customerId } : {}),
       ...(userId ? { user_id: userId } : {}),
-      is_pro: true,
-      updated_at: new Date().toISOString(),
+      is_pro: true
     }, { onConflict: 'email' })
 
     // Record the subscription so /account shows the renewal date etc. Period
@@ -84,8 +83,7 @@ export async function POST(request: NextRequest) {
         plan_id: subscription.items.data[0]?.price.id || 'pro',
         ...(start ? { current_period_start: start } : {}),
         ...(end ? { current_period_end: end } : {}),
-        cancel_at_period_end: subscription.cancel_at_period_end,
-        updated_at: new Date().toISOString(),
+        cancel_at_period_end: subscription.cancel_at_period_end
       }, { onConflict: 'stripe_subscription_id' })
       if (subErr) console.error('confirm: stripe_subscriptions upsert failed (is_pro already set):', subErr)
     }
