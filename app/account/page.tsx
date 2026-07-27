@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { CreditCard, Calendar, CheckCircle, AlertCircle, Loader2, Crown, LogOut, Mail, Trash2 } from 'lucide-react'
+import { CreditCard, Calendar, CheckCircle, AlertCircle, Loader2, Crown, LogOut, Mail, Trash2, RefreshCw } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 import { useMe } from '@/hooks/useMe'
@@ -24,6 +24,8 @@ export default function AccountPage() {
   const [sub, setSub] = useState<SubscriptionStatus | null>(null)
   const [portalLoading, setPortalLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const [restoreMsg, setRestoreMsg] = useState('')
 
   const email = me?.user?.email || ''
 
@@ -61,6 +63,21 @@ export default function AccountPage() {
       alert('Failed to open billing portal')
     } finally {
       setPortalLoading(false)
+    }
+  }
+
+  const restorePro = async () => {
+    setRestoring(true)
+    setRestoreMsg('')
+    try {
+      const res = await fetch('/api/stripe/restore', { method: 'POST' })
+      const data = await res.json()
+      setRestoreMsg(data.message || (data.ok ? 'Pro restored!' : 'Could not restore Pro.'))
+      if (data.ok) setTimeout(() => window.location.reload(), 1200)
+    } catch {
+      setRestoreMsg('Something went wrong. Please try again.')
+    } finally {
+      setRestoring(false)
     }
   }
 
@@ -178,12 +195,23 @@ export default function AccountPage() {
                 {portalLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CreditCard className="w-4 h-4" /> Manage billing</>}
               </button>
             ) : (
-              <Link
-                href="/pro"
-                className="w-full h-12 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold rounded-xl transition-opacity hover:opacity-90 flex items-center justify-center gap-2"
-              >
-                <Crown className="w-4 h-4" /> Upgrade to Pro Family
-              </Link>
+              <>
+                <Link
+                  href="/pro"
+                  className="w-full h-12 bg-gradient-to-r from-brand-primary to-brand-border text-white font-semibold rounded-xl transition-opacity hover:opacity-90 flex items-center justify-center gap-2"
+                >
+                  <Crown className="w-4 h-4" /> Upgrade to Pro Family
+                </Link>
+                {/* Already paid but not showing as Pro? Reconcile against Stripe. */}
+                <button
+                  onClick={restorePro}
+                  disabled={restoring}
+                  className="mt-3 w-full h-11 bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {restoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <><RefreshCw className="w-4 h-4" /> Already paid? Restore Pro</>}
+                </button>
+                {restoreMsg && <p className="mt-2 text-sm text-gray-300 text-center">{restoreMsg}</p>}
+              </>
             )}
           </div>
         </div>
