@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
+import { sendNewOrderEmail, type OrderRow } from '@/lib/order-email'
 
 export const runtime = 'nodejs'
 
@@ -76,22 +77,46 @@ export async function POST(request: NextRequest) {
           }, { onConflict: 'stripe_subscription_id' })
         }
 
-        // Physical order (portable printer) — a one-off payment, NOT a
-        // subscription, so no Pro is granted. Log the shipping details so the
-        // order to post is easy to find; Stripe's Dashboard remains the source
-        // of truth for fulfilment.
-        if (session.mode === 'payment' && session.metadata?.product === 'portable-printer') {
-          const ship = session.shipping_details
+        // Physical order (portable printer or everything bundle) — a one-off
+        // payment, NOT a subscription, so no Pro is granted. Persist it so it
+        // shows on the admin Orders page, and email the shop inbox right away.
+        const PHYSICAL: Record<string, string> = {
+          'portable-printer': 'Portable Colouring Printer',
+          'everything-bundle': 'Everything Bundle',
+        }
+        const product = session.metadata?.product
+        if (session.mode === 'payment' && product && PHYSICAL[product]) {
+          const ship = session.shipping_details || session.customer_details
           const cust = session.customer_details
-          console.log('PRINTER ORDER', JSON.stringify({
-            sessionId: session.id,
-            paid: session.payment_status,
-            amountTotal: session.amount_total,
-            email: cust?.email || session.customer_email,
-            phone: cust?.phone,
-            shipTo: ship?.name,
-            address: ship?.address,
-          }))
+          const a = ship?.address
+          const orderRow = {
+            stripe_session_id: session.id,
+            product,
+            product_name: PHYSICAL[product],
+            quantity: 1,
+            amount_total: session.amount_total,
+            currency: session.currency || 'gbp',
+            email: cust?.email || session.customer_email || null,
+            phone: cust?.phone || null,
+            ship_name: ship?.name || cust?.name || null,
+            ship_address: a
+              ? { line1: a.line1, line2: a.line2, city: a.city, state: a.state, postal_code: a.postal_code, country: a.country }
+              : null,
+            status: 'paid',
+          }
+          // Idempotent on the Stripe session id (webhooks can be redelivered).
+          // `ignoreDuplicates` so a redelivery doesn't re-notify.
+          const { data: inserted, error: orderErr } = await supabase
+            .from('orders')
+            .upsert(orderRow, { onConflict: 'stripe_session_id', ignoreDuplicates: true })
+            .select()
+            .maybeSingle()
+          if (orderErr) {
+            console.error('Order insert failed:', orderErr)
+          } else if (inserted) {
+            // Only email on a genuinely new row (redelivery returns null).
+            await sendNewOrderEmail(inserted as OrderRow)
+          }
         }
         break
       }

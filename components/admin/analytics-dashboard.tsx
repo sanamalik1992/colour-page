@@ -78,7 +78,10 @@ export function AnalyticsDashboard() {
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-extrabold">Analytics</h1>
-          <span className="flex items-center gap-1.5 text-xs text-gray-500"><span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> live · {ago(data.generatedAt)}</span>
+          <div className="flex items-center gap-3">
+            <a href="/admin/orders" className="text-xs font-semibold text-brand-primary hover:underline">Orders →</a>
+            <span className="flex items-center gap-1.5 text-xs text-gray-500"><span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> live · {ago(data.generatedAt)}</span>
+          </div>
         </div>
 
         {/* LIVE */}
