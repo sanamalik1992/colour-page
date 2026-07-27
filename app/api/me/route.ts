@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerUser } from '@/lib/supabase/auth-server'
 import { supabaseAdmin } from '@/lib/supabase/server'
+import { stripe } from '@/lib/stripe'
 
 export const runtime = 'nodejs'
 
@@ -14,25 +15,40 @@ export async function GET() {
   const user = await getServerUser()
   if (!user) return NextResponse.json({ user: null, isPro: false })
 
-  // Resolve Pro from Stripe: prefer the linked user_id, fall back to the
-  // verified email (the account email always matches the Stripe customer email
-  // because subscribe locks it — see checkout-subscription).
-  let isPro = false
-  const { data: byId } = await supabaseAdmin
-    .from('stripe_customers')
-    .select('is_pro')
-    .eq('user_id', user.id)
-    .maybeSingle()
+  // Find the customer row by linked user_id, else by verified email.
+  type CustRow = { is_pro: boolean | null; stripe_customer_id: string | null; email: string | null }
+  const sel = 'is_pro, stripe_customer_id, email'
+  let row: CustRow | null = null
+  const byId = await supabaseAdmin.from('stripe_customers').select(sel).eq('user_id', user.id).maybeSingle()
+  row = (byId.data as CustRow | null) ?? null
+  if (!row) {
+    const byEmail = await supabaseAdmin.from('stripe_customers').select(sel).eq('email', user.email).maybeSingle()
+    row = (byEmail.data as CustRow | null) ?? null
+  }
 
-  if (byId) {
-    isPro = byId.is_pro === true
-  } else {
-    const { data: byEmail } = await supabaseAdmin
-      .from('stripe_customers')
-      .select('is_pro')
-      .eq('email', user.email)
-      .maybeSingle()
-    isPro = byEmail?.is_pro === true
+  let isPro = row?.is_pro === true
+
+  // Self-heal: if the DB doesn't show Pro but the customer actually has an
+  // active subscription in Stripe (e.g. a webhook failed to flip is_pro), trust
+  // Stripe, persist is_pro=true, and return Pro. Gated on the customer having a
+  // Stripe customer id, so genuinely-free logged-in users never hit Stripe here.
+  if (!isPro && row?.stripe_customer_id) {
+    try {
+      const subs = await stripe.subscriptions.list({ customer: row.stripe_customer_id, status: 'all', limit: 10 })
+      const active = subs.data.some((s) => ['active', 'trialing', 'past_due'].includes(s.status))
+      if (active) {
+        isPro = true
+        await supabaseAdmin.from('stripe_customers').upsert({
+          email: (row.email || user.email).toLowerCase(),
+          stripe_customer_id: row.stripe_customer_id,
+          user_id: user.id,
+          is_pro: true,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'email' })
+      }
+    } catch (e) {
+      console.error('me: Stripe Pro reconcile failed', e)
+    }
   }
 
   return NextResponse.json({ user: { id: user.id, email: user.email }, isPro })

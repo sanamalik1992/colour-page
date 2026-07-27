@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
-import { sendNewOrderEmail, type OrderRow } from '@/lib/order-email'
+import { sendNewOrderEmail, sendNewProEmail, type OrderRow } from '@/lib/order-email'
 
 export const runtime = 'nodejs'
 
@@ -92,6 +92,15 @@ export async function POST(request: NextRequest) {
           // Never let a subscription-detail write failure undo the Pro grant
           // above — is_pro is already set; just log and carry on.
           if (subErr) console.error('stripe_subscriptions upsert failed (is_pro already set):', subErr)
+
+          // Notify the shop inbox of the new Pro subscriber. Fires once per
+          // checkout (checkout.session.completed isn't redelivered once we
+          // return 200); best-effort so a mail hiccup never fails the webhook.
+          await sendNewProEmail({
+            email: email || undefined,
+            plan: session.metadata?.plan,
+            name: session.customer_details?.name,
+          })
         }
 
         // Physical order (portable printer or everything bundle) — a one-off
