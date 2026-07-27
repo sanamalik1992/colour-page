@@ -21,6 +21,10 @@ export default function PrivacyPage() {
         </p>
         <p className="mb-4">Ozeco Ltd is the &ldquo;data controller&rdquo; for the personal information described in this policy.</p>
         <p className="mb-4">
+          Ozeco Ltd is registered with the UK Information Commissioner&rsquo;s Office (ICO), registration number{' '}
+          <strong className="text-white">ICO-00014917365</strong>.
+        </p>
+        <p className="mb-4">
           We know you&rsquo;re trusting us with something precious — often photographs of your children. This policy
           explains, in plain English, what we collect, why, who we share it with, and how you can get it deleted.
         </p>
@@ -160,7 +164,8 @@ export default function PrivacyPage() {
         <Section title="9. Contact us">
           <p className="mb-2">Questions, concerns, or requests about your data:</p>
           <p className="mb-2"><strong className="text-white">Email:</strong> <a href={`mailto:${CONTACT}`} className="text-brand-primary hover:underline">{CONTACT}</a></p>
-          <p><strong className="text-white">Post:</strong> Ozeco Ltd, Unit A James Carter Road, Mildenhall, Bury St. Edmunds, England, IP28 7DE</p>
+          <p className="mb-2"><strong className="text-white">Post:</strong> Ozeco Ltd, Unit A James Carter Road, Mildenhall, Bury St. Edmunds, England, IP28 7DE</p>
+          <p className="text-sm text-gray-400">Registered with the UK Information Commissioner&rsquo;s Office (ICO), registration number ICO-00014917365.</p>
         </Section>
 
         <p className="text-gray-500 text-sm italic mt-10">This policy is provided in good faith and in plain English.</p>
