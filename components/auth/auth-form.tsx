@@ -21,7 +21,13 @@ function GoogleIcon() {
 export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
   const router = useRouter()
   const params = useSearchParams()
-  const next = params.get('next') || '/'
+  const isSignup = mode === 'signup'
+  // Where to land after auth. A brand-new account goes straight to the Pro page
+  // to subscribe; logging in returns home. An explicit ?next= (e.g. mid-flow)
+  // always wins.
+  const explicitNext = params.get('next')
+  const next = explicitNext || (isSignup ? '/pro' : '/')
+  const linkNext = explicitNext ? `?next=${encodeURIComponent(explicitNext)}` : ''
   const supabase = createClient()
 
   const [email, setEmail] = useState('')
@@ -31,8 +37,6 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
   // Surface an error handed back by the OAuth callback (?error=...).
   const [error, setError] = useState(params.get('error') || '')
   const [checkEmail, setCheckEmail] = useState(false)
-
-  const isSignup = mode === 'signup'
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -153,7 +157,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
       <p className="text-center text-sm text-gray-400 mt-5">
         {isSignup ? 'Already have an account? ' : 'New here? '}
         <Link
-          href={isSignup ? `/login?next=${encodeURIComponent(next)}` : `/signup?next=${encodeURIComponent(next)}`}
+          href={isSignup ? `/login${linkNext}` : `/signup${linkNext}`}
           className="text-brand-primary font-semibold hover:underline"
         >
           {isSignup ? 'Log in' : 'Create an account'}
