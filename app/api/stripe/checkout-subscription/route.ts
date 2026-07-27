@@ -75,14 +75,14 @@ export async function POST(request: NextRequest) {
       const customer = await stripe.customers.create({ email })
       customerId = customer.id
 
-      // Create customer record in database
+      // Create customer record in database (created_at has a DB default; don't
+      // set timestamp columns from the app — the deployed schema may not have
+      // them, and a missing column makes the whole write fail).
       await supabase.from('stripe_customers').upsert({
         email,
         stripe_customer_id: customerId,
         user_id: userId,
         is_pro: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
       }, { onConflict: 'email' })
     }
 

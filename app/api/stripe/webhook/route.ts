@@ -69,9 +69,7 @@ export async function POST(request: NextRequest) {
               email: email.toLowerCase(),
               stripe_customer_id: customerId,
               ...(userId ? { user_id: userId } : {}),
-              is_pro: true,
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'email' })
+              is_pro: true}, { onConflict: 'email' })
             if (custErr) console.error('stripe_customers is_pro upsert FAILED:', custErr)
           }
 
@@ -86,9 +84,7 @@ export async function POST(request: NextRequest) {
             plan_id: subscription.items.data[0]?.price.id || 'pro',
             ...(start ? { current_period_start: start } : {}),
             ...(end ? { current_period_end: end } : {}),
-            cancel_at_period_end: subscription.cancel_at_period_end,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'stripe_subscription_id' })
+            cancel_at_period_end: subscription.cancel_at_period_end}, { onConflict: 'stripe_subscription_id' })
           // Never let a subscription-detail write failure undo the Pro grant
           // above — is_pro is already set; just log and carry on.
           if (subErr) console.error('stripe_subscriptions upsert failed (is_pro already set):', subErr)
@@ -164,9 +160,7 @@ export async function POST(request: NextRequest) {
           plan_id: subscription.items.data[0]?.price.id || 'pro',
           ...(subStart ? { current_period_start: subStart } : {}),
           ...(subEnd ? { current_period_end: subEnd } : {}),
-          cancel_at_period_end: subscription.cancel_at_period_end,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'stripe_subscription_id' })
+          cancel_at_period_end: subscription.cancel_at_period_end}, { onConflict: 'stripe_subscription_id' })
         if (subUpsertErr) console.error('stripe_subscriptions upsert failed:', subUpsertErr)
 
         // Update is_pro flag on customer, and link the auth user if the
@@ -176,9 +170,7 @@ export async function POST(request: NextRequest) {
           .from('stripe_customers')
           .update({
             is_pro: isActive,
-            ...(subUserId ? { user_id: subUserId } : {}),
-            updated_at: new Date().toISOString()
-          })
+            ...(subUserId ? { user_id: subUserId } : {})})
           .eq('stripe_customer_id', customerId)
 
         break
@@ -195,9 +187,7 @@ export async function POST(request: NextRequest) {
           .from('stripe_subscriptions')
           .update({
             status: 'canceled',
-            cancel_at_period_end: true,
-            updated_at: new Date().toISOString()
-          })
+            cancel_at_period_end: true})
           .eq('stripe_subscription_id', subscription.id)
 
         // Check if customer has any other active subscriptions
@@ -210,7 +200,7 @@ export async function POST(request: NextRequest) {
         if (!otherSubs || otherSubs.length === 0) {
           await supabase
             .from('stripe_customers')
-            .update({ is_pro: false, updated_at: new Date().toISOString() })
+            .update({ is_pro: false})
             .eq('stripe_customer_id', customerId)
         }
         break
@@ -226,7 +216,7 @@ export async function POST(request: NextRequest) {
           if (invoice.customer) {
             await supabase
               .from('stripe_customers')
-              .update({ is_pro: true, updated_at: new Date().toISOString() })
+              .update({ is_pro: true})
               .eq('stripe_customer_id', invoice.customer as string)
           }
         }
@@ -243,9 +233,7 @@ export async function POST(request: NextRequest) {
           await supabase
             .from('stripe_subscriptions')
             .update({ 
-              status: 'past_due',
-              updated_at: new Date().toISOString() 
-            })
+              status: 'past_due'})
             .eq('stripe_subscription_id', invoice.subscription as string)
         }
         break

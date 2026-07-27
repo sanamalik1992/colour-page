@@ -42,8 +42,7 @@ export async function GET() {
           email: (row.email || user.email).toLowerCase(),
           stripe_customer_id: row.stripe_customer_id,
           user_id: user.id,
-          is_pro: true,
-          updated_at: new Date().toISOString(),
+          is_pro: true
         }, { onConflict: 'email' })
       }
     } catch (e) {

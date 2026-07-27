@@ -73,7 +73,7 @@ export async function POST() {
 
   // Grant Pro.
   const { error: upErr } = await supabase.from('stripe_customers').upsert({
-    email, stripe_customer_id: customerId, user_id: user.id, is_pro: true, updated_at: new Date().toISOString(),
+    email, stripe_customer_id: customerId, user_id: user.id, is_pro: true
   }, { onConflict: 'email' })
   if (upErr) {
     report.dbWriteError = upErr.message
