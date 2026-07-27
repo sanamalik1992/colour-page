@@ -15,17 +15,10 @@ import {
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 
-// Product photos live in /public/printer. Leave src empty to show a labelled
-// placeholder slot instead. `light` = a studio shot on a white background, shown
-// on a white tile so it sits cleanly; the lifestyle shots stay on a dark tile.
+// Single product photo on the printer page. `light` = a studio shot on a white
+// background, shown on a white tile so it sits cleanly.
 const GALLERY: { src?: string; label: string; light?: boolean }[] = [
   { src: '/printer/main.webp', label: 'Print colouring pages from your phone', light: true },
-  { src: '/printer/product.webp', label: 'Sleek, compact A4 thermal printer', light: true },
-  { src: '/printer/1-easy-for-parents.webp', label: 'Easy for parents, fun for kids' },
-  { src: '/printer/2-print-anywhere.webp', label: 'Print colouring pages anywhere' },
-  { src: '/printer/3-print-colour-enjoy.webp', label: 'Print, colour, enjoy' },
-  { src: '/printer/4-learning-and-fun.webp', label: 'Learning & fun in one printer' },
-  { src: '/printer/5-portable.webp', label: 'Small, portable & ready to go' },
 ]
 
 const SPECS = [
@@ -41,7 +34,6 @@ export default function PrinterPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [banner, setBanner] = useState<'success' | 'cancelled' | null>(null)
-  const [active, setActive] = useState(0)
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search).get('purchase')
@@ -81,36 +73,17 @@ export default function PrinterPage() {
         <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-8 lg:gap-12">
           {/* Gallery */}
           <div>
-            <div className={`aspect-square rounded-2xl border overflow-hidden flex items-center justify-center ${GALLERY[active].light ? 'bg-white border-zinc-200 p-4' : 'bg-zinc-900 border-zinc-800'}`}>
-              {GALLERY[active].src ? (
+            <div className={`aspect-square rounded-2xl border overflow-hidden flex items-center justify-center ${GALLERY[0].light ? 'bg-white border-zinc-200 p-4' : 'bg-zinc-900 border-zinc-800'}`}>
+              {GALLERY[0].src ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={GALLERY[active].src} alt={GALLERY[active].label} className={`w-full h-full ${GALLERY[active].light ? 'object-contain' : 'object-cover'}`} />
+                <img src={GALLERY[0].src} alt={GALLERY[0].label} className={`w-full h-full ${GALLERY[0].light ? 'object-contain' : 'object-cover'}`} />
               ) : (
                 <div className="text-center text-gray-500 px-6">
                   <Printer className="w-14 h-14 mx-auto mb-3 opacity-60" />
-                  <p className="text-sm font-medium">{GALLERY[active].label}</p>
+                  <p className="text-sm font-medium">{GALLERY[0].label}</p>
                   <p className="text-xs mt-1 text-gray-600">Photo coming soon</p>
                 </div>
               )}
-            </div>
-            <div className="mt-3 grid grid-cols-4 gap-3">
-              {GALLERY.map((g, i) => (
-                <button
-                  key={i}
-                  onClick={() => setActive(i)}
-                  aria-label={g.label}
-                  className={`aspect-square rounded-lg border flex items-center justify-center overflow-hidden transition-colors ${g.light ? 'bg-white p-1.5' : ''} ${
-                    active === i ? 'border-brand-primary' : 'border-zinc-800 hover:border-zinc-600'
-                  }`}
-                >
-                  {g.src ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={g.src} alt={g.label} className={`w-full h-full ${g.light ? 'object-contain' : 'object-cover'}`} />
-                  ) : (
-                    <Printer className="w-5 h-5 text-gray-600" />
-                  )}
-                </button>
-              ))}
             </div>
           </div>
 
