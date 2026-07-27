@@ -99,6 +99,34 @@ export async function sendNewOrderEmail(order: OrderRow): Promise<void> {
   }
 }
 
+// Alert the shop inbox that someone just subscribed to Pro.
+export async function sendNewProEmail(info: { email?: string | null; plan?: string | null; name?: string | null }): Promise<void> {
+  const client = resend()
+  if (!client) { console.warn('sendNewProEmail: RESEND_API_KEY not set'); return }
+  const planLabel = info.plan === 'annual' ? 'Annual · £39.99/year' : 'Monthly · £4.99/month'
+  const rows: [string, string][] = [
+    ['Plan', `Pro Family — ${planLabel}`],
+    ['Email', info.email || '—'],
+    ...(info.name ? [['Name', info.name] as [string, string]] : []),
+  ]
+  const body = `
+    <p style="font-size:16px;margin:0 0 16px;">🎉 You have a new Pro Family subscriber!</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#333;border-collapse:collapse;">
+      ${rows.map(([k, v]) => `<tr><td style="padding:8px 0;color:#666;width:90px;vertical-align:top;">${k}</td><td style="padding:8px 0;font-weight:600;">${v}</td></tr>`).join('')}
+    </table>`
+  try {
+    await client.emails.send({
+      from: FROM,
+      replyTo: SHOP_INBOX,
+      to: SHOP_INBOX,
+      subject: `🎉 New Pro subscriber — ${info.email || 'colour.page'}`,
+      html: shell('New Pro subscriber', body),
+    })
+  } catch (e) {
+    console.error('sendNewProEmail failed:', e)
+  }
+}
+
 // Tell the customer their order has shipped, with tracking details.
 export async function sendShippedEmail(order: OrderRow): Promise<void> {
   const client = resend()
