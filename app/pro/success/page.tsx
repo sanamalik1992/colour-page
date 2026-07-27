@@ -12,9 +12,27 @@ function SuccessContent() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Give the Stripe webhook a moment to activate the subscription
-    const timer = setTimeout(() => setLoading(false), 2000)
-    return () => clearTimeout(timer)
+    let cancelled = false
+    // Activate Pro directly from the checkout session (doesn't rely on the
+    // webhook). Retry a few times in case the payment is still settling.
+    const confirm = async () => {
+      if (!sessionId) { setLoading(false); return }
+      for (let attempt = 0; attempt < 6 && !cancelled; attempt++) {
+        try {
+          const res = await fetch('/api/stripe/confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId }),
+          })
+          const data = await res.json()
+          if (data.isPro) break
+        } catch { /* keep retrying */ }
+        await new Promise((r) => setTimeout(r, 1500))
+      }
+      if (!cancelled) setLoading(false)
+    }
+    confirm()
+    return () => { cancelled = true }
   }, [sessionId])
 
   if (loading) {
