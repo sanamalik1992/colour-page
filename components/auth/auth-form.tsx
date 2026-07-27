@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Loader2, Mail, Lock, CheckCircle2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -19,7 +19,6 @@ function GoogleIcon() {
 }
 
 export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
-  const router = useRouter()
   const params = useSearchParams()
   const isSignup = mode === 'signup'
   // Where to land after auth. A brand-new account goes straight to the Pro page
@@ -58,8 +57,10 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
         if (error) throw error
       }
-      router.push(next)
-      router.refresh()
+      // Full navigation (not router.push) so the just-created session cookie is
+      // sent with the request — otherwise /pro can render as logged-out and the
+      // subscribe button bounces back to signup.
+      window.location.assign(next)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
     } finally {
