@@ -1,12 +1,33 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Activity, Search, Image as ImageIcon, Sparkles, CheckCircle2, XCircle, Users, Crown } from 'lucide-react'
+import { Loader2, Activity, Search, Image as ImageIcon, Sparkles, CheckCircle2, XCircle, Users, Crown, ShoppingCart, Home, LayoutGrid, FolderHeart, ShoppingBag, Eye, Circle } from 'lucide-react'
+
+// Friendly label + icon for a live visitor's coarse activity (from presence).
+const ACTIVITY_META: Record<string, { label: string; icon: typeof Home }> = {
+  home: { label: 'Home / creating', icon: Home },
+  gallery: { label: 'Browsing gallery', icon: LayoutGrid },
+  'my-pages': { label: 'My library', icon: FolderHeart },
+  pro: { label: 'On Pro page', icon: Crown },
+  shop: { label: 'In shop', icon: ShoppingBag },
+  result: { label: 'Viewing a result', icon: Eye },
+  browsing: { label: 'Browsing', icon: Circle },
+}
+function activityMeta(a: string) {
+  return ACTIVITY_META[a] || { label: a, icon: Circle }
+}
 
 interface Bucket { total: number; photo: number; topic: number; done: number; failed: number; pro: number; free: number }
+interface Visitor { id: string; activity: string; lastSeen: string }
+interface CheckoutBucket { started: number; completed: number }
 interface Analytics {
   generatedAt: string
-  online: { now: number; byActivity: Record<string, number> }
+  online: { now: number; byActivity: Record<string, number>; visitors: Visitor[] }
+  checkout: {
+    last24h: CheckoutBucket
+    last7d: CheckoutBucket
+    byProduct: { key: string; label: string; started: number; completed: number }[]
+  }
   feed: { at: string; type: 'topic' | 'photo'; topic: string | null; status: string; isPro: boolean }[]
   volumes: { last24h: Bucket; last7d: Bucket }
   activeUsers: { last24h: number; last7d: number }
@@ -14,6 +35,11 @@ interface Analytics {
   topics: { top: { term: string; count: number }[]; recent: { term: string; at: string }[] }
   failingTopics: { term: string; count: number }[]
   pro: { activeSubscribers: number; signups: { last24h: number; last7d: number }; perDay: { day: string; count: number }[] }
+}
+
+function conv(b: { started: number; completed: number }): string {
+  if (!b.started) return '—'
+  return `${Math.round((b.completed / b.started) * 100)}% paid`
 }
 
 function ago(iso: string): string {
@@ -87,17 +113,70 @@ export function AnalyticsDashboard() {
         {/* LIVE */}
         <section>
           <div className="grid grid-cols-3 gap-3">
-            <Card label="On site now" value={data.online.now} sub="last 60s" />
+            <Card label="On site now" value={<span className="flex items-center gap-2">{data.online.now > 0 && <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />}{data.online.now}</span>} sub="last 60s" />
             <Card label="Active users (24h)" value={data.activeUsers.last24h} />
             <Card label="Active users (7d)" value={data.activeUsers.last7d} />
           </div>
-          {Object.keys(data.online.byActivity).length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-3">
-              {Object.entries(data.online.byActivity).map(([a, n]) => (
-                <span key={a} className="text-xs bg-zinc-800 text-gray-300 px-2 py-1 rounded-full">{a}: {n}</span>
+
+          {/* Who's on right now */}
+          <div className="mt-3 bg-zinc-900/50 border border-zinc-800 rounded-xl p-4">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-2"><Users className="w-4 h-4" /> On site right now</p>
+            {data.online.now === 0 ? (
+              <p className="text-sm text-gray-500">No one on the site at the moment.</p>
+            ) : (
+              <>
+                {/* what everyone's doing, at a glance */}
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {Object.entries(data.online.byActivity).sort((a, b) => b[1] - a[1]).map(([a, n]) => {
+                    const M = activityMeta(a)
+                    return (
+                      <span key={a} className="inline-flex items-center gap-1.5 text-xs bg-zinc-800 text-gray-200 px-2.5 py-1 rounded-full">
+                        <M.icon className="w-3.5 h-3.5 text-brand-primary" /> {M.label} · <span className="font-semibold">{n}</span>
+                      </span>
+                    )
+                  })}
+                </div>
+                {/* per-visitor list */}
+                <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                  {data.online.visitors.map((v) => {
+                    const M = activityMeta(v.activity)
+                    return (
+                      <div key={v.id} className="flex items-center gap-2 text-sm text-gray-300">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                        <M.icon className="w-4 h-4 text-gray-400 shrink-0" />
+                        <span className="flex-1 truncate">{M.label}</span>
+                        <span className="text-[11px] text-gray-600 font-mono">#{v.id}</span>
+                        <span className="text-[11px] text-gray-500 w-12 text-right shrink-0">{ago(v.lastSeen)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+
+        {/* CHECKOUT */}
+        <section>
+          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-2"><ShoppingCart className="w-4 h-4" /> Checkouts</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <Card label="Started (24h)" value={data.checkout.last24h.started} sub={`${data.checkout.last24h.completed} completed · ${conv(data.checkout.last24h)}`} />
+            <Card label="Started (7d)" value={data.checkout.last7d.started} sub={`${data.checkout.last7d.completed} completed · ${conv(data.checkout.last7d)}`} />
+          </div>
+          {data.checkout.byProduct.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              <p className="text-xs text-gray-500">By product (last 7 days)</p>
+              {data.checkout.byProduct.map((p) => (
+                <div key={p.key} className="flex items-center gap-3 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm">
+                  <span className="flex-1 truncate">{p.label}</span>
+                  <span className="text-gray-400"><span className="text-white font-semibold">{p.started}</span> started</span>
+                  <span className="text-emerald-300"><span className="font-semibold">{p.completed}</span> paid</span>
+                  <span className="text-gray-500 w-12 text-right">{conv(p)}</span>
+                </div>
               ))}
             </div>
           )}
+          <p className="text-[11px] text-gray-600 mt-2">From Stripe checkout sessions. &ldquo;Started&rdquo; = reached the payment page; &ldquo;paid&rdquo; = completed. Refreshes ~every minute.</p>
         </section>
 
         {/* LIVE FEED */}
