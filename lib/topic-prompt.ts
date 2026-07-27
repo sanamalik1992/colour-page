@@ -1120,6 +1120,21 @@ function cleanName(name?: string): string | null {
   return n || null
 }
 
+// A nicely-cased name for HTML headings (e.g. "alex" → "Alex"). Unlike
+// cleanName this keeps normal case, so the possessive "Alex's" reads properly
+// where a real apostrophe is available (the glyph font on the sheets has none).
+function displayName(name?: string): string | null {
+  if (!name) return null
+  const n = name.replace(/[^A-Za-z0-9 '’\-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 20)
+  if (!n) return null
+  return n.split(' ').map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w)).join(' ')
+}
+
+// English possessive: "Alex" → "Alex's", "James" → "James'".
+function possessive(n: string): string {
+  return /[sS]$/.test(n) ? `${n}’` : `${n}’s`
+}
+
 /**
  * Build a pack, personalised with the child's name when supplied (a Pro Family
  * touch): the name appears in each sheet heading, plus a "trace your name" sheet
@@ -1131,10 +1146,17 @@ export function packPlan(rawTopic: string, age?: number, childName?: string): Ac
   const name = cleanName(childName)
   if (!name) return base
   const d = difficultyForAge(age)
-  const sheets = base.sheets.map((s) => ({ ...s, title: sheetTitle(`${name} ${s.subject}`) }))
+  // Each worksheet keeps its own clear, curriculum-accurate title. We do NOT
+  // prefix the child's name onto every heading: the caps-only glyph font has no
+  // apostrophe (so "ALEX'S FRACTIONS" can't render), and a "NAME SUBJECT"
+  // prefix overflows the title and truncates. The personalisation lives where
+  // it reads properly instead — the pack title (HTML, real possessive), a
+  // "trace your name" sheet, and a reward certificate with the name.
+  const sheets = [...base.sheets]
   sheets.push({ category: 'composed', subject: 'My name', title: sheetTitle('My name'), activities: [{ type: 'note', text: 'Colour the big name, then trace' }, { type: 'traceName', instruction: 'Trace your name', name }, { type: 'writeLines', instruction: 'Now write it yourself', count: 2 }], prompt: '', difficulty: d })
   sheets.push({ category: 'composed', subject: 'Reward', title: sheetTitle('Well done'), activities: [{ type: 'reward', instruction: 'Colour your reward', name }], prompt: '', difficulty: d })
-  return { title: `${name}'s ${base.subject} pack`, subject: base.subject, sheets }
+  const display = displayName(childName) || name
+  return { title: `${possessive(display)} ${base.subject} Pack`, subject: base.subject, sheets }
 }
 
 function basePackPlan(rawTopic: string, age?: number): ActivityPack | null {
