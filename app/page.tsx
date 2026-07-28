@@ -17,6 +17,7 @@ import {
   Crown,
   BookOpen,
   Loader2,
+  Lock,
 } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { Hero3D } from '@/components/ui/hero-3d'
@@ -546,7 +547,7 @@ export default function Home() {
           <div className="text-center mb-7">
             <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-5">
               <Sparkles className="w-3.5 h-3.5 text-brand-glow" />
-              <span className="text-xs sm:text-sm font-semibold text-gray-300 tracking-wide">Free &middot; No sign-up needed</span>
+              <span className="text-xs sm:text-sm font-semibold text-gray-300 tracking-wide">300+ printable pages &middot; Free to try</span>
             </div>
             <h1 className="font-display text-4xl sm:text-[3.25rem] font-extrabold text-white mb-4 leading-[0.98]">
               Screen-time that ends<br className="hidden sm:block" /> up on the <span className="text-brand-glow">fridge</span>.
@@ -737,6 +738,12 @@ export default function Home() {
                           <><Sparkles className="w-5 h-5" /> Generate Colouring Page</>
                         )}
                       </button>
+
+                      {/* Trust: reassure parents about their child's photo. */}
+                      <p className="flex items-center justify-center gap-1.5 text-xs text-gray-500 text-center">
+                        <Lock className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                        <span><span className="font-semibold text-gray-600">Private &amp; auto-deleted</span> — safe for your child&rsquo;s photos</span>
+                      </p>
 
                       {limitReached && (
                         <p className="text-xs text-gray-400 text-center">

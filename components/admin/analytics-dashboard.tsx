@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Activity, Search, Image as ImageIcon, Sparkles, CheckCircle2, XCircle, Users, Crown, ShoppingCart, Home, LayoutGrid, FolderHeart, ShoppingBag, Eye, Circle } from 'lucide-react'
+import { Loader2, Activity, Search, Image as ImageIcon, Sparkles, CheckCircle2, XCircle, Users, Crown, ShoppingCart, Home, LayoutGrid, FolderHeart, ShoppingBag, Eye, Circle, Trash2, AlertTriangle } from 'lucide-react'
 
 // Friendly label + icon for a live visitor's coarse activity (from presence).
 const ACTIVITY_META: Record<string, { label: string; icon: typeof Home }> = {
@@ -74,6 +74,27 @@ function StatusBadge({ status }: { status: string }) {
 export function AnalyticsDashboard() {
   const [data, setData] = useState<Analytics | null>(null)
   const [err, setErr] = useState('')
+  const [confirmReset, setConfirmReset] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [resetMsg, setResetMsg] = useState('')
+
+  const doReset = async () => {
+    setResetting(true)
+    setResetMsg('')
+    try {
+      const res = await fetch('/api/admin/analytics/reset', { method: 'POST' })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || !d.ok) throw new Error(d?.errors ? Object.values(d.errors).join('; ') : 'Reset failed')
+      const total = Object.values(d.cleared || {}).reduce((a: number, b) => a + Number(b), 0)
+      setResetMsg(`Cleared ${total} record${total === 1 ? '' : 's'}.`)
+      setConfirmReset(false)
+      setData(null) // force a fresh load of the now-empty dashboard
+    } catch (e) {
+      setResetMsg(e instanceof Error ? e.message : 'Reset failed')
+    } finally {
+      setResetting(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -106,9 +127,51 @@ export function AnalyticsDashboard() {
           <h1 className="text-2xl font-extrabold">Analytics</h1>
           <div className="flex items-center gap-3">
             <a href="/admin/orders" className="text-xs font-semibold text-brand-primary hover:underline">Orders →</a>
+            <button
+              onClick={() => { setResetMsg(''); setConfirmReset(true) }}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-red-300 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Reset
+            </button>
             <span className="flex items-center gap-1.5 text-xs text-gray-500"><span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> live · {ago(data.generatedAt)}</span>
           </div>
         </div>
+
+        {/* Reset confirmation */}
+        {confirmReset && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" onClick={() => !resetting && setConfirmReset(false)}>
+            <div className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-2xl p-5" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-full bg-red-500/15 flex items-center justify-center shrink-0"><AlertTriangle className="w-5 h-5 text-red-400" /></div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Reset all analytics?</h3>
+                  <p className="text-sm text-gray-400 mt-1">
+                    This permanently clears live presence, generation history and topic searches. Paying customers, subscriptions and orders are <span className="text-gray-200 font-medium">not</span> affected.
+                  </p>
+                </div>
+              </div>
+              {resetMsg && <p className="text-sm text-red-300 mt-3">{resetMsg}</p>}
+              <div className="flex gap-2 mt-5">
+                <button
+                  onClick={() => setConfirmReset(false)}
+                  disabled={resetting}
+                  className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-gray-200 font-semibold hover:bg-zinc-700 transition-colors disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={doReset}
+                  disabled={resetting}
+                  className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-bold flex items-center justify-center gap-2 hover:bg-red-600 transition-colors disabled:opacity-60"
+                >
+                  {resetting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  Reset all
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {resetMsg && !confirmReset && <p className="text-xs text-emerald-300 -mt-4">{resetMsg}</p>}
 
         {/* LIVE */}
         <section>
