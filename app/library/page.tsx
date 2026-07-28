@@ -16,6 +16,7 @@ import {
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 import { useSessionId } from '@/hooks/useSessionId'
+import { useMe } from '@/hooks/useMe'
 import type { PhotoJobStatus } from '@/types/photo-job'
 
 interface LibraryJob {
@@ -46,6 +47,8 @@ const STATUS_ICONS: Record<string, React.ReactNode> = {
 
 export default function LibraryPage() {
   const sessionId = useSessionId()
+  const { me } = useMe()
+  const loggedIn = !!me?.user
   const [jobs, setJobs] = useState<LibraryJob[]>([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -167,34 +170,37 @@ export default function LibraryPage() {
                     </div>
                   )}
 
-                  {/* Overlay actions on hover */}
+                  {/* Overlay actions on hover. Downloading/printing needs a free
+                      account; signed-out visitors are routed to sign up. */}
                   {job.status === 'done' && (
                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
                       {job.pdfUrl && (
-                        <a
-                          href={job.pdfUrl}
-                          download
-                          className="w-11 h-11 bg-white rounded-full flex items-center justify-center hover:bg-brand-primary hover:text-white transition-colors shadow-lg"
-                          title="Download PDF"
-                        >
-                          <FileText className="w-5 h-5" />
-                        </a>
+                        loggedIn ? (
+                          <a href={job.pdfUrl} download className="w-11 h-11 bg-white rounded-full flex items-center justify-center hover:bg-brand-primary hover:text-white transition-colors shadow-lg" title="Download PDF">
+                            <FileText className="w-5 h-5" />
+                          </a>
+                        ) : (
+                          <Link href="/signup?next=/library" className="w-11 h-11 bg-white rounded-full flex items-center justify-center hover:bg-brand-primary hover:text-white transition-colors shadow-lg" title="Sign up to download PDF">
+                            <FileText className="w-5 h-5" />
+                          </Link>
+                        )
                       )}
                       {job.pngUrl && (
-                        <a
-                          href={job.pngUrl}
-                          download
-                          className="w-11 h-11 bg-white rounded-full flex items-center justify-center hover:bg-brand-primary hover:text-white transition-colors shadow-lg"
-                          title="Download PNG"
-                        >
-                          <Download className="w-5 h-5" />
-                        </a>
+                        loggedIn ? (
+                          <a href={job.pngUrl} download className="w-11 h-11 bg-white rounded-full flex items-center justify-center hover:bg-brand-primary hover:text-white transition-colors shadow-lg" title="Download PNG">
+                            <Download className="w-5 h-5" />
+                          </a>
+                        ) : (
+                          <Link href="/signup?next=/library" className="w-11 h-11 bg-white rounded-full flex items-center justify-center hover:bg-brand-primary hover:text-white transition-colors shadow-lg" title="Sign up to download PNG">
+                            <Download className="w-5 h-5" />
+                          </Link>
+                        )
                       )}
                       {job.pngUrl && (
                         <button
-                          onClick={() => handlePrint(job.pngUrl!, 'Colouring Page')}
+                          onClick={() => loggedIn ? handlePrint(job.pngUrl!, 'Colouring Page') : (window.location.href = '/signup?next=/library')}
                           className="w-11 h-11 bg-white rounded-full flex items-center justify-center hover:bg-brand-primary hover:text-white transition-colors shadow-lg"
-                          title="Print"
+                          title={loggedIn ? 'Print' : 'Sign up to print'}
                         >
                           <Printer className="w-5 h-5" />
                         </button>

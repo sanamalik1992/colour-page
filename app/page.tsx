@@ -36,6 +36,26 @@ const STATUS_LABELS: Record<PhotoJobStatus, string> = {
   failed: 'Failed',
 }
 
+// A download control that requires a (free) account: signed-in users download
+// normally; signed-out users are sent to the "create a free account to
+// download" gate instead. The sheet is already saved to their library, so after
+// signing up they can download it there.
+function GatedDownload({
+  loggedIn, onGate, href, download, className, children,
+}: {
+  loggedIn: boolean
+  onGate: () => void
+  href: string
+  download: string
+  className?: string
+  children: React.ReactNode
+}) {
+  if (loggedIn) {
+    return <a href={href} download={download} className={className}>{children}</a>
+  }
+  return <button type="button" onClick={onGate} className={className}>{children}</button>
+}
+
 export default function Home() {
   const sessionId = useSessionId()
   const { me } = useMe()
@@ -104,6 +124,9 @@ export default function Home() {
   // Signed-out visitors get a dismissible "sign up to keep going" gate once
   // they've used today's free allowance; this remembers a dismissal.
   const [gateDismissed, setGateDismissed] = useState(false)
+  // Shown when a signed-out visitor tries to download — the sheet is free to
+  // make, but downloading/printing needs a free account.
+  const [downloadGate, setDownloadGate] = useState(false)
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -904,14 +927,14 @@ export default function Home() {
 
                   <div className="grid grid-cols-2 gap-3">
                     {pdfUrl && (
-                      <a href={pdfUrl} download={genMode === 'photo' ? 'colouring-page.pdf' : 'learning-sheet.pdf'} className="btn-primary">
+                      <GatedDownload loggedIn={loggedIn} onGate={() => setDownloadGate(true)} href={pdfUrl} download={genMode === 'photo' ? 'colouring-page.pdf' : 'learning-sheet.pdf'} className="btn-primary">
                         <FileText className="w-5 h-5" /> PDF
-                      </a>
+                      </GatedDownload>
                     )}
                     {pngUrl && (
-                      <a href={pngUrl} download={genMode === 'photo' ? 'colouring-page.png' : 'learning-sheet.png'} className="btn-secondary">
+                      <GatedDownload loggedIn={loggedIn} onGate={() => setDownloadGate(true)} href={pngUrl} download={genMode === 'photo' ? 'colouring-page.png' : 'learning-sheet.png'} className="btn-secondary">
                         <ImageIcon className="w-5 h-5" /> PNG
-                      </a>
+                      </GatedDownload>
                     )}
                   </div>
 
@@ -955,16 +978,16 @@ export default function Home() {
                         </div>
                         <div className="grid grid-cols-3 gap-2">
                           {dotPdfUrl && (
-                            <a href={dotPdfUrl} download="dot-to-dot.pdf" className="flex flex-col items-center gap-1 p-3 rounded-xl border border-gray-200 hover:border-amber-400 transition-colors">
+                            <GatedDownload loggedIn={loggedIn} onGate={() => setDownloadGate(true)} href={dotPdfUrl} download="dot-to-dot.pdf" className="flex flex-col items-center gap-1 p-3 rounded-xl border border-gray-200 hover:border-amber-400 transition-colors">
                               <FileText className="w-5 h-5 text-amber-500" />
                               <span className="text-xs font-semibold text-gray-700">PDF</span>
-                            </a>
+                            </GatedDownload>
                           )}
-                          <a href={dotPngUrl} download="dot-to-dot.png" className="flex flex-col items-center gap-1 p-3 rounded-xl border border-gray-200 hover:border-amber-400 transition-colors">
+                          <GatedDownload loggedIn={loggedIn} onGate={() => setDownloadGate(true)} href={dotPngUrl} download="dot-to-dot.png" className="flex flex-col items-center gap-1 p-3 rounded-xl border border-gray-200 hover:border-amber-400 transition-colors">
                             <ImageIcon className="w-5 h-5 text-amber-500" />
                             <span className="text-xs font-semibold text-gray-700">PNG</span>
-                          </a>
-                          <button onClick={handlePrintDot} className="flex flex-col items-center gap-1 p-3 rounded-xl border border-gray-200 hover:border-amber-400 transition-colors">
+                          </GatedDownload>
+                          <button onClick={loggedIn ? handlePrintDot : () => setDownloadGate(true)} className="flex flex-col items-center gap-1 p-3 rounded-xl border border-gray-200 hover:border-amber-400 transition-colors">
                             <Printer className="w-5 h-5 text-amber-500" />
                             <span className="text-xs font-semibold text-gray-700">Print</span>
                           </button>
@@ -1035,6 +1058,28 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {/* Download gate — signed-out visitors make sheets free, but downloading
+          or printing needs a free account. The sheet is already saved to their
+          library, so signing up lets them grab it there. */}
+      {downloadGate && !loggedIn && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60" onClick={() => setDownloadGate(false)}>
+          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-2xl p-6 text-center relative" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setDownloadGate(false)} aria-label="Close" className="absolute top-3 right-4 text-gray-500 hover:text-white text-xl leading-none">×</button>
+            <div className="w-12 h-12 rounded-full bg-brand-primary/15 flex items-center justify-center mx-auto mb-3">
+              <FileText className="w-6 h-6 text-brand-primary" />
+            </div>
+            <h3 className="text-lg font-bold text-white mb-1">Your sheet&apos;s ready! 🎉</h3>
+            <p className="text-sm text-gray-400 mb-5">Create a free account to download &amp; save it. Takes 10 seconds — no card needed.</p>
+            <Link href="/signup?next=/library" className="btn-primary w-full">
+              <Sparkles className="w-4 h-4" /> Create your free account
+            </Link>
+            <Link href="/login?next=/library" className="mt-3 block text-xs text-gray-400 hover:text-white">
+              Already have an account? <span className="text-brand-primary font-semibold">Log in</span>
+            </Link>
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>
