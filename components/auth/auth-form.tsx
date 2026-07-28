@@ -144,6 +144,14 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
           />
         </div>
 
+        {!isSignup && (
+          <div className="text-right -mt-1">
+            <Link href="/forgot-password" className="text-xs text-gray-400 hover:text-brand-primary">
+              Forgot your password?
+            </Link>
+          </div>
+        )}
+
         {error && <p className="text-sm text-red-400">{error}</p>}
 
         <button
