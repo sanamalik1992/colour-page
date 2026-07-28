@@ -23,6 +23,7 @@ import { Hero3D } from '@/components/ui/hero-3d'
 import { BeforeAfter } from '@/components/ui/before-after'
 import { Footer } from '@/components/sections/footer'
 import { useSessionId } from '@/hooks/useSessionId'
+import { useMe } from '@/hooks/useMe'
 import { prepareImageForUpload, readJsonSafe, friendlyError } from '@/lib/client-image'
 import { createClient as createBrowserSupabase } from '@/lib/supabase/client'
 import type { PhotoJobStatus } from '@/types/photo-job'
@@ -37,6 +38,8 @@ const STATUS_LABELS: Record<PhotoJobStatus, string> = {
 
 export default function Home() {
   const sessionId = useSessionId()
+  const { me } = useMe()
+  const loggedIn = !!me?.user
   const [mounted, setMounted] = useState(false)
 
   // Which way in: upload a photo, or type what they're learning today.
@@ -98,6 +101,9 @@ export default function Home() {
   // Set true when a create call is rejected because the daily cap is hit — turns
   // the error into a positive upgrade moment rather than a dead end.
   const [capReached, setCapReached] = useState(false)
+  // Signed-out visitors get a dismissible "sign up to keep going" gate once
+  // they've used today's free allowance; this remembers a dismissal.
+  const [gateDismissed, setGateDismissed] = useState(false)
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -820,7 +826,30 @@ export default function Home() {
               )}
 
               {/* Daily cap reached — a positive upgrade moment, not a dead end. */}
-              {capReached && (
+              {(limitReached || capReached) && !loggedIn && !gateDismissed && (
+                // Signed-out visitor hit today's free limit → nudge them to
+                // create a free account to keep going. Dismissible.
+                <div className="rounded-xl border border-brand-primary/40 bg-zinc-900/70 p-5 mb-4 text-center">
+                  <div className="w-11 h-11 rounded-full bg-brand-primary/15 flex items-center justify-center mx-auto mb-3">
+                    <Sparkles className="w-5 h-5 text-brand-primary" />
+                  </div>
+                  <p className="text-sm font-bold text-white mb-1">Loving it? Sign up to keep going ✨</p>
+                  <p className="text-xs text-gray-400 mb-4">
+                    You&apos;ve used today&apos;s free sheets. Create a free account to save your library and carry on — or go Pro for unlimited, right now.
+                  </p>
+                  <Link href="/signup" className="btn-primary w-full">
+                    <Sparkles className="w-4 h-4" /> Create your free account
+                  </Link>
+                  <Link href="/pro" className="mt-2 flex items-center justify-center gap-1.5 text-xs font-semibold text-brand-primary hover:underline">
+                    <Crown className="w-3.5 h-3.5" /> Or go Pro for unlimited
+                  </Link>
+                  <button onClick={() => setGateDismissed(true)} className="block mx-auto text-xs text-gray-500 hover:text-gray-300 mt-3">
+                    Maybe later
+                  </button>
+                </div>
+              )}
+
+              {capReached && loggedIn && (
                 <div className="rounded-xl border border-brand-primary/30 bg-zinc-900/60 p-5 mb-4 text-center">
                   <div className="w-11 h-11 rounded-full bg-brand-primary/15 flex items-center justify-center mx-auto mb-3">
                     <Crown className="w-5 h-5 text-brand-primary" />
