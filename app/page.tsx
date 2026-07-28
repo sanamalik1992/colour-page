@@ -18,6 +18,7 @@ import {
   BookOpen,
   Loader2,
   Lock,
+  Star,
 } from 'lucide-react'
 import { NavHeader } from '@/components/ui/nav-header'
 import { Hero3D } from '@/components/ui/hero-3d'
@@ -56,6 +57,19 @@ function GatedDownload({
   }
   return <button type="button" onClick={onGate} className={className}>{children}</button>
 }
+
+// Real reviews from parents. Avatar colours cycle through the brand palette.
+const TESTIMONIALS: { quote: string; name: string }[] = [
+  { quote: 'I honestly wasn’t sure what to expect, but my little boy thought it was amazing seeing himself as a colouring page. He’s already asked me to make another one with our dog!', name: 'Sarah M' },
+  { quote: 'It was really quick to use. I uploaded a photo from my phone, printed it out, and within minutes my son was sat colouring instead of asking for the iPad.', name: 'Emma T' },
+  { quote: 'We’ve been trying to cut down on screen time over the holidays and this has been one of the few activities that’s kept both my children entertained.', name: 'Priyank K' },
+  { quote: 'My daughter spent ages colouring a picture of herself riding her bike. It’s now on the fridge and she’s so proud of it.', name: 'Toni' },
+  { quote: 'Such a simple idea but so much fun. My daughter coloured a picture of her favourite teddy and now wants to make one for everyone in the family.', name: 'Sally' },
+  { quote: 'The outlines came out really clear, even from a photo I’d taken in the garden. I was impressed with how well it worked.', name: 'Joanne T' },
+  { quote: 'I love that it’s something a bit more personal than a colouring book. My kids were so much more excited because it was their own photo.', name: 'A parent' },
+  { quote: 'We’ve already started making a folder of all the colouring pages we’ve created. It’s become one of our favourite weekend activities.', name: 'Emma F' },
+]
+const AVATAR_COLORS = ['bg-brand-primary text-[#2A1E00]', 'bg-sky-500 text-white', 'bg-emerald-500 text-white', 'bg-violet-500 text-white', 'bg-rose-500 text-white']
 
 export default function Home() {
   const sessionId = useSessionId()
@@ -1063,6 +1077,37 @@ export default function Home() {
               </div>
             </div>
           </div>
+
+          {/* Loved by parents — real reviews */}
+          <section className="mt-14">
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center gap-1 text-brand-primary mb-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Star key={i} className="w-4 h-4 fill-current" />
+                ))}
+              </div>
+              <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white">Loved by parents</h2>
+              <p className="text-sm text-gray-500 mt-1">Real families, real fridge art.</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {TESTIMONIALS.map((t, i) => (
+                <figure key={i} className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 flex flex-col">
+                  <div className="flex items-center gap-0.5 text-brand-primary mb-2">
+                    {Array.from({ length: 5 }).map((_, s) => (
+                      <Star key={s} className="w-3.5 h-3.5 fill-current" />
+                    ))}
+                  </div>
+                  <blockquote className="text-sm text-gray-300 leading-relaxed flex-1">“{t.quote}”</blockquote>
+                  <figcaption className="flex items-center gap-2.5 mt-3">
+                    <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>
+                      {t.name.charAt(0).toUpperCase()}
+                    </span>
+                    <span className="text-xs font-semibold text-gray-400">{t.name}</span>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          </section>
         </div>
       </main>
 
