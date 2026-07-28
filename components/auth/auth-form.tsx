@@ -98,6 +98,9 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
           We&apos;ve sent a confirmation link to <span className="text-white font-medium">{email}</span>.
           Tap it to finish creating your account.
         </p>
+        <p className="text-gray-500 text-xs mt-3">
+          Can&apos;t see it? Please check your <span className="text-gray-300 font-medium">spam or junk folder</span>.
+        </p>
       </div>
     )
   }

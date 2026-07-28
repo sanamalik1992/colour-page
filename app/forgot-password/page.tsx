@@ -45,6 +45,9 @@ export default function ForgotPasswordPage() {
               <p className="text-gray-400 text-sm">
                 If an account exists for <span className="text-white font-medium">{email}</span>, we&apos;ve sent a link to reset your password. It expires shortly, so use it soon.
               </p>
+              <p className="text-gray-500 text-xs mt-3">
+                Can&apos;t see it? Please check your <span className="text-gray-300 font-medium">spam or junk folder</span>.
+              </p>
               <Link href="/login" className="mt-5 inline-flex items-center gap-1.5 text-sm text-brand-primary font-semibold hover:underline">
                 <ArrowLeft className="w-4 h-4" /> Back to log in
               </Link>
