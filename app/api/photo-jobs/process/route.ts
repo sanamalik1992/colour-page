@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { preprocessImage, processWithReplicate, generateFromText, generateFromTextOnce, scoreObject, hasDarkSurround, isBlankImage, isUsablePhotoLineArt, sharpCVFallback } from '@/lib/image-processing'
+import { preprocessImage, processWithReplicate, generateFromText, generateFromTextOnce, scoreObject, hasDarkSurround, isBlankImage, isUsablePhotoLineArt, padExtremeAspect, sharpCVFallback } from '@/lib/image-processing'
 import { verifyObjectImage } from '@/lib/object-verify'
 import { verifySheet } from '@/lib/sheet-verify'
 import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet, buildWordPracticeSheet, buildComposedSheet } from '@/lib/topic-render'
@@ -339,6 +339,24 @@ export async function POST(request: NextRequest) {
           console.error('HEIC conversion failed:', heicErr)
           throw new Error("We couldn't read that photo format. Please try a JPG or PNG.")
         }
+      }
+
+      // Normalise an extreme aspect ratio (very tall/very wide) before the model.
+      // flux-kontext converts standard 3:4–4:3 frames reliably but can fail on an
+      // ultra-tall 9:16 phone shot — the "one photo worked, a taller one didn't"
+      // report. Pad with white (subject untouched) and point the model at the
+      // padded copy stored alongside the original.
+      try {
+        const { buffer: padded, padded: didPad } = await padExtremeAspect(inputBuffer)
+        if (didPad) {
+          inputBuffer = Buffer.from(padded)
+          const padPath = job.input_storage_path.replace(/\.[^.]+$/, '-pad.jpg')
+          await supabase.storage.from('uploads').upload(padPath, inputBuffer, { contentType: 'image/jpeg', upsert: true })
+          const padUrl = await getSignedUrl(padPath)
+          if (padUrl) modelUrl = padUrl
+        }
+      } catch (padErr) {
+        console.error('aspect padding failed (using original):', padErr)
       }
 
       await updateJob(jobId, { progress: 15 })
