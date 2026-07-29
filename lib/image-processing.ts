@@ -389,6 +389,48 @@ export async function scoreObject(buf: Buffer): Promise<{ ink: number; usable: b
 }
 
 /**
+ * Normalise an extreme aspect ratio before the AI model. flux-kontext converts
+ * standard 3:4–4:3 frames reliably, but a very tall portrait (e.g. a full-length
+ * 9:16 phone shot) or a very wide panorama can convert poorly or fail outright —
+ * the "one photo worked, a taller one didn't" report. We pad the short axis with
+ * WHITE so the ratio lands in a friendly band while the subject is never cropped
+ * or shrunk (white margins are invisible on a colouring page). Also strips EXIF
+ * orientation by baking in the rotation, so the model always sees an upright image.
+ *
+ * Returns the original buffer unchanged when it's already within the band.
+ */
+const FRIENDLY_AR_MIN = 0.66 // ~2:3 — taller than this gets side padding
+const FRIENDLY_AR_MAX = 1.5 //  3:2 — wider than this gets top/bottom padding
+export async function padExtremeAspect(buffer: Buffer): Promise<{ buffer: Buffer; padded: boolean }> {
+  try {
+    const upright = await sharp(buffer).rotate().toBuffer() // bake EXIF orientation
+    const m = await sharp(upright).metadata()
+    const w = m.width || 0
+    const h = m.height || 0
+    if (!w || !h) return { buffer, padded: false }
+    const ar = w / h
+    let nw = w
+    let nh = h
+    if (ar < FRIENDLY_AR_MIN) nw = Math.round(FRIENDLY_AR_MIN * h) // too tall → add width
+    else if (ar > FRIENDLY_AR_MAX) nh = Math.round(w / FRIENDLY_AR_MAX) // too wide → add height
+    else return { buffer: upright, padded: false }
+    const out = await sharp(upright)
+      .extend({
+        top: Math.floor((nh - h) / 2),
+        bottom: Math.ceil((nh - h) / 2),
+        left: Math.floor((nw - w) / 2),
+        right: Math.ceil((nw - w) / 2),
+        background: '#ffffff',
+      })
+      .jpeg({ quality: 92 })
+      .toBuffer()
+    return { buffer: out, padded: true }
+  } catch {
+    return { buffer, padded: false }
+  }
+}
+
+/**
  * Judge a converted PHOTO (uploaded photo → line art). A usable colouring page
  * is clean outlines on white: it must not be blank, and — when it came from the
  * CV edge-tracer fallback — must not be a noisy mess. The ink ceiling is looser
