@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
+import { renderA4Pdf, renderA4Preview, applyBrandWatermark } from '@/lib/pdf-renderer'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
 export const maxDuration = 60 // Vercel Hobby limit
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ received: true, error: 'Download failed' })
       }
 
-      const lineArtBuffer = Buffer.from(await imgRes.arrayBuffer())
+      let lineArtBuffer = Buffer.from(await imgRes.arrayBuffer())
       await updateJob(jobId, { status: 'rendering', progress: 80 })
 
       // Render A4 PDF + preview
@@ -92,13 +92,18 @@ export async function POST(request: NextRequest) {
       }
       const isLandscape = settings.orientation === 'landscape'
 
+      // Free sheets carry the subtle branded "colour.page" watermark, baked into
+      // the bitmap so the PDF and PNG match. Pro sheets stay unbranded.
+      const isProJob = job.is_pro === true
+      if (!isProJob) lineArtBuffer = Buffer.from(await applyBrandWatermark(lineArtBuffer))
+
       const [pdfBuffer, previewBuffer] = await Promise.all([
         renderA4Pdf(lineArtBuffer, {
-          watermark: job.is_watermarked,
-          footer: true,
+          watermark: false,
+          footer: !isProJob,
           landscape: isLandscape,
         }),
-        renderA4Preview(lineArtBuffer, isLandscape),
+        renderA4Preview(lineArtBuffer, isLandscape, { footer: !isProJob, hd: isProJob }),
       ])
 
       await updateJob(jobId, { progress: 90 })
