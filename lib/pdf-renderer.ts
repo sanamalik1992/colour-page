@@ -216,12 +216,21 @@ export async function renderA4Preview(
   // the bitmap (so it's present on the PNG download too, not just the PDF).
   // Pro downloads have no branding.
   if (footer) {
-    const fh = Math.round(targetH * 0.011)
+    // `fit: 'inside'` means the resized image is at most targetW×targetH but is
+    // usually SMALLER in one axis — a tall/narrow photo ends up narrower than
+    // targetW. The footer overlay must match the ACTUAL base width, not targetW,
+    // or sharp throws "Image to composite must have same dimensions or smaller"
+    // (the crash tall photos hit). Size the label to the real base dimensions.
+    const base = await img.png().toBuffer()
+    const bMeta = await sharp(base).metadata()
+    const bw = bMeta.width || targetW
+    const bh = bMeta.height || targetH
+    const fh = Math.max(9, Math.round(bh * 0.011))
     const label = Buffer.from(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${targetW}" height="${fh * 2}">` +
-      `<text x="${targetW / 2}" y="${fh * 1.3}" font-family="sans-serif" font-size="${fh}" fill="#bfbfbf" text-anchor="middle">${FOOTER_TEXT}</text></svg>`
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${bw}" height="${fh * 2}">` +
+      `<text x="${bw / 2}" y="${fh * 1.3}" font-family="sans-serif" font-size="${fh}" fill="#bfbfbf" text-anchor="middle">${FOOTER_TEXT}</text></svg>`
     )
-    img = sharp(await img.png().toBuffer()).composite([{ input: label, gravity: 'south' }])
+    img = sharp(base).composite([{ input: label, gravity: 'south' }])
   }
 
   return img.png().toBuffer()
