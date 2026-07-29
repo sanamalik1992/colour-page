@@ -389,6 +389,31 @@ export async function scoreObject(buf: Buffer): Promise<{ ink: number; usable: b
 }
 
 /**
+ * Judge a converted PHOTO (uploaded photo → line art). A usable colouring page
+ * is clean outlines on white: it must not be blank, and — when it came from the
+ * CV edge-tracer fallback — must not be a noisy mess. The ink ceiling is looser
+ * than the single-object bands because a full-scene photo legitimately carries
+ * more line than one small object.
+ *
+ * `strictNoise` should be true when the output came from the Sharp CV fallback
+ * (which turns busy photos into speckled noise); AI-model output is only checked
+ * for being blank, so we never bounce a genuine — if detailed — line drawing.
+ * Fails OPEN if the image can't be measured, so a transient error never blocks a
+ * good sheet.
+ */
+export async function isUsablePhotoLineArt(
+  buf: Buffer,
+  strictNoise: boolean
+): Promise<{ ok: boolean; ink: number; reason?: 'blank' | 'noise' }> {
+  if (await isBlankImage(buf)) return { ok: false, ink: 0, reason: 'blank' }
+  const ink = await inkFraction(buf)
+  if (ink < 0) return { ok: true, ink } // couldn't measure — don't block
+  if (ink < 0.008) return { ok: false, ink, reason: 'blank' }
+  if (strictNoise && ink > 0.33) return { ok: false, ink, reason: 'noise' }
+  return { ok: true, ink }
+}
+
+/**
  * Detect a generation that came back on a DARK background or inside a black
  * box/border. Our prompt asks for "pure white background, no border frame", but
  * the diffusion model occasionally ignores it — the reported "caterpillar in a

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { preprocessImage, processWithReplicate, generateFromText, generateFromTextOnce, scoreObject, hasDarkSurround, isBlankImage, sharpCVFallback } from '@/lib/image-processing'
+import { preprocessImage, processWithReplicate, generateFromText, generateFromTextOnce, scoreObject, hasDarkSurround, isBlankImage, isUsablePhotoLineArt, sharpCVFallback } from '@/lib/image-processing'
 import { verifyObjectImage } from '@/lib/object-verify'
 import { verifySheet } from '@/lib/sheet-verify'
 import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet, buildWordPracticeSheet, buildComposedSheet } from '@/lib/topic-render'
@@ -345,6 +345,10 @@ export async function POST(request: NextRequest) {
 
       // Replicate gets the image URL directly — faster (no extra preprocess +
       // re-upload) and higher quality. Preprocessing is only for the CV fallback.
+      // The CV fallback can only trace edges — on a busy real photo that's noise,
+      // not a colouring page — so we track when it was used and quality-gate the
+      // result below rather than ever delivering a broken sheet.
+      let usedCvFallback = false
       if (hasReplicate) {
         try {
           lineArtBuffer = await processWithReplicate(
@@ -354,14 +358,27 @@ export async function POST(request: NextRequest) {
           )
         } catch (replicateError) {
           console.error('Replicate failed, falling back to Sharp CV:', replicateError)
+          usedCvFallback = true
           await updateJob(jobId, { progress: 30 })
           const preprocessed = await preprocessImage(inputBuffer, settings)
           lineArtBuffer = await sharpCVFallback.generate(preprocessed, settings)
         }
       } else {
+        usedCvFallback = true
         await updateJob(jobId, { progress: 30 })
         const preprocessed = await preprocessImage(inputBuffer, settings)
         lineArtBuffer = await sharpCVFallback.generate(preprocessed, settings)
+      }
+
+      // Quality gate for the PHOTO path: never hand back a blank page or a noisy
+      // mess. If the outline came out empty or (from the CV tracer) speckled, fail
+      // with clear, actionable guidance instead of delivering something broken.
+      const photoQa = await isUsablePhotoLineArt(lineArtBuffer, usedCvFallback)
+      if (!photoQa.ok) {
+        console.warn(`photo job ${jobId} rejected: ${photoQa.reason} (ink=${photoQa.ink.toFixed(3)}, cvFallback=${usedCvFallback})`)
+        throw new Error(
+          "We couldn't get clean outlines from that photo. For the best result, use a bright, close-up photo with your subject filling the frame and a plain, uncluttered background — then tap Try again."
+        )
       }
     }
 
