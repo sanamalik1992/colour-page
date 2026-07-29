@@ -44,18 +44,20 @@ export async function applyBrandWatermark(imageBuffer: Buffer): Promise<Buffer> 
     const meta = await sharp(imageBuffer).metadata()
     const w = meta.width || A4_WIDTH_PX
     const h = meta.height || A4_HEIGHT_PX
-    const fs = Math.round(Math.min(w, h) * 0.040)
-    const dx = Math.round(fs * 11)
-    const dy = Math.round(fs * 6.5)
+    const fs = Math.round(Math.min(w, h) * 0.045)
+    const dx = Math.round(fs * 10)
+    const dy = Math.round(fs * 6)
     let tiles = ''
     let row = 0
     for (let y = 0; y < h + dy; y += dy, row++) {
       const offset = (row % 2) * Math.round(dx / 2) // brick-offset alternate rows
       for (let x = -dx; x < w + dx; x += dx) {
         const px = x + offset
+        // 13% grey: clearly visible as branding on the free sheet, still light
+        // enough for a child to colour straight over it.
         tiles +=
           `<text x="${px}" y="${y}" font-family="Helvetica,Arial,sans-serif" font-size="${fs}" ` +
-          `font-weight="700" fill="#111111" fill-opacity="0.06" ` +
+          `font-weight="700" fill="#000000" fill-opacity="0.13" ` +
           `transform="rotate(-30 ${px} ${y})">${WATERMARK_TEXT}</text>`
       }
     }
