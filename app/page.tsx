@@ -66,7 +66,6 @@ const TESTIMONIALS: { quote: string; name: string }[] = [
   { quote: 'My daughter spent ages colouring a picture of herself riding her bike. It’s now on the fridge and she’s so proud of it.', name: 'Toni' },
   { quote: 'Such a simple idea but so much fun. My daughter coloured a picture of her favourite teddy and now wants to make one for everyone in the family.', name: 'Sally' },
   { quote: 'The outlines came out really clear, even from a photo I’d taken in the garden. I was impressed with how well it worked.', name: 'Joanne T' },
-  { quote: 'I love that it’s something a bit more personal than a colouring book. My kids were so much more excited because it was their own photo.', name: 'A parent' },
   { quote: 'We’ve already started making a folder of all the colouring pages we’ve created. It’s become one of our favourite weekend activities.', name: 'Emma F' },
 ]
 const AVATAR_COLORS = ['bg-brand-primary text-[#2A1E00]', 'bg-sky-500 text-white', 'bg-emerald-500 text-white', 'bg-violet-500 text-white', 'bg-rose-500 text-white']
