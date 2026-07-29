@@ -406,13 +406,20 @@ export async function POST(request: NextRequest) {
     // with a clear defect (overlapping/garbled text, a blob picture, broken
     // layout). Fail the job with a retry message rather than deliver it. Fails
     // open if the QA service is unavailable, so it can't block all generation.
-    await updateJob(jobId, { progress: 85 })
-    const tQa = Date.now()
-    const qa = await verifySheet(lineArtBuffer)
-    console.log(`[timing ${jobId}] sheet QA ${Date.now() - tQa}ms → ${qa.ok ? 'ok' : 'reject:' + qa.reason}`)
-    if (!qa.ok) {
-      console.warn(`sheet QA rejected job ${jobId}: ${qa.reason}`)
-      throw new Error('We spotted a small glitch on that sheet — please tap Try again, it usually comes out perfect.')
+    //
+    // ONLY for designed topic/activity sheets. A converted PHOTO is judged by its
+    // own blank/noise guard above — running the activity-sheet vision check on a
+    // photo line-drawing wrongly flags it as an "unrecognisable blob" and bounces
+    // perfectly good conversions (the "small glitch" false reject on photos).
+    if (isTopic) {
+      await updateJob(jobId, { progress: 85 })
+      const tQa = Date.now()
+      const qa = await verifySheet(lineArtBuffer)
+      console.log(`[timing ${jobId}] sheet QA ${Date.now() - tQa}ms → ${qa.ok ? 'ok' : 'reject:' + qa.reason}`)
+      if (!qa.ok) {
+        console.warn(`sheet QA rejected job ${jobId}: ${qa.reason}`)
+        throw new Error('We spotted a small glitch on that sheet — please tap Try again, it usually comes out perfect.')
+      }
     }
 
     // Stage C: Render A4 outputs. Sequential (not parallel) so we don't hold two

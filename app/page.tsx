@@ -527,6 +527,11 @@ export default function Home() {
 
   const isProcessing = jobStatus && jobStatus !== 'done' && jobStatus !== 'failed'
   const isDone = jobStatus === 'done'
+  // The gap between tapping Create and the job actually reporting progress: the
+  // photo is uploading + the job is being registered. Show an immediate, honest
+  // "starting up" state so a few seconds of silence never reads as "broken" and
+  // the parent doesn't navigate away mid-upload.
+  const isStarting = isSubmitting && !isProcessing && !isDone
   // Counter reflects the ACTIVE mode's allowance (photo and learning sheets have
   // separate daily limits). `null` remaining = unlimited → counter hidden.
   const activeRemaining = genMode === 'photo' ? photoRemaining : topicRemaining
@@ -840,6 +845,24 @@ export default function Home() {
                       <Link href="/pro" className="text-brand-primary font-semibold hover:underline">Go Pro</Link> for more.
                     </p>
                   )}
+                </div>
+              )}
+
+              {/* Starting-up State — shown immediately on tap, before the job
+                  reports progress (photo uploading + job registering). Keeps the
+                  parent reassured during the initial few-second lag. */}
+              {isStarting && (
+                <div className="text-center py-6">
+                  <div className="relative w-20 h-20 mx-auto mb-5">
+                    <Loader2 className="w-20 h-20 text-brand-primary animate-spin" strokeWidth={1.5} />
+                    <Sparkles className="absolute inset-0 m-auto w-7 h-7 text-brand-primary" />
+                  </div>
+                  <p className="font-semibold text-gray-700">
+                    {genMode === 'photo' ? 'Uploading your photo…' : 'Getting things ready…'}
+                  </p>
+                  <p className="text-sm text-gray-400 mt-1">
+                    Hang tight — please keep this page open. It only takes a moment.
+                  </p>
                 </div>
               )}
 
