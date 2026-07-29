@@ -33,6 +33,40 @@ export interface PdfRenderOptions {
 }
 
 /**
+ * Bake a subtle, clearly-branded "colour.page" wordmark diagonally across a
+ * sheet — the free-tier watermark. Applied to the line-art bitmap BEFORE it's
+ * turned into the PDF/PNG, so it renders identically on the on-screen preview,
+ * the PNG download and the printed PDF. Light enough (6% grey) to colour over,
+ * legible enough to read as the brand from across the room.
+ */
+export async function applyBrandWatermark(imageBuffer: Buffer): Promise<Buffer> {
+  try {
+    const meta = await sharp(imageBuffer).metadata()
+    const w = meta.width || A4_WIDTH_PX
+    const h = meta.height || A4_HEIGHT_PX
+    const fs = Math.round(Math.min(w, h) * 0.040)
+    const dx = Math.round(fs * 11)
+    const dy = Math.round(fs * 6.5)
+    let tiles = ''
+    let row = 0
+    for (let y = 0; y < h + dy; y += dy, row++) {
+      const offset = (row % 2) * Math.round(dx / 2) // brick-offset alternate rows
+      for (let x = -dx; x < w + dx; x += dx) {
+        const px = x + offset
+        tiles +=
+          `<text x="${px}" y="${y}" font-family="Helvetica,Arial,sans-serif" font-size="${fs}" ` +
+          `font-weight="700" fill="#111111" fill-opacity="0.06" ` +
+          `transform="rotate(-30 ${px} ${y})">${WATERMARK_TEXT}</text>`
+      }
+    }
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${tiles}</svg>`
+    return await sharp(imageBuffer).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).png().toBuffer()
+  } catch {
+    return imageBuffer // never block a sheet over the watermark
+  }
+}
+
+/**
  * Resize an image buffer to fit A4 at 300 DPI, maintaining aspect ratio.
  * Returns a PNG buffer sized to fit within the printable area.
  */

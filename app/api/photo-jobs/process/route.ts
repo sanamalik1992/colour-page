@@ -5,7 +5,7 @@ import { verifyObjectImage } from '@/lib/object-verify'
 import { verifySheet } from '@/lib/sheet-verify'
 import { renderNumberSheet, renderSequenceSheet, buildLetterSheet, buildLetterStickerSheet, buildLetterWriteSheet, buildLetterPuzzleSheet, buildWordPracticeSheet, buildComposedSheet } from '@/lib/topic-render'
 import { singleObjectPrompt, type Activity } from '@/lib/topic-prompt'
-import { renderA4Pdf, renderA4Preview } from '@/lib/pdf-renderer'
+import { renderA4Pdf, renderA4Preview, applyBrandWatermark } from '@/lib/pdf-renderer'
 import { isHeic, convertHeicToPng } from '@/lib/heic-convert'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
@@ -419,10 +419,12 @@ export async function POST(request: NextRequest) {
     // full-page ~35MB bitmaps decoded at once — keeps peak memory down.
     await updateJob(jobId, { status: 'rendering', progress: 88 })
     const isLandscape = settings.orientation === 'landscape'
-    // Pro Family downloads are unbranded and full 300-DPI; free downloads carry
-    // a small centred colour.page footer (on both the PDF and the PNG). Sheets
-    // are never watermarked either way — a shared sheet is distribution.
+    // Pro Family downloads are unbranded and full 300-DPI. Free sheets carry a
+    // subtle branded "colour.page" watermark tiled across the page (plus the
+    // small footer credit), baked into the bitmap so it's identical on the
+    // on-screen preview, the PNG download and the printed PDF.
     const isProJob = job.is_pro === true
+    if (!isProJob) lineArtBuffer = await applyBrandWatermark(lineArtBuffer)
     const tRender = Date.now()
     const pdfBuffer = await renderA4Pdf(lineArtBuffer, {
       watermark: false,
