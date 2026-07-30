@@ -117,6 +117,11 @@ export default function BundlePage() {
               <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-400" /> Secure checkout by Stripe</li>
               <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-400" /> Free delivery, no hidden fees</li>
             </ul>
+
+            <p className="mt-4 text-xs text-gray-500">
+              Free UK delivery, dispatched within 30 days. 14-day right to cancel and returns —
+              see our <a href="/terms" className="text-gray-400 underline hover:text-white">Terms</a>.
+            </p>
           </div>
         </div>
 

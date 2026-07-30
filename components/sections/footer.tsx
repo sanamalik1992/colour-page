@@ -36,6 +36,7 @@ export function Footer() {
               <ul className="space-y-2.5">
                 <li><Link href="/account" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">My Account</Link></li>
                 <li><Link href="/privacy" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Privacy Policy</Link></li>
+                <li><Link href="/cookies" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Cookie Policy</Link></li>
                 <li><Link href="/terms" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Terms of Service</Link></li>
                 <li><Link href="/contact" className="text-sm text-gray-400 hover:text-brand-primary transition-colors">Contact Us</Link></li>
               </ul>

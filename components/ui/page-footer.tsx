@@ -10,6 +10,7 @@ export function PageFooter() {
         <div className="flex gap-6 text-sm text-gray-400">
           <Link href="/shop" className="hover:text-white transition-colors">Shop</Link>
           <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
+          <Link href="/cookies" className="hover:text-white transition-colors">Cookies</Link>
           <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
           <Link href="/contact" className="hover:text-white transition-colors">Contact</Link>
         </div>
