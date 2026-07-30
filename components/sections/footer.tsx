@@ -17,7 +17,7 @@ export function Footer() {
               </div>
               <p className="text-gray-400 text-sm leading-relaxed max-w-sm">
                 Transform your photos into beautiful colouring pages using AI.
-                Free to try, instant results. Loved by parents and teachers everywhere.
+                Free to try, instant results. Made for creative families and classrooms.
               </p>
             </div>
 
