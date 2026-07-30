@@ -56,9 +56,62 @@ function letterPicLayout(available: number, settings: PhotoJobSettings): { count
   return { count, cols: count }
 }
 
+// Fun, chunky, colour-in shapes for counting sheets — far more appealing to a
+// young child than plain circles. Each fits (roughly) inside a box of "radius" r
+// centred at (cx,cy), drawn as clean closed outlines on white so they're easy to
+// colour. Cycle one shape per number/group so a child still counts identical
+// items, but every row looks different.
+const FUN_SHAPES = ['star', 'heart', 'flower', 'apple', 'balloon', 'fish']
+function funShapeSvg(kind: string, cx: number, cy: number, r: number, sw: number): string {
+  const A = `fill="none" stroke="#111111" stroke-width="${sw.toFixed(1)}" stroke-linejoin="round" stroke-linecap="round"`
+  const f = (n: number) => n.toFixed(1)
+  switch (kind) {
+    case 'heart': {
+      const d = `M ${f(cx)},${f(cy + r * 0.85)} C ${f(cx - r * 1.1)},${f(cy - r * 0.05)} ${f(cx - r * 0.55)},${f(cy - r * 0.82)} ${f(cx)},${f(cy - r * 0.28)} C ${f(cx + r * 0.55)},${f(cy - r * 0.82)} ${f(cx + r * 1.1)},${f(cy - r * 0.05)} ${f(cx)},${f(cy + r * 0.85)} Z`
+      return `<path d="${d}" ${A}/>`
+    }
+    case 'star': {
+      const pts: string[] = []
+      for (let i = 0; i < 10; i++) {
+        const ang = -Math.PI / 2 + (i * Math.PI) / 5
+        const rr = i % 2 === 0 ? r : r * 0.45
+        pts.push(`${f(cx + rr * Math.cos(ang))},${f(cy + rr * Math.sin(ang))}`)
+      }
+      return `<polygon points="${pts.join(' ')}" ${A}/>`
+    }
+    case 'flower': {
+      let s = `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(r * 0.33)}" ${A}/>`
+      for (let i = 0; i < 6; i++) {
+        const ang = (i * Math.PI) / 3
+        s += `<circle cx="${f(cx + Math.cos(ang) * r * 0.62)}" cy="${f(cy + Math.sin(ang) * r * 0.62)}" r="${f(r * 0.37)}" ${A}/>`
+      }
+      return s
+    }
+    case 'apple': {
+      const body = `<path d="M ${f(cx)},${f(cy - r * 0.5)} C ${f(cx - r * 1.02)},${f(cy - r * 0.9)} ${f(cx - r * 0.95)},${f(cy + r * 0.9)} ${f(cx)},${f(cy + r * 0.82)} C ${f(cx + r * 0.95)},${f(cy + r * 0.9)} ${f(cx + r * 1.02)},${f(cy - r * 0.9)} ${f(cx)},${f(cy - r * 0.5)} Z" ${A}/>`
+      const stem = `<path d="M ${f(cx)},${f(cy - r * 0.5)} L ${f(cx + r * 0.08)},${f(cy - r * 0.92)}" ${A}/>`
+      const leaf = `<ellipse cx="${f(cx + r * 0.3)}" cy="${f(cy - r * 0.8)}" rx="${f(r * 0.26)}" ry="${f(r * 0.13)}" transform="rotate(-35 ${f(cx + r * 0.3)} ${f(cy - r * 0.8)})" ${A}/>`
+      return body + stem + leaf
+    }
+    case 'balloon': {
+      const bal = `<ellipse cx="${f(cx)}" cy="${f(cy - r * 0.05)}" rx="${f(r * 0.72)}" ry="${f(r * 0.82)}" ${A}/>`
+      const knot = `<path d="M ${f(cx - r * 0.11)},${f(cy + r * 0.77)} L ${f(cx)},${f(cy + r * 0.62)} L ${f(cx + r * 0.11)},${f(cy + r * 0.77)} Z" ${A}/>`
+      const str = `<path d="M ${f(cx)},${f(cy + r * 0.77)} C ${f(cx + r * 0.18)},${f(cy + r * 0.9)} ${f(cx - r * 0.18)},${f(cy + r * 0.95)} ${f(cx)},${f(cy + r)}" ${A}/>`
+      return bal + knot + str
+    }
+    case 'fish':
+    default: {
+      const body = `<ellipse cx="${f(cx - r * 0.12)}" cy="${f(cy)}" rx="${f(r * 0.8)}" ry="${f(r * 0.55)}" ${A}/>`
+      const tail = `<path d="M ${f(cx + r * 0.58)},${f(cy)} L ${f(cx + r)},${f(cy - r * 0.48)} L ${f(cx + r)},${f(cy + r * 0.48)} Z" ${A}/>`
+      const eye = `<circle cx="${f(cx - r * 0.52)}" cy="${f(cy - r * 0.12)}" r="${f(Math.max(2, r * 0.08))}" fill="#111111"/>`
+      return body + tail + eye
+    }
+  }
+}
+
 /**
- * A counting worksheet for 1..maxN: each row is the numeral plus that many
- * outline circles to count and colour. Fully deterministic.
+ * A counting worksheet for 1..maxN: each row is the numeral plus that many fun
+ * colour-in shapes (star, heart, apple…) to count and colour. Fully deterministic.
  */
 export async function renderNumberSheet(maxN: number, settings: PhotoJobSettings): Promise<Buffer> {
   const n = Math.max(1, Math.min(20, Math.round(maxN)))
@@ -111,12 +164,15 @@ export async function renderNumberSheet(maxN: number, settings: PhotoJobSettings
     const gridLeft = shapesX + Math.max(0, (shapesW - gridW) / 2)
     const gridTop = cellY + (cellH - gridH) / 2 + r
 
+    // One fun shape per number so the child counts identical items, but each row
+    // looks different (row 1 = stars, row 2 = hearts…).
+    const kind = FUN_SHAPES[(i - 1) % FUN_SHAPES.length]
     for (let k = 0; k < i; k++) {
       const rk = Math.floor(k / perRow)
       const ck = k % perRow
       const cx = gridLeft + r + ck * cellStep
       const cy = gridTop + rk * cellStep
-      svg += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="none" stroke="#111111" stroke-width="${Math.max(5, stroke - 3)}"/>`
+      svg += funShapeSvg(kind, cx, cy, r * 0.92, Math.max(5, stroke - 3))
     }
   }
 
@@ -2020,7 +2076,9 @@ function countObjectsBlock(count: number, maxCount: number, x: number, top: numb
     const c = i % cols, r = Math.floor(i / cols)
     const cx = x + c * cellW + cellW / 2
     const cyTop = top + r * cellH
-    // dots grid (up to 5 per row)
+    // fun colour-in shapes, up to 5 per row — one shape per group so each cell
+    // is a set of identical things to count and colour.
+    const kind = FUN_SHAPES[(i + salt) % FUN_SHAPES.length]
     const per = Math.min(g, 5)
     const dRows = Math.ceil(g / per)
     const dotArea = cellH * 0.62
@@ -2032,7 +2090,7 @@ function countObjectsBlock(count: number, maxCount: number, x: number, top: numb
       const rowN = Math.min(per, g - rr * per)
       const dx = cx - (rowN - 1) * step / 2 + cc * step
       const dy = gridTop + rad + rr * step
-      s += `<circle cx="${dx.toFixed(1)}" cy="${dy.toFixed(1)}" r="${rad.toFixed(1)}" fill="none" stroke="#111" stroke-width="4"/>`
+      s += funShapeSvg(kind, dx, dy, rad * 0.92, 4)
     }
     // answer box beneath the group
     const boxH = Math.min(cellH * 0.24, 90)
