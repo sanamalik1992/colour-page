@@ -7,6 +7,7 @@
 
 import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib'
 import sharp from 'sharp'
+import { numberSvg, numberWidth } from '@/lib/glyph-font'
 
 // A4 dimensions in points (1 pt = 1/72 inch)
 const A4_WIDTH_PT = 595.28
@@ -39,29 +40,34 @@ export interface PdfRenderOptions {
  * the PNG download and the printed PDF. Light enough (6% grey) to colour over,
  * legible enough to read as the brand from across the room.
  */
+// The wordmark is drawn with our path-based glyph font (A–Z/0–9), NOT SVG
+// <text> — the serverless image renderer has no fonts, so <text> renders
+// nothing there (that's why every sheet already uses this glyph font). Glyphs
+// are uppercase-only and the '.' has no glyph, so it prints as "COLOUR PAGE".
+const WATERMARK_WORD = 'COLOUR.PAGE'
 export async function applyBrandWatermark(imageBuffer: Buffer): Promise<Buffer> {
   try {
     const meta = await sharp(imageBuffer).metadata()
     const w = meta.width || A4_WIDTH_PX
     const h = meta.height || A4_HEIGHT_PX
-    const fs = Math.round(Math.min(w, h) * 0.045)
-    const dx = Math.round(fs * 10)
-    const dy = Math.round(fs * 6)
+    const gh = Math.max(14, Math.round(Math.min(w, h) * 0.024)) // glyph height
+    const stroke = Math.max(2, Math.round(gh * 0.12))
+    const wordW = numberWidth(WATERMARK_WORD, gh)
+    const dx = Math.round(wordW + gh * 3)
+    const dy = Math.round(gh * 5)
+    const color = '#c9c9c9' // light grey: clearly visible, easy to colour over
     let tiles = ''
     let row = 0
-    for (let y = 0; y < h + dy; y += dy, row++) {
+    for (let y = -dy; y < h + dy; y += dy, row++) {
       const offset = (row % 2) * Math.round(dx / 2) // brick-offset alternate rows
-      for (let x = -dx; x < w + dx; x += dx) {
-        const px = x + offset
-        // 13% grey: clearly visible as branding on the free sheet, still light
-        // enough for a child to colour straight over it.
-        tiles +=
-          `<text x="${px}" y="${y}" font-family="Helvetica,Arial,sans-serif" font-size="${fs}" ` +
-          `font-weight="700" fill="#000000" fill-opacity="0.13" ` +
-          `transform="rotate(-30 ${px} ${y})">${WATERMARK_TEXT}</text>`
+      for (let x = -dx + offset; x < w + dx; x += dx) {
+        tiles += numberSvg(WATERMARK_WORD, x, y, gh, stroke, { color })
       }
     }
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${tiles}</svg>`
+    // Rotate the whole tiled field diagonally about the centre.
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
+      `<g transform="rotate(-24 ${(w / 2).toFixed(1)} ${(h / 2).toFixed(1)})">${tiles}</g></svg>`
     return await sharp(imageBuffer).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).png().toBuffer()
   } catch {
     return imageBuffer // never block a sheet over the watermark
