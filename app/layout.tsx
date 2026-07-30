@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { Analytics } from "@vercel/analytics/next";
 import { OAuthCodeCatcher } from "@/components/auth/oauth-code-catcher";
 import { PresencePing } from "@/components/presence-ping";
+import { CookieNotice } from "@/components/ui/cookie-notice";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -37,6 +38,9 @@ export default function RootLayout({
         <PresencePing />
 
         {children}
+
+        {/* Cookie notice (site-wide, dismissible). */}
+        <CookieNotice />
 
         {/* Vercel Analytics */}
         <Analytics />

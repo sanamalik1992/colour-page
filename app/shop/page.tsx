@@ -106,6 +106,11 @@ export default function ShopPage() {
             </Link>
           ))}
         </div>
+
+        <p className="mt-8 text-center text-xs text-gray-500">
+          Free UK delivery, dispatched within 30 days. 14-day right to cancel and returns —
+          see our <a href="/terms" className="text-gray-400 underline hover:text-white">Terms</a>.
+        </p>
       </main>
 
       <PageFooter />
