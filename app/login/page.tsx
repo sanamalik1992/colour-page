@@ -3,7 +3,7 @@ import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 import { AuthForm } from '@/components/auth/auth-form'
 
-export const metadata = { title: 'Log in · colour.page' }
+export const metadata = { title: 'Log in' }
 
 export default function LoginPage() {
   return (

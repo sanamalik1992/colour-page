@@ -18,7 +18,12 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "colour.page | Free Printable Colouring Pages for Kids",
+  // `default` is the homepage title; child routes set their own segment and it
+  // renders as "<Page> | colour.page" via the template.
+  title: {
+    default: "Turn Photos into Colouring Pages | colour.page",
+    template: "%s | colour.page",
+  },
   description: "Transform any photo into a printable colouring page instantly. Free AI-powered colouring page generator plus 300+ ready-to-print colouring sheets for children.",
 };
 

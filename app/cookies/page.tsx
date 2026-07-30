@@ -1,5 +1,11 @@
+import type { Metadata } from 'next'
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
+
+export const metadata: Metadata = {
+  title: 'Cookie Policy',
+  description: 'How colour.page uses cookies — strictly-necessary sign-in and checkout cookies plus privacy-friendly analytics. No advertising trackers.',
+}
 
 const CONTACT = 'colour.page123@gmail.com'
 

@@ -3,7 +3,7 @@ import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 import { AuthForm } from '@/components/auth/auth-form'
 
-export const metadata = { title: 'Create your account · colour.page' }
+export const metadata = { title: 'Create your account' }
 
 export default function SignupPage() {
   return (

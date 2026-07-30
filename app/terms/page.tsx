@@ -1,5 +1,11 @@
+import type { Metadata } from 'next'
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
+
+export const metadata: Metadata = {
+  title: 'Terms of Service',
+  description: 'The terms for using colour.page — accounts, Pro subscriptions, Shop orders, your consumer rights and how to contact us.',
+}
 
 const CONTACT = 'colour.page123@gmail.com'
 
@@ -61,7 +67,9 @@ export default function TermsPage() {
           </Section>
 
           <Section title="6. Pro subscriptions">
-            <p>Pro is billed monthly or annually through our payment processor, Stripe. Prices are shown on the Pro page before you pay. Subscriptions renew automatically at the end of each billing period until you cancel; you can cancel at any time from your account and will keep access until the end of the period already paid for.</p>
+            <p>Pro is billed monthly or annually through our payment processor, Stripe. The full price, the renewal period (monthly or yearly) and how to cancel are shown before you pay. Subscriptions renew automatically at the end of each billing period until you cancel; you can cancel at any time from your account (or by emailing us) and will keep Pro access until the end of the period already paid for.</p>
+            <p>Sheets you&rsquo;ve saved to your library stay available after you cancel, for as long as your account is open — cancelling Pro simply returns you to the free plan. If a subscription renews by mistake, email us within 14 days of that renewal and we&rsquo;ll refund it. If a sheet fails to generate, it does not use up your daily allowance and you can simply try again.</p>
+            <p><strong className="text-white">Fair use.</strong> &ldquo;Unlimited&rdquo; Pro use is for normal personal, family and classroom use. To keep the service running well for everyone, we may apply reasonable limits to prevent automated or abusive use — for example, AI photo colourings and dot-to-dots are capped at a fair monthly allowance (your learning sheets and activity packs stay unlimited).</p>
             <p><strong className="text-white">14-day cancellation right.</strong> As a consumer you normally have 14 days to cancel a new subscription for a refund. Because Pro gives you immediate access to a digital service, by starting to use Pro within those 14 days you ask us to begin straight away and acknowledge you lose the automatic 14-day cancellation right for that period once the service has been fully provided. This does not affect your right to cancel future renewals at any time.</p>
           </Section>
 
@@ -78,6 +86,7 @@ export default function TermsPage() {
 
           <Section title="9. Availability and &ldquo;as is&rdquo;">
             <p>We work hard to keep colour.page running, but the service is provided on an &ldquo;as available&rdquo; basis and AI-generated results can vary — occasionally a sheet won&rsquo;t come out well, in which case please try again. We don&rsquo;t guarantee uninterrupted or error-free operation.</p>
+            <p><strong className="text-white">Reporting a problem.</strong> If an AI-generated sheet ever comes out inappropriate, upsetting or plain wrong, please tell us at <a href={`mailto:${CONTACT}`} className="text-brand-primary hover:underline">{CONTACT}</a> and we&rsquo;ll review it promptly.</p>
           </Section>
 
           <Section title="10. Our liability">
