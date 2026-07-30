@@ -17,11 +17,14 @@ const NAV_ITEMS: {
   label: string
   icon: typeof ImagePlus
   showLabel: 'sm' | 'md'
+  // Secondary items hidden on the smallest screens to keep the mobile bar
+  // uncluttered — the essentials (Create · Gallery · Shop) always show.
+  mobileHide?: boolean
 }[] = [
   { key: 'create', href: '/', label: 'Create', icon: ImagePlus, showLabel: 'sm' },
-  { key: 'pack', href: '/pack', label: 'Packs', icon: Layers, showLabel: 'sm' },
+  { key: 'pack', href: '/pack', label: 'Packs', icon: Layers, showLabel: 'sm', mobileHide: true },
   { key: 'print-pages', href: '/print-pages', label: 'Gallery', icon: LayoutGrid, showLabel: 'sm' },
-  { key: 'library', href: '/library', label: 'My Pages', icon: FolderHeart, showLabel: 'sm' },
+  { key: 'library', href: '/library', label: 'My Pages', icon: FolderHeart, showLabel: 'sm', mobileHide: true },
   { key: 'shop', href: '/shop', label: 'Shop', icon: ShoppingBag, showLabel: 'md' },
 ]
 
@@ -63,8 +66,8 @@ export function NavHeader({ active, isPro }: NavHeaderProps) {
           </Link>
 
           <nav className="flex items-center gap-0.5">
-            {NAV_ITEMS.map(({ key, href, label, icon: Icon, showLabel }) => (
-              <Link key={key} href={href} className={linkClass(key)} aria-current={active === key ? 'page' : undefined}>
+            {NAV_ITEMS.map(({ key, href, label, icon: Icon, showLabel, mobileHide }) => (
+              <Link key={key} href={href} className={`${linkClass(key)}${mobileHide ? ' max-sm:hidden' : ''}`} aria-current={active === key ? 'page' : undefined}>
                 <Icon className="w-4 h-4" />
                 <span className={showLabel === 'md' ? 'hidden md:inline' : 'hidden sm:inline'}>{label}</span>
               </Link>

@@ -1103,6 +1103,23 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Founder note — the human behind the tool. EDIT ME: replace the
+              emoji avatar with a real photo and put your own name/words in. */}
+          <section className="mt-14">
+            <div className="max-w-xl mx-auto rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6 sm:p-7 text-center">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-brand-primary to-amber-500 mx-auto mb-4 flex items-center justify-center text-3xl" aria-hidden>
+                👋
+              </div>
+              <p className="text-gray-300 leading-relaxed">
+                &ldquo;I made colour.page after turning one of my own children&rsquo;s photos into a colouring
+                activity. They loved recognising themselves &mdash; and I loved that it kept them happily off the
+                screen for a while. I hope it brings your family the same little bit of calm.&rdquo;
+              </p>
+              <p className="mt-4 text-sm font-semibold text-white">The founder of colour.page</p>
+              <p className="text-xs text-gray-500">A parent, just like you</p>
+            </div>
+          </section>
+
           {/* Loved by parents — real reviews */}
           <section className="mt-14">
             <div className="text-center mb-6">

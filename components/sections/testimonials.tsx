@@ -35,7 +35,7 @@ export function Testimonials() {
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-14">
           <h2 className="text-3xl md:text-5xl font-extrabold text-white mb-4 tracking-tight">
-            Loved by Parents & Teachers
+            Made for creative families and classrooms
           </h2>
           <p className="text-lg text-gray-400">
             Join thousands of happy users creating colouring pages every day
