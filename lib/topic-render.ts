@@ -62,9 +62,27 @@ function letterPicLayout(available: number, settings: PhotoJobSettings): { count
 // colour. Cycle one shape per number/group so a child still counts identical
 // items, but every row looks different.
 const FUN_SHAPES = ['star', 'heart', 'flower', 'apple', 'balloon', 'fish']
+
+// Topic-relevant shape families: a counting sheet about space counts rockets &
+// planets, one about the sea counts fish & shells, and so on. Falls back to the
+// generic fun mix when the topic doesn't match a theme.
+const SHAPE_THEMES: { keys: string[]; shapes: string[] }[] = [
+  { keys: ['space', 'planet', 'rocket', 'astronaut', 'solar', 'galaxy', 'alien', 'moon', 'star'], shapes: ['star', 'planet', 'rocket', 'moon'] },
+  { keys: ['sea', 'ocean', 'underwater', 'beach', 'marine', 'fish', 'seaside', 'coral', 'pirate'], shapes: ['fish', 'starfish', 'shell'] },
+  { keys: ['garden', 'flower', 'plant', 'spring', 'bug', 'insect', 'minibeast', 'mini-beast', 'butterfly', 'ladybird', 'ladybug', 'nature', 'meadow'], shapes: ['flower', 'butterfly', 'ladybird', 'leaf'] },
+  { keys: ['weather', 'sky', 'rain', 'cloud', 'sun', 'storm', 'season'], shapes: ['sun', 'cloud', 'raindrop', 'star'] },
+  { keys: ['food', 'fruit', 'apple', 'healthy', 'snack', 'picnic', 'orchard'], shapes: ['apple', 'pear', 'cherry'] },
+]
+function themeShapesFor(text?: string | null): string[] {
+  const t = (text || '').toLowerCase()
+  for (const th of SHAPE_THEMES) if (th.keys.some((k) => t.includes(k))) return th.shapes
+  return FUN_SHAPES
+}
+
 function funShapeSvg(kind: string, cx: number, cy: number, r: number, sw: number): string {
   const A = `fill="none" stroke="#111111" stroke-width="${sw.toFixed(1)}" stroke-linejoin="round" stroke-linecap="round"`
   const f = (n: number) => n.toFixed(1)
+  const P = (d: string) => `<path d="${d}" ${A}/>`
   switch (kind) {
     case 'heart': {
       const d = `M ${f(cx)},${f(cy + r * 0.85)} C ${f(cx - r * 1.1)},${f(cy - r * 0.05)} ${f(cx - r * 0.55)},${f(cy - r * 0.82)} ${f(cx)},${f(cy - r * 0.28)} C ${f(cx + r * 0.55)},${f(cy - r * 0.82)} ${f(cx + r * 1.1)},${f(cy - r * 0.05)} ${f(cx)},${f(cy + r * 0.85)} Z`
@@ -99,6 +117,62 @@ function funShapeSvg(kind: string, cx: number, cy: number, r: number, sw: number
       const str = `<path d="M ${f(cx)},${f(cy + r * 0.77)} C ${f(cx + r * 0.18)},${f(cy + r * 0.9)} ${f(cx - r * 0.18)},${f(cy + r * 0.95)} ${f(cx)},${f(cy + r)}" ${A}/>`
       return bal + knot + str
     }
+    case 'sun': {
+      let s = `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(r * 0.55)}" ${A}/>`
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4
+        s += `<line x1="${f(cx + Math.cos(a) * r * 0.68)}" y1="${f(cy + Math.sin(a) * r * 0.68)}" x2="${f(cx + Math.cos(a) * r)}" y2="${f(cy + Math.sin(a) * r)}" ${A}/>`
+      }
+      return s
+    }
+    case 'moon':
+      return P(`M ${f(cx + r * 0.25)},${f(cy - r * 0.9)} A ${f(r)},${f(r)} 0 1 0 ${f(cx + r * 0.25)},${f(cy + r * 0.9)} A ${f(r * 0.72)},${f(r * 0.72)} 0 1 1 ${f(cx + r * 0.25)},${f(cy - r * 0.9)} Z`)
+    case 'planet':
+      return `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(r * 0.6)}" ${A}/><ellipse cx="${f(cx)}" cy="${f(cy)}" rx="${f(r)}" ry="${f(r * 0.34)}" transform="rotate(-20 ${f(cx)} ${f(cy)})" ${A}/>`
+    case 'rocket':
+      return P(`M ${f(cx - r * 0.3)},${f(cy + r * 0.45)} L ${f(cx - r * 0.3)},${f(cy - r * 0.15)} Q ${f(cx)},${f(cy - r)} ${f(cx + r * 0.3)},${f(cy - r * 0.15)} L ${f(cx + r * 0.3)},${f(cy + r * 0.45)} Z`) +
+        P(`M ${f(cx - r * 0.3)},${f(cy + r * 0.15)} L ${f(cx - r * 0.6)},${f(cy + r * 0.55)} L ${f(cx - r * 0.3)},${f(cy + r * 0.45)}`) +
+        P(`M ${f(cx + r * 0.3)},${f(cy + r * 0.15)} L ${f(cx + r * 0.6)},${f(cy + r * 0.55)} L ${f(cx + r * 0.3)},${f(cy + r * 0.45)}`) +
+        `<circle cx="${f(cx)}" cy="${f(cy - r * 0.15)}" r="${f(r * 0.16)}" ${A}/>`
+    case 'starfish': {
+      const pts: string[] = []
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5
+        const rr = i % 2 === 0 ? r : r * 0.52
+        pts.push(`${f(cx + rr * Math.cos(a))},${f(cy + rr * Math.sin(a))}`)
+      }
+      return `<polygon points="${pts.join(' ')}" ${A}/><circle cx="${f(cx)}" cy="${f(cy)}" r="${f(r * 0.1)}" ${A}/>`
+    }
+    case 'shell': {
+      let ribs = ''
+      for (const a of [-0.5, -0.25, 0, 0.25, 0.5]) ribs += `<line x1="${f(cx)}" y1="${f(cy + r * 0.7)}" x2="${f(cx + Math.sin(a) * r * 0.8)}" y2="${f(cy - r * 0.6)}" ${A}/>`
+      return P(`M ${f(cx)},${f(cy + r * 0.7)} Q ${f(cx - r * 0.95)},${f(cy + r * 0.4)} ${f(cx - r * 0.6)},${f(cy - r * 0.5)} Q ${f(cx)},${f(cy - r * 0.95)} ${f(cx + r * 0.6)},${f(cy - r * 0.5)} Q ${f(cx + r * 0.95)},${f(cy + r * 0.4)} ${f(cx)},${f(cy + r * 0.7)} Z`) + ribs
+    }
+    case 'butterfly':
+      return `<ellipse cx="${f(cx - r * 0.42)}" cy="${f(cy - r * 0.32)}" rx="${f(r * 0.4)}" ry="${f(r * 0.32)}" ${A}/><ellipse cx="${f(cx + r * 0.42)}" cy="${f(cy - r * 0.32)}" rx="${f(r * 0.4)}" ry="${f(r * 0.32)}" ${A}/><ellipse cx="${f(cx - r * 0.34)}" cy="${f(cy + r * 0.34)}" rx="${f(r * 0.32)}" ry="${f(r * 0.26)}" ${A}/><ellipse cx="${f(cx + r * 0.34)}" cy="${f(cy + r * 0.34)}" rx="${f(r * 0.32)}" ry="${f(r * 0.26)}" ${A}/><ellipse cx="${f(cx)}" cy="${f(cy)}" rx="${f(r * 0.08)}" ry="${f(r * 0.55)}" ${A}/>` +
+        P(`M ${f(cx)},${f(cy - r * 0.55)} Q ${f(cx - r * 0.2)},${f(cy - r * 0.9)} ${f(cx - r * 0.32)},${f(cy - r * 0.85)} M ${f(cx)},${f(cy - r * 0.55)} Q ${f(cx + r * 0.2)},${f(cy - r * 0.9)} ${f(cx + r * 0.32)},${f(cy - r * 0.85)}`)
+    case 'leaf':
+      return P(`M ${f(cx)},${f(cy - r * 0.85)} Q ${f(cx + r * 0.7)},${f(cy - r * 0.1)} ${f(cx)},${f(cy + r * 0.85)} Q ${f(cx - r * 0.7)},${f(cy - r * 0.1)} ${f(cx)},${f(cy - r * 0.85)} Z`) +
+        `<line x1="${f(cx)}" y1="${f(cy - r * 0.85)}" x2="${f(cx)}" y2="${f(cy + r * 0.85)}" ${A}/>`
+    case 'ladybird': {
+      let spots = ''
+      for (const [sx, sy] of [[-0.38, -0.05], [0.38, -0.05], [-0.28, 0.42], [0.28, 0.42]] as const) {
+        spots += `<circle cx="${f(cx + sx * r)}" cy="${f(cy + sy * r)}" r="${f(r * 0.12)}" fill="#111111"/>`
+      }
+      return `<circle cx="${f(cx)}" cy="${f(cy + r * 0.05)}" r="${f(r * 0.8)}" ${A}/><line x1="${f(cx)}" y1="${f(cy - r * 0.72)}" x2="${f(cx)}" y2="${f(cy + r * 0.85)}" ${A}/>` +
+        P(`M ${f(cx - r * 0.28)},${f(cy - r * 0.7)} A ${f(r * 0.28)},${f(r * 0.28)} 0 0 1 ${f(cx + r * 0.28)},${f(cy - r * 0.7)}`) + spots
+    }
+    case 'pear':
+      return P(`M ${f(cx)},${f(cy - r * 0.88)} C ${f(cx + r * 0.22)},${f(cy - r * 0.85)} ${f(cx + r * 0.18)},${f(cy - r * 0.45)} ${f(cx + r * 0.34)},${f(cy - r * 0.12)} C ${f(cx + r * 0.62)},${f(cy + r * 0.3)} ${f(cx + r * 0.5)},${f(cy + r * 0.88)} ${f(cx)},${f(cy + r * 0.88)} C ${f(cx - r * 0.5)},${f(cy + r * 0.88)} ${f(cx - r * 0.62)},${f(cy + r * 0.3)} ${f(cx - r * 0.34)},${f(cy - r * 0.12)} C ${f(cx - r * 0.18)},${f(cy - r * 0.45)} ${f(cx - r * 0.22)},${f(cy - r * 0.85)} ${f(cx)},${f(cy - r * 0.88)} Z`) +
+        `<line x1="${f(cx)}" y1="${f(cy - r * 0.88)}" x2="${f(cx + r * 0.06)}" y2="${f(cy - r * 1.02)}" ${A}/>`
+    case 'cherry':
+      return `<circle cx="${f(cx - r * 0.35)}" cy="${f(cy + r * 0.4)}" r="${f(r * 0.4)}" ${A}/><circle cx="${f(cx + r * 0.35)}" cy="${f(cy + r * 0.4)}" r="${f(r * 0.4)}" ${A}/>` +
+        P(`M ${f(cx - r * 0.35)},${f(cy)} Q ${f(cx - r * 0.1)},${f(cy - r * 0.8)} ${f(cx + r * 0.05)},${f(cy - r * 0.85)} M ${f(cx + r * 0.35)},${f(cy)} Q ${f(cx + r * 0.15)},${f(cy - r * 0.7)} ${f(cx + r * 0.05)},${f(cy - r * 0.85)}`) +
+        `<ellipse cx="${f(cx + r * 0.3)}" cy="${f(cy - r * 0.8)}" rx="${f(r * 0.22)}" ry="${f(r * 0.1)}" transform="rotate(-25 ${f(cx + r * 0.3)} ${f(cy - r * 0.8)})" ${A}/>`
+    case 'raindrop':
+      return P(`M ${f(cx)},${f(cy - r * 0.9)} C ${f(cx + r * 0.6)},${f(cy - r * 0.1)} ${f(cx + r * 0.55)},${f(cy + r * 0.7)} ${f(cx)},${f(cy + r * 0.85)} C ${f(cx - r * 0.55)},${f(cy + r * 0.7)} ${f(cx - r * 0.6)},${f(cy - r * 0.1)} ${f(cx)},${f(cy - r * 0.9)} Z`)
+    case 'cloud':
+      return P(`M ${f(cx - r * 0.85)},${f(cy + r * 0.35)} Q ${f(cx - r * 1.05)},${f(cy - r * 0.05)} ${f(cx - r * 0.55)},${f(cy - r * 0.12)} Q ${f(cx - r * 0.45)},${f(cy - r * 0.55)} ${f(cx + r * 0.05)},${f(cy - r * 0.42)} Q ${f(cx + r * 0.5)},${f(cy - r * 0.62)} ${f(cx + r * 0.62)},${f(cy - r * 0.12)} Q ${f(cx + r * 1.05)},${f(cy - r * 0.05)} ${f(cx + r * 0.8)},${f(cy + r * 0.35)} Z`)
     case 'fish':
     default: {
       const body = `<ellipse cx="${f(cx - r * 0.12)}" cy="${f(cy)}" rx="${f(r * 0.8)}" ry="${f(r * 0.55)}" ${A}/>`
@@ -115,6 +189,7 @@ function funShapeSvg(kind: string, cx: number, cy: number, r: number, sw: number
  */
 export async function renderNumberSheet(maxN: number, settings: PhotoJobSettings): Promise<Buffer> {
   const n = Math.max(1, Math.min(20, Math.round(maxN)))
+  const shapeSet = themeShapesFor(settings.topic || settings.title)
   const x0 = MARGIN
   const y0 = MARGIN
   const contentW = A4_W - MARGIN * 2
@@ -164,9 +239,9 @@ export async function renderNumberSheet(maxN: number, settings: PhotoJobSettings
     const gridLeft = shapesX + Math.max(0, (shapesW - gridW) / 2)
     const gridTop = cellY + (cellH - gridH) / 2 + r
 
-    // One fun shape per number so the child counts identical items, but each row
-    // looks different (row 1 = stars, row 2 = hearts…).
-    const kind = FUN_SHAPES[(i - 1) % FUN_SHAPES.length]
+    // One shape per number so the child counts identical items, but each row
+    // looks different — and the shapes match the topic (space → rockets/planets).
+    const kind = shapeSet[(i - 1) % shapeSet.length]
     for (let k = 0; k < i; k++) {
       const rk = Math.floor(k / perRow)
       const ck = k % perRow
@@ -2062,7 +2137,7 @@ function sumsBlock(op: 'add' | 'subtract' | 'mixed', maxValue: number, count: nu
 
 // "Count and colour": groups of hollow (colour-in) dots, each with a box to
 // write how many. Colour + count in one deterministic block.
-function countObjectsBlock(count: number, maxCount: number, x: number, top: number, w: number, h: number, salt = 0): string {
+function countObjectsBlock(count: number, maxCount: number, x: number, top: number, w: number, h: number, salt = 0, shapes: string[] = FUN_SHAPES): string {
   const n = Math.max(2, Math.min(8, Math.round(count)))
   const maxC = Math.max(2, Math.min(12, Math.round(maxCount)))
   const rng = makeRng(n * 53 + maxC * 131 + salt * 7919)
@@ -2077,8 +2152,8 @@ function countObjectsBlock(count: number, maxCount: number, x: number, top: numb
     const cx = x + c * cellW + cellW / 2
     const cyTop = top + r * cellH
     // fun colour-in shapes, up to 5 per row — one shape per group so each cell
-    // is a set of identical things to count and colour.
-    const kind = FUN_SHAPES[(i + salt) % FUN_SHAPES.length]
+    // is a set of identical things to count and colour (matched to the topic).
+    const kind = shapes[(i + salt) % shapes.length]
     const per = Math.min(g, 5)
     const dRows = Math.ceil(g / per)
     const dotArea = cellH * 0.62
@@ -2327,6 +2402,8 @@ export async function buildComposedSheet(
   // Every sheet renders ALL its activities — free and Pro are identical in
   // content. Quality is for everyone; Pro is more sheets, not better ones.
   const acts = activities.slice(0, 6)
+  // Topic-matched shapes for any count-and-colour block on this sheet.
+  const countShapes = themeShapesFor(title || settings.topic)
   const bodyX = MARGIN
   const bodyW = A4_W - MARGIN * 2
 
@@ -2492,7 +2569,7 @@ export async function buildComposedSheet(
         case 'bigLetter': overlay += bigLetterBlock(a.letter, bodyX, nextY, bodyW, ch); break
         case 'reward': overlay += rewardBlock(a.name, bodyX, nextY, bodyW, ch); break
         case 'traceName': overlay += traceNameBlock(a.name, bodyX, nextY, bodyW, ch); break
-        case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex); break
+        case 'countObjects': overlay += countObjectsBlock(a.count, a.maxCount, bodyX, nextY, bodyW, ch, blockIndex, countShapes); break
         case 'traceNumbers': overlay += traceNumbersBlock(a.upTo, bodyX, nextY, bodyW, ch); break
       }
     }
