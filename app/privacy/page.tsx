@@ -1,7 +1,7 @@
 import { NavHeader } from '@/components/ui/nav-header'
 import { PageFooter } from '@/components/ui/page-footer'
 
-export const metadata = { title: 'Privacy Policy · colour.page' }
+export const metadata = { title: 'Privacy Policy' }
 
 const CONTACT = 'colour.page123@gmail.com'
 

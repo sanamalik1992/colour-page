@@ -758,9 +758,12 @@ export default function Home() {
                       </button>
 
                       {/* Trust: reassure parents about their child's photo. */}
-                      <p className="flex items-center justify-center gap-1.5 text-xs text-gray-500 text-center">
-                        <Lock className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                        <span><span className="font-semibold text-gray-600">Private &amp; auto-deleted</span> — safe for your child&rsquo;s photos</span>
+                      <p className="flex items-start justify-center gap-1.5 text-xs text-gray-500 text-center max-w-sm mx-auto leading-relaxed">
+                        <Lock className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                        <span>
+                          <span className="font-semibold text-gray-600">Your photos stay private.</span> Used only to make
+                          your colouring page, then deleted within 48 hours — and never used to train AI.
+                        </span>
                       </p>
 
                       {limitReached && (
