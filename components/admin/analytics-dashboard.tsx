@@ -77,12 +77,17 @@ export function AnalyticsDashboard() {
   const [confirmReset, setConfirmReset] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [resetMsg, setResetMsg] = useState('')
+  const [clearSubs, setClearSubs] = useState(false)
 
   const doReset = async () => {
     setResetting(true)
     setResetMsg('')
     try {
-      const res = await fetch('/api/admin/analytics/reset', { method: 'POST' })
+      const res = await fetch('/api/admin/analytics/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscriptions: clearSubs }),
+      })
       const d = await res.json().catch(() => ({}))
       if (!res.ok || !d.ok) throw new Error(d?.errors ? Object.values(d.errors).join('; ') : 'Reset failed')
       const total = Object.values(d.cleared || {}).reduce((a: number, b) => a + Number(b), 0)
@@ -146,10 +151,26 @@ export function AnalyticsDashboard() {
                 <div>
                   <h3 className="text-base font-bold text-white">Reset all analytics?</h3>
                   <p className="text-sm text-gray-400 mt-1">
-                    This permanently clears live presence, generation history and topic searches. Paying customers, subscriptions and orders are <span className="text-gray-200 font-medium">not</span> affected.
+                    This permanently clears live presence, generation history and topic searches. Orders are <span className="text-gray-200 font-medium">not</span> affected.
                   </p>
                 </div>
               </div>
+
+              {/* Opt-in: also clear the cached Pro subscription rows (test data). */}
+              <label className="flex items-start gap-2.5 mt-4 rounded-xl border border-zinc-700 bg-zinc-800/40 p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={clearSubs}
+                  onChange={(e) => setClearSubs(e.target.checked)}
+                  className="mt-0.5 accent-red-500 w-4 h-4"
+                />
+                <span className="text-xs text-gray-300">
+                  <span className="font-semibold text-white">Also clear Pro subscription test data</span> — removes the cached
+                  subscriber list so pre-launch test accounts stop counting. Real subscribers (incl. you) get Pro back by tapping
+                  <span className="text-gray-100 font-medium"> Restore Pro</span> on the Pro page. Use this before launch only.
+                </span>
+              </label>
+
               {resetMsg && <p className="text-sm text-red-300 mt-3">{resetMsg}</p>}
               <div className="flex gap-2 mt-5">
                 <button
