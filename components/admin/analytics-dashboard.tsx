@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Activity, Search, Image as ImageIcon, Sparkles, CheckCircle2, XCircle, Users, Crown, ShoppingCart, Home, LayoutGrid, FolderHeart, ShoppingBag, Eye, Circle, Trash2, AlertTriangle } from 'lucide-react'
+import { Loader2, Activity, Search, Image as ImageIcon, Sparkles, CheckCircle2, XCircle, Users, Crown, ShoppingCart, Home, LayoutGrid, FolderHeart, ShoppingBag, Eye, Circle, Trash2, AlertTriangle, MapPin } from 'lucide-react'
 
 // Friendly label + icon for a live visitor's coarse activity (from presence).
 const ACTIVITY_META: Record<string, { label: string; icon: typeof Home }> = {
@@ -22,7 +22,7 @@ interface Visitor { id: string; activity: string; lastSeen: string }
 interface CheckoutBucket { started: number; completed: number }
 interface Analytics {
   generatedAt: string
-  online: { now: number; byActivity: Record<string, number>; visitors: Visitor[] }
+  online: { now: number; byActivity: Record<string, number>; byCountry: { code: string; count: number }[]; visitors: Visitor[] }
   checkout: {
     last24h: CheckoutBucket
     last7d: CheckoutBucket
@@ -40,6 +40,16 @@ interface Analytics {
 function conv(b: { started: number; completed: number }): string {
   if (!b.started) return '—'
   return `${Math.round((b.completed / b.started) * 100)}% paid`
+}
+
+// ISO-3166 alpha-2 → flag emoji (regional-indicator letters). No assets needed.
+function flagEmoji(code: string): string {
+  if (!/^[A-Z]{2}$/.test(code)) return '🌍'
+  return code.replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)))
+}
+const REGION_NAMES = typeof Intl !== 'undefined' && 'DisplayNames' in Intl ? new Intl.DisplayNames(['en'], { type: 'region' }) : null
+function countryName(code: string): string {
+  try { return REGION_NAMES?.of(code) || code } catch { return code }
 }
 
 function ago(iso: string): string {
@@ -220,6 +230,24 @@ export function AnalyticsDashboard() {
                     )
                   })}
                 </div>
+                {/* where they're from (live, by country) */}
+                {data.online.byCountry.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-[11px] text-gray-500 mb-1.5 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Where they&apos;re from</p>
+                    <div className="space-y-1">
+                      {data.online.byCountry.map(({ code, count }) => (
+                        <div key={code} className="relative bg-zinc-800/60 rounded-lg overflow-hidden">
+                          <div className="absolute inset-y-0 left-0 bg-brand-primary/15" style={{ width: `${(count / data.online.now) * 100}%` }} />
+                          <div className="relative flex items-center gap-2 px-2.5 py-1 text-sm">
+                            <span className="text-base leading-none">{flagEmoji(code)}</span>
+                            <span className="flex-1 truncate text-gray-200">{countryName(code)}</span>
+                            <span className="font-semibold text-gray-300">{count}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {/* per-visitor list */}
                 <div className="space-y-1.5 max-h-64 overflow-y-auto">
                   {data.online.visitors.map((v) => {

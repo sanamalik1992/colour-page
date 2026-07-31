@@ -25,6 +25,15 @@ export async function POST(request: NextRequest) {
       .from('presence')
       .upsert({ session_id: sessionId, last_seen: new Date().toISOString(), activity }, { onConflict: 'session_id' })
 
+    // Best-effort country from Vercel's edge geo header (ISO-3166 alpha-2), for
+    // the admin "where visitors are from" view. No IP or personal data is stored,
+    // only the country code. A separate update so a missing `country` column
+    // (before the migration is run) can't break the presence heartbeat.
+    const country = (request.headers.get('x-vercel-ip-country') || '').slice(0, 2).toUpperCase()
+    if (country && /^[A-Z]{2}$/.test(country)) {
+      await supabase.from('presence').update({ country }).eq('session_id', sessionId)
+    }
+
     // Prune rows older than 5 minutes so the table stays tiny.
     await supabase.from('presence').delete().lt('last_seen', new Date(Date.now() - 5 * 60_000).toISOString())
 
