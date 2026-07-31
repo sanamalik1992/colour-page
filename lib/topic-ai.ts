@@ -16,6 +16,7 @@ import {
   pictorialPrompt,
   sheetTitle,
   type Activity,
+  type ActivityPack,
   type TopicPlan,
 } from './topic-prompt'
 
@@ -288,6 +289,112 @@ export async function aiPlanTopic(topic: string, age?: number): Promise<TopicPla
     }
   } catch (err) {
     console.error('aiPlanTopic failed, falling back:', err)
+    return null
+  }
+}
+
+// ---- AI activity-pack planner ---------------------------------------------
+//
+// The deterministic packPlan() only knows a fixed set of topics (letters, times
+// tables, fractions, number bonds, shapes, counting, add/subtract). This designs
+// a coordinated multi-sheet pack for ANYTHING ELSE a parent types ("vegetables",
+// "the seasons", "space", "feelings"), so every topic yields a real pack. Falls
+// back (null) when no API key is set or the reply can't be used.
+
+interface RawSheet {
+  title?: string
+  activities?: RawActivity[]
+}
+interface RawPack {
+  title?: string
+  subject?: string
+  sheets?: RawSheet[]
+}
+
+const PACK_SYSTEM = `You are an early-years teacher designing a COORDINATED PACK of printable A4 activity sheets (UK primary / EYFS) for a child, from whatever a parent types. The pack is 3-4 sheets that build on each other into one satisfying mini-workbook on the topic. Reply with ONLY a compact JSON object, no prose.
+
+Shape:
+{"title":"Warm pack name (max 4 words)","subject":"Short subject","sheets":[{"title":"Sheet heading","activities":[ ...blocks... ]}, ...3-4 sheets... ]}
+
+Each sheet has a short "title" (CAPS-friendly, A-Z only, max 4 words) and 3-4 "activities" from this palette (same as a single sheet):
+  • {"type":"note","text":"short caption or definition"}
+  • {"type":"pictures","instruction":"Colour and label","items":["carrot","pea",...],"label":true}  — colour (and label) drawable objects; ONLY real, drawable nouns
+  • {"type":"countPictures","instruction":"Count and colour","items":["carrot","pea",...]}  — count-and-colour groups of the topic's OWN pictures; items must be drawable nouns from the same set as the pictures block
+  • {"type":"circleWords","instruction":"Circle the ...","words":["...", ...]}  — a mix; the child circles the ones that fit
+  • {"type":"readWords","instruction":"Read the words","words":[...]}
+  • {"type":"traceWords","instruction":"Trace the words","words":[...]}
+  • {"type":"wordSearch","instruction":"Find the words","words":[...]}
+  • {"type":"sortTwoGroups","instruction":"Sort each one","items":[...],"labelA":"GROUP A","labelB":"GROUP B"}  — sort a word bank into two labelled bins (only when the two groups are genuinely correct)
+  • {"type":"matchLines","instruction":"Match the pairs","left":[...],"right":[...]}  — join each left item to its correct right item (pairs must be genuinely correct and same length)
+  • {"type":"writeLines","instruction":"Write three ...","count":3}
+  • {"type":"sentence","instruction":"Write a sentence","lines":2}
+  • {"type":"countObjects","instruction":"Count and colour","count":5,"maxCount":10}  — groups of dots to count (use only when the topic isn't picture-based)
+  • {"type":"traceNumbers","instruction":"Trace the numbers","upTo":10}
+  • {"type":"sums","instruction":"Add these","op":"add","maxValue":10,"count":10,"dots":false}  — for maths topics only
+
+RULES — read carefully:
+- PICTURE THEMES (animals, food, vegetables, space, seasons, transport, the seaside, minibeasts…): pick ONE shared set of 4-6 excellent, iconic, drawable nouns for the whole pack and REUSE THE SAME nouns across sheets (colour them on sheet 1, count them on sheet 2, find/trace their words on sheet 3). Do NOT invent a new object set per sheet — the same objects tie the pack together and keep it cheap to print.
+- Every sheet MUST include at least one COLOUR or COUNT-AND-COLOUR block (pictures / countPictures / countObjects), especially for ages 3-6, and MUST mix 3-4 DIFFERENT activity families — never repeat one task.
+- The sheets should PROGRESS: recognise/colour → practise (count, trace, sort) → apply (write, sentence, word search).
+- Every activity must genuinely relate to the topic. Never drop in off-topic filler.
+- Age 3-5 → mostly colour/trace/count, bigger and fewer, one easy puzzle. Age 6-10 → more writing/puzzle/challenge, less colouring.
+- Keep every "instruction" 2-5 words, like a worksheet heading. Warm, specific titles.
+- Age-appropriate and child-safe; no copyrighted characters or brands; "items"/"objects" must be drawable nouns; text blocks may use any words.
+
+Example (topic "vegetables", age 4):
+{"title":"Vegetables","subject":"Vegetables","sheets":[
+ {"title":"Colour the vegetables","activities":[{"type":"note","text":"Colour each vegetable"},{"type":"pictures","instruction":"Colour and label","items":["carrot","pea","tomato","potato"],"label":true},{"type":"traceWords","instruction":"Trace the words","words":["carrot","pea","tomato"]}]},
+ {"title":"Count the vegetables","activities":[{"type":"note","text":"Count and colour"},{"type":"countPictures","instruction":"Count and colour","items":["carrot","pea","tomato","potato"]},{"type":"traceNumbers","instruction":"Trace the numbers","upTo":10}]},
+ {"title":"Vegetable words","activities":[{"type":"note","text":"Find the vegetable words"},{"type":"wordSearch","instruction":"Find the words","words":["carrot","pea","tomato","potato"]},{"type":"sentence","instruction":"Write about a vegetable","lines":2}]}
+]}`
+
+function extractPack(text: string): RawPack | null {
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start < 0 || end <= start) return null
+  try {
+    return JSON.parse(text.slice(start, end + 1)) as RawPack
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Design a coordinated activity pack for ANY topic. Returns a base ActivityPack
+ * (no name personalisation — the caller adds the name sheets), or null so the
+ * caller can report "couldn't build a pack" gracefully.
+ */
+export async function aiPlanPack(topic: string, age?: number): Promise<ActivityPack | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) return null
+  const difficulty = difficultyForAge(age)
+
+  try {
+    const client = new Anthropic({ apiKey })
+    const res = await client.messages.create({
+      model: 'claude-sonnet-5',
+      thinking: { type: 'disabled' },
+      max_tokens: 1600,
+      system: PACK_SYSTEM,
+      messages: [{ role: 'user', content: `Topic: "${topic}"\nChild age: ${age ?? 'unknown'}` }],
+    })
+    const text = res.content.find((c) => c.type === 'text')?.text || ''
+    const raw = extractPack(text)
+    if (!raw || !Array.isArray(raw.sheets)) return null
+
+    const subject = String(raw.subject || raw.title || topic).slice(0, 40)
+    const sheets: TopicPlan[] = []
+    for (const s of raw.sheets.slice(0, 4)) {
+      const acts = normalizeActivities(s.activities || [])
+      if (acts.length < 2) continue
+      const title = sheetTitle(String(s.title || subject))
+      sheets.push({ category: 'composed', subject: title || subject, title, activities: acts, prompt: '', difficulty })
+    }
+    // A pack needs at least two real sheets to be worth the name.
+    if (sheets.length < 2) return null
+    return { title: String(raw.title || subject), subject, sheets }
+  } catch (err) {
+    console.error('aiPlanPack failed, falling back:', err)
     return null
   }
 }
