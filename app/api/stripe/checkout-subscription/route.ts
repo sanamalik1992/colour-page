@@ -14,6 +14,14 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      console.error('Stripe checkout: STRIPE_SECRET_KEY is not set')
+      return NextResponse.json(
+        { error: "Payments aren't switched on yet. Please contact us and we'll sort it out.", code: 'no_secret_key' },
+        { status: 500 }
+      )
+    }
+
     const body = await request.json()
     const plan = body?.plan || 'monthly'
 
@@ -107,11 +115,31 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url: session.url })
   } catch (error) {
-    // Log the real error server-side, but never leak Stripe internals
-    // (keys, IDs) to the customer.
-    console.error('Stripe checkout error:', error)
+    // Log the specific Stripe failure server-side (type/code/requestId) so a
+    // config problem is diagnosable — but never leak keys to the customer.
+    const e = error as Stripe.errors.StripeError
+    console.error('Stripe checkout error:', {
+      type: e?.type,
+      code: e?.code,
+      statusCode: e?.statusCode,
+      message: e?.message,
+      requestId: e?.requestId,
+    })
+    // A missing price/customer or an auth/key error is a configuration problem
+    // (commonly a live-key-with-test-price mismatch), not a transient blip — say
+    // so instead of telling the user to "try again", which will never work.
+    const configProblem =
+      e?.type === 'StripeAuthenticationError' ||
+      e?.type === 'StripePermissionError' ||
+      e?.code === 'resource_missing' ||
+      e?.code === 'api_key_expired'
     return NextResponse.json(
-      { error: "We couldn't start checkout. Please try again in a moment." },
+      {
+        error: configProblem
+          ? "Payments aren't set up correctly yet. Please contact us and we'll sort it out."
+          : "We couldn't start checkout. Please try again in a moment.",
+        code: e?.code || e?.type || 'unknown',
+      },
       { status: 500 }
     )
   }
