@@ -62,30 +62,29 @@ export async function POST(request: NextRequest) {
       .eq('email', email)
       .maybeSingle()
 
-    let customerId: string
+    // Resolve a USABLE Stripe customer for this email. A stored id can be stale
+    // in three ways — it was created in a different mode (test vs live), it was
+    // deleted, or it belongs to another Stripe account — and any of those broke
+    // checkout for accounts that existed before we went live ("the previous
+    // email wouldn't check out, a new one worked"). In every one of those cases
+    // we simply mint a fresh customer and re-point the row, so an existing
+    // account can always subscribe.
+    let customerId: string | null = null
 
     if (existingCustomer?.stripe_customer_id) {
-      // Verify customer exists in Stripe
       try {
-        await stripe.customers.retrieve(existingCustomer.stripe_customer_id)
-        customerId = existingCustomer.stripe_customer_id
+        const c = await stripe.customers.retrieve(existingCustomer.stripe_customer_id)
+        if (!(c as Stripe.DeletedCustomer).deleted) customerId = existingCustomer.stripe_customer_id
       } catch {
-        // Customer doesn't exist in Stripe, create new
-        const customer = await stripe.customers.create({ email })
-        customerId = customer.id
-        await supabase
-          .from('stripe_customers')
-          .update({ stripe_customer_id: customerId })
-          .eq('email', email)
+        // resource_missing (wrong mode/account/deleted) → fall through and recreate.
       }
-    } else {
-      // Create new customer in Stripe
+    }
+
+    if (!customerId) {
       const customer = await stripe.customers.create({ email })
       customerId = customer.id
-
-      // Create customer record in database (created_at has a DB default; don't
-      // set timestamp columns from the app — the deployed schema may not have
-      // them, and a missing column makes the whole write fail).
+      // Upsert on email so a pre-existing row is re-pointed rather than duplicated.
+      // No timestamp columns (the deployed schema may not have them).
       await supabase.from('stripe_customers').upsert({
         email,
         stripe_customer_id: customerId,
@@ -94,9 +93,9 @@ export async function POST(request: NextRequest) {
       }, { onConflict: 'email' })
     }
 
-    // Ensure the auth user link is stamped on the customer row (covers the
-    // existing-customer branches above too).
-    await supabase.from('stripe_customers').update({ user_id: userId }).eq('email', email)
+    // Stamp the verified customer id + auth link onto the row (covers the reuse
+    // branch too, so the stored id always matches the one we're checking out).
+    await supabase.from('stripe_customers').update({ user_id: userId, stripe_customer_id: customerId }).eq('email', email)
 
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
