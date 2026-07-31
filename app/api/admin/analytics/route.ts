@@ -92,15 +92,22 @@ export async function GET() {
   // --- Live: who's on now (last 60s) ---
   const { data: presenceRows } = await supabase
     .from('presence')
-    .select('session_id, activity, last_seen')
+    .select('session_id, activity, last_seen, country')
     .gt('last_seen', iso(now - 60_000))
     .order('last_seen', { ascending: false })
   const onlineNow = presenceRows?.length || 0
   const onlineByActivity: Record<string, number> = {}
+  const onlineByCountry: Record<string, number> = {}
   for (const r of presenceRows || []) {
     const a = (r.activity as string) || 'browsing'
     onlineByActivity[a] = (onlineByActivity[a] || 0) + 1
+    const c = (r.country as string) || ''
+    if (/^[A-Z]{2}$/.test(c)) onlineByCountry[c] = (onlineByCountry[c] || 0) + 1
   }
+  // Live "where visitors are from" — ranked country codes with counts.
+  const byCountry = Object.entries(onlineByCountry)
+    .sort((a, b) => b[1] - a[1])
+    .map(([code, count]) => ({ code, count }))
   // Anonymised per-visitor list for the live view (short tag + activity + when).
   const visitors = (presenceRows || []).slice(0, 60).map((r) => ({
     id: shortTag(String(r.session_id || '')),
@@ -205,7 +212,7 @@ export async function GET() {
 
   return NextResponse.json({
     generatedAt: iso(now),
-    online: { now: onlineNow, byActivity: onlineByActivity, visitors },
+    online: { now: onlineNow, byActivity: onlineByActivity, byCountry, visitors },
     checkout,
     feed,
     volumes: { last24h: d1, last7d: d7 },
