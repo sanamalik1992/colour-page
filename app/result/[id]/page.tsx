@@ -31,14 +31,14 @@ export default async function ResultPage({
           </h1>
           <p className="text-gray-400 mb-8">
             {paid
-              ? 'Your purchase is complete. Your colouring pages are saved in My Pages, ready to download and print without a watermark.'
-              : 'Your colouring pages are saved in My Pages, ready to download and print.'}
+              ? 'Your purchase is complete. Your colouring pages are saved in My Library, ready to download and print without a watermark.'
+              : 'Your colouring pages are saved in My Library, ready to download and print.'}
           </p>
 
           <div className="space-y-3">
             <Link href="/library" className="btn-primary w-full">
               <FolderHeart className="w-5 h-5" />
-              Go to My Pages
+              Go to My Library
             </Link>
             <Link href="/" className="btn-outline w-full">
               <ImagePlus className="w-4 h-4" />
