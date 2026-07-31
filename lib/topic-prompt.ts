@@ -157,6 +157,9 @@ const OBJECT_CLARITY: Record<string, string> = {
   fish: 'side-view fish',
   bird: 'small side-view bird',
   butterfly: 'symmetrical butterfly',
+  // "pot" reads to the image model as a plant pot; pin the kitchen sense.
+  pot: 'metal cooking pot with two handles and a lid',
+  pan: 'frying pan with a long handle',
 }
 export function clarifyObject(obj: string): string {
   const key = obj.trim().toLowerCase()
@@ -176,11 +179,13 @@ export function objectsPrompt(objs: string[]): string {
 export function singleObjectPrompt(obj: string): string {
   const o = clarifyObject(obj)
   return `Coloring book line art of one single ${o}. A whole, complete, well-formed ${o} ` +
-    `shown in full — the entire ${o} clearly visible including its head, body and legs, ` +
-    `nothing cut off or cropped — big and bold, centred and filling the frame, with a simple, ` +
-    `clean, unmistakable outline that a small child could name at a glance, cheerful friendly ` +
-    `cartoon style with a happy face if it is a creature. Correct, recognisable anatomy; not ` +
-    `a blob. Only one ${o} and nothing else in the picture. ${STYLE_SUFFIX}`
+    `shown in full, nothing cut off or cropped — big and bold, centred and filling the frame, ` +
+    `with a simple, clean, unmistakable outline that a small child could name at a glance. ` +
+    `If the ${o} is an animal or creature, draw the whole animal — head, body and legs — with a ` +
+    `cheerful happy face. If the ${o} is an object, food, tool or plant, draw it as a plain, ` +
+    `realistic ${o} exactly as it looks in real life, with NO added face, eyes, arms or legs and ` +
+    `no cartoon character features. Correct, recognisable form; not a blob. Only one ${o} and ` +
+    `nothing else in the picture. ${STYLE_SUFFIX}`
 }
 
 // A pictorial colouring prompt for a set of concrete subjects.
