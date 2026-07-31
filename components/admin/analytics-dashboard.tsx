@@ -42,6 +42,52 @@ function conv(b: { started: number; completed: number }): string {
   return `${Math.round((b.completed / b.started) * 100)}% paid`
 }
 
+// Approximate country centroids [lat, lon] for the bubble world map. Covers the
+// countries a UK kids' brand is most likely to see; unknown codes fall back to
+// the list only. No external map data/assets needed.
+const CENTROIDS: Record<string, [number, number]> = {
+  GB: [54, -2], IE: [53, -8], US: [39, -98], CA: [56, -106], FR: [46, 2], DE: [51, 10],
+  ES: [40, -4], IT: [42, 12], NL: [52, 5], BE: [50, 4], PT: [39, -8], CH: [47, 8], AT: [47, 14],
+  SE: [62, 15], NO: [62, 10], DK: [56, 10], FI: [64, 26], PL: [52, 19], CZ: [49, 15], GR: [39, 22],
+  RO: [46, 25], HU: [47, 20], UA: [49, 32], RU: [61, 90], TR: [39, 35], IS: [65, -18], LU: [50, 6],
+  MX: [23, -102], BR: [-10, -55], AR: [-34, -64], CL: [-30, -71], CO: [4, -73], PE: [-10, -76],
+  AU: [-25, 133], NZ: [-41, 174], IN: [22, 79], PK: [30, 70], BD: [24, 90], CN: [35, 105],
+  JP: [36, 138], KR: [36, 128], TH: [15, 101], VN: [16, 108], PH: [13, 122], ID: [-5, 120],
+  MY: [4, 102], SG: [1.3, 104], HK: [22, 114], TW: [24, 121], NP: [28, 84], LK: [7, 81],
+  AE: [24, 54], SA: [24, 45], QA: [25, 51], IL: [31, 35], ZA: [-29, 24], NG: [10, 8], EG: [27, 30],
+  KE: [0, 38], GH: [8, -1], MA: [32, -6], DZ: [28, 3],
+}
+
+function WorldMap({ data }: { data: { code: string; count: number }[] }) {
+  const W = 1000, H = 500
+  const proj = (lat: number, lon: number): [number, number] => [((lon + 180) / 360) * W, ((90 - lat) / 180) * H]
+  const max = Math.max(1, ...data.map((d) => d.count))
+  const plotted = data.filter((d) => CENTROIDS[d.code])
+  const gLon: number[] = [], gLat: number[] = []
+  for (let lon = -150; lon <= 150; lon += 30) gLon.push(lon)
+  for (let lat = -60; lat <= 60; lat += 30) gLat.push(lat)
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 overflow-hidden">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" role="img" aria-label="Visitors by country">
+        {gLon.map((lon) => { const [x] = proj(0, lon); return <line key={`v${lon}`} x1={x} y1={0} x2={x} y2={H} stroke="#ffffff" strokeOpacity={0.05} /> })}
+        {gLat.map((lat) => { const [, y] = proj(lat, 0); return <line key={`h${lat}`} x1={0} y1={y} x2={W} y2={y} stroke="#ffffff" strokeOpacity={0.05} /> })}
+        {(() => { const [, y] = proj(0, 0); return <line x1={0} y1={y} x2={W} y2={y} stroke="#ffffff" strokeOpacity={0.1} strokeDasharray="4 8" /> })()}
+        {plotted.map(({ code, count }) => {
+          const [x, y] = proj(...CENTROIDS[code])
+          const r = 9 + 20 * Math.sqrt(count / max)
+          return (
+            <g key={code}>
+              <title>{countryName(code)}: {count}</title>
+              <circle cx={x} cy={y} r={r} fill="#F6B72A" fillOpacity={0.32} stroke="#F6B72A" strokeWidth={1.5} />
+              <text x={x} y={y + 5} fontSize={15} fill="#fff" textAnchor="middle" fontWeight={700}>{count}</text>
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
 // ISO-3166 alpha-2 → flag emoji (regional-indicator letters). No assets needed.
 function flagEmoji(code: string): string {
   if (!/^[A-Z]{2}$/.test(code)) return '🌍'
@@ -88,6 +134,7 @@ export function AnalyticsDashboard() {
   const [resetting, setResetting] = useState(false)
   const [resetMsg, setResetMsg] = useState('')
   const [clearSubs, setClearSubs] = useState(false)
+  const [geoView, setGeoView] = useState<'map' | 'list'>('map')
 
   const doReset = async () => {
     setResetting(true)
@@ -230,22 +277,39 @@ export function AnalyticsDashboard() {
                     )
                   })}
                 </div>
-                {/* where they're from (live, by country) */}
+                {/* where they're from (live, by country) — map or list */}
                 {data.online.byCountry.length > 0 && (
                   <div className="mb-3">
-                    <p className="text-[11px] text-gray-500 mb-1.5 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Where they&apos;re from</p>
-                    <div className="space-y-1">
-                      {data.online.byCountry.map(({ code, count }) => (
-                        <div key={code} className="relative bg-zinc-800/60 rounded-lg overflow-hidden">
-                          <div className="absolute inset-y-0 left-0 bg-brand-primary/15" style={{ width: `${(count / data.online.now) * 100}%` }} />
-                          <div className="relative flex items-center gap-2 px-2.5 py-1 text-sm">
-                            <span className="text-base leading-none">{flagEmoji(code)}</span>
-                            <span className="flex-1 truncate text-gray-200">{countryName(code)}</span>
-                            <span className="font-semibold text-gray-300">{count}</span>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-[11px] text-gray-500 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Where they&apos;re from</p>
+                      <div className="inline-flex rounded-lg bg-zinc-800 p-0.5 text-[11px] font-semibold">
+                        {(['map', 'list'] as const).map((v) => (
+                          <button
+                            key={v}
+                            onClick={() => setGeoView(v)}
+                            className={`px-2.5 py-0.5 rounded-md capitalize transition-colors ${geoView === v ? 'bg-zinc-700 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
                     </div>
+                    {geoView === 'map' ? (
+                      <WorldMap data={data.online.byCountry} />
+                    ) : (
+                      <div className="space-y-1">
+                        {data.online.byCountry.map(({ code, count }) => (
+                          <div key={code} className="relative bg-zinc-800/60 rounded-lg overflow-hidden">
+                            <div className="absolute inset-y-0 left-0 bg-brand-primary/15" style={{ width: `${(count / data.online.now) * 100}%` }} />
+                            <div className="relative flex items-center gap-2 px-2.5 py-1 text-sm">
+                              <span className="text-base leading-none">{flagEmoji(code)}</span>
+                              <span className="flex-1 truncate text-gray-200">{countryName(code)}</span>
+                              <span className="font-semibold text-gray-300">{count}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
                 {/* per-visitor list */}
