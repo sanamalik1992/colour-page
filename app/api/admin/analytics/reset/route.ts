@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireAdmin } from '@/lib/admin'
 
@@ -23,14 +23,28 @@ const TABLES: { table: string; keyCol: string }[] = [
   { table: 'topic_searches', keyCol: 'term' },
 ]
 
-export async function POST() {
+// OPT-IN only (body { subscriptions: true }). Clears the cached Stripe
+// customer/subscription rows so pre-launch TEST subscriptions stop inflating the
+// Pro count. Safe because Stripe is the source of truth: a real subscriber gets
+// Pro back instantly via the "Restore Pro" button (it re-reads Stripe by email)
+// and the webhook re-syncs on the next billing event. Do NOT use this after
+// launch with real customers unless you intend them to re-restore.
+const SUBSCRIPTION_TABLES: { table: string; keyCol: string }[] = [
+  { table: 'stripe_subscriptions', keyCol: 'id' },
+  { table: 'stripe_customers', keyCol: 'email' },
+]
+
+export async function POST(request: NextRequest) {
   const admin = await requireAdmin()
   if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const body = await request.json().catch(() => ({}))
+  const tables = body?.subscriptions ? [...TABLES, ...SUBSCRIPTION_TABLES] : TABLES
 
   const cleared: Record<string, number> = {}
   const errors: Record<string, string> = {}
 
-  for (const { table, keyCol } of TABLES) {
+  for (const { table, keyCol } of tables) {
     // Count first so we can report what was removed.
     const { count } = await supabase.from(table).select('*', { count: 'exact', head: true })
     const { error } = await supabase.from(table).delete().not(keyCol, 'is', null)
