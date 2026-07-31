@@ -52,6 +52,15 @@ export async function POST(request: NextRequest) {
     else cleared[table] = count || 0
   }
 
+  // Set a baseline so the Checkouts panel (live from Stripe, not deletable) also
+  // reads zero going forward — sessions created before now are hidden. Best
+  // effort: a missing app_config table just means the panel keeps its 7-day view.
+  try {
+    const nowIso = new Date().toISOString()
+    await supabase.from('app_config').upsert({ key: 'checkout_since', value: nowIso }, { onConflict: 'key' })
+    cleared.checkouts_hidden_before = 1
+  } catch { /* app_config table not present — skip */ }
+
   const ok = Object.keys(errors).length === 0
   return NextResponse.json({ ok, cleared, errors }, { status: ok ? 200 : 500 })
 }

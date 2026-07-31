@@ -38,7 +38,16 @@ let checkoutCache: { at: number; data: CheckoutStats } | null = null
 async function getCheckoutStats(now: number): Promise<CheckoutStats> {
   if (checkoutCache && now - checkoutCache.at < 60_000) return checkoutCache.data
   const DAY = 86_400_000
-  const since7 = Math.floor((now - 7 * DAY) / 1000)
+  // Baseline: an admin "reset" stores a timestamp, and we hide checkout sessions
+  // created before it — so a reset zeroes the Checkouts panel too (which is
+  // otherwise live from Stripe and can't be deleted). Missing table/row → no
+  // baseline, show the normal 7-day window.
+  let baselineMs = 0
+  try {
+    const { data } = await supabase.from('app_config').select('value').eq('key', 'checkout_since').maybeSingle()
+    if (data?.value) baselineMs = Date.parse(String(data.value)) || 0
+  } catch { /* app_config table may not exist yet */ }
+  const since7 = Math.floor(Math.max(now - 7 * DAY, baselineMs) / 1000)
   const win24 = now - DAY
   const empty = (): CheckoutBucket => ({ started: 0, completed: 0 })
   const d1 = empty(), d7 = empty()
@@ -50,6 +59,7 @@ async function getCheckoutStats(now: number): Promise<CheckoutStats> {
         created: { gte: since7 }, limit: 100, ...(startingAfter ? { starting_after: startingAfter } : {}),
       })
       for (const s of res.data) {
+        if ((s.created || 0) * 1000 < baselineMs) continue // hidden by the reset baseline
         const key = s.mode === 'subscription' ? 'pro' : (s.metadata?.product || 'other')
         const completed = s.status === 'complete'
         byKey[key] = byKey[key] || empty()
