@@ -1143,6 +1143,15 @@ function possessive(n: string): string {
 export function packPlan(rawTopic: string, age?: number, childName?: string): ActivityPack | null {
   const base = basePackPlan(rawTopic, age)
   if (!base) return null
+  return personalisePack(base, age, childName)
+}
+
+/**
+ * Add the child's-name touches to any base pack (deterministic or AI-designed):
+ * a possessive pack title, a "trace your name" sheet and a reward certificate.
+ * Returns the pack unchanged when no usable name is given.
+ */
+export function personalisePack(base: ActivityPack, age?: number, childName?: string): ActivityPack {
   const name = cleanName(childName)
   if (!name) return base
   const d = difficultyForAge(age)

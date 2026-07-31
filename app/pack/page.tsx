@@ -18,7 +18,7 @@ interface PackResult {
   coverUrl: string
 }
 
-const EXAMPLES = ['letter b', '3 times table', 'fractions', 'number bonds to 10', 'shapes', 'counting', 'addition']
+const EXAMPLES = ['letter b', '3 times table', 'fractions', 'number bonds to 10', 'shapes', 'vegetables', 'space', 'dinosaurs', 'under the sea']
 
 export default function PackPage() {
   const { me, loading: meLoading } = useMe()
@@ -97,7 +97,7 @@ export default function PackPage() {
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && generate()}
-                placeholder="e.g. letter b, 3 times table, fractions"
+                placeholder="Any topic — e.g. vegetables, space, 3 times table"
                 className="w-full h-12 px-4 rounded-xl bg-zinc-800 border border-zinc-700 text-white placeholder-gray-500 focus:outline-none focus:border-brand-primary"
               />
               <div className="flex flex-wrap gap-2 mt-3">

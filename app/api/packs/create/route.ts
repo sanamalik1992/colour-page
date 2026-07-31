@@ -2,16 +2,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getUserPlan } from '@/lib/pro-gating'
 import { getServerUser } from '@/lib/supabase/auth-server'
-import { packPlan } from '@/lib/topic-prompt'
+import { packPlan, personalisePack, type Activity } from '@/lib/topic-prompt'
+import { aiPlanPack } from '@/lib/topic-ai'
 import { buildComposedSheet, sheetHasAnswers } from '@/lib/topic-render'
+import { cachedObject } from '@/lib/object-images'
 import { renderMultiPagePdf, renderA4Preview } from '@/lib/pdf-renderer'
 import { findBlockedTerm } from '@/lib/blocklist'
 import type { PhotoJobSettings } from '@/types/photo-job'
 
 // Activity packs — a coordinated multi-sheet PDF for one topic+age, generated in
-// one click. A Pro Family feature. Every sheet is deterministic (no image model),
-// so the whole pack renders inline in a couple of seconds.
-export const maxDuration = 60
+// one click. A Pro Family feature. Known curriculum topics render deterministically
+// (no image model) in a couple of seconds; anything else is designed by the AI
+// planner, and picture-themed packs (vegetables, space…) generate a small, shared
+// set of colour-in pictures — hence the longer budget.
+export const maxDuration = 300
+
+// Cap how many distinct pictures a whole pack ever generates. The AI pack reuses
+// ONE shared object set across its sheets, so a handful covers every picture and
+// keeps the pack fast and cheap (objects are cached after the first pack).
+const MAX_PACK_OBJECTS = 6
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -56,15 +65,48 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `We can't make a pack for "${blocked}". Try a theme like space, animals or letters!` }, { status: 400 })
     }
 
-    const pack = packPlan(topic, age, childName)
+    // Known curriculum topics get the tuned deterministic pack; everything else
+    // is designed by the AI planner so ANY topic yields a real pack, then gets
+    // the same name personalisation applied.
+    let pack = packPlan(topic, age, childName)
+    if (!pack || !pack.sheets.length) {
+      const aiBase = await aiPlanPack(topic, age)
+      if (aiBase) pack = personalisePack(aiBase, age, childName)
+    }
     if (!pack || !pack.sheets.length) {
       return NextResponse.json(
-        { error: "We don't have a pack for that topic yet — try a letter, times table, fractions, number bonds, shapes, counting or addition.", noPack: true },
+        { error: "We couldn't build a pack for that topic — please try rewording it, or a theme like animals, space or letters.", noPack: true },
         { status: 400 }
       )
     }
 
-    // Render every sheet deterministically (no image model → no genPicture).
+    // Some AI packs are picture-themed (colour the vegetables, count the
+    // planets…). Those blocks need line-art of the topic's own objects. Generate
+    // the pack's SHARED object set ONCE, up front, deduped and capped — then hand
+    // every sheet a cache-only lookup so no object is ever generated twice. A
+    // deterministic pack has no picture blocks, so this stays a no-op for them.
+    const hasReplicate = !!process.env.REPLICATE_API_TOKEN
+    const wantedObjects = new Set<string>()
+    for (const sheet of pack.sheets) {
+      for (const a of sheet.activities || []) {
+        if ((a.type === 'pictures' || a.type === 'countPictures') && Array.isArray((a as { items?: string[] }).items)) {
+          for (const o of (a as { items: string[] }).items) if (o) wantedObjects.add(o)
+        }
+      }
+    }
+    const picMap = new Map<string, Buffer>()
+    if (hasReplicate && wantedObjects.size) {
+      const objSettings: PhotoJobSettings = { orientation: 'portrait', lineThickness: 'medium', detailLevel: 'medium', source: 'topic' }
+      const names = [...wantedObjects].slice(0, MAX_PACK_OBJECTS)
+      const results = await Promise.all(names.map((o) => cachedObject(o, objSettings).catch(() => null)))
+      names.forEach((o, i) => { if (results[i]) picMap.set(o, results[i]!) })
+    }
+    // Cache-only lookup: pictures already generated above are reused; anything
+    // not pre-generated (over the cap, or gen failed) is simply dropped and the
+    // sheet renders without it. Never triggers a fresh model call per sheet.
+    const genPicture = picMap.size ? (obj: string) => Promise.resolve(picMap.get(obj) ?? null) : undefined
+
+    // Render every sheet, reusing the shared pictures where a block needs them.
     const buffers: Buffer[] = []
     const answerPages: Buffer[] = []
     for (const sheet of pack.sheets) {
@@ -73,13 +115,15 @@ export async function POST(request: NextRequest) {
         lineThickness: sheet.difficulty.lineThickness,
         detailLevel: sheet.difficulty.detailLevel,
         source: 'topic',
+        topic,
+        title: sheet.title,
       }
-      const acts = sheet.activities || []
-      buffers.push(await buildComposedSheet(sheet.title, acts, settings))
+      const acts: Activity[] = sheet.activities || []
+      buffers.push(await buildComposedSheet(sheet.title, acts, settings, genPicture))
       // Build an answer page for sheets with computable answers (maths). The
       // same activities + order reproduce the same questions, now with answers.
       if (sheetHasAnswers(acts)) {
-        answerPages.push(await buildComposedSheet(`Answers — ${sheet.subject}`, acts, settings, undefined, undefined, true))
+        answerPages.push(await buildComposedSheet(`Answers — ${sheet.subject}`, acts, settings, genPicture, undefined, true))
       }
     }
     // Answer key pages go at the end of the pack.
