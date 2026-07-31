@@ -17,14 +17,14 @@ const NAV_ITEMS: {
   label: string
   icon: typeof ImagePlus
   showLabel: 'sm' | 'md'
-  // Secondary items hidden on the smallest screens to keep the mobile bar
-  // uncluttered — the essentials (Create · Gallery · Shop) always show.
+  // Kept for future use; all core items now show on every screen size (icon-only
+  // on mobile) so Packs and My Library are always reachable from the top menu.
   mobileHide?: boolean
 }[] = [
   { key: 'create', href: '/', label: 'Create', icon: ImagePlus, showLabel: 'sm' },
-  { key: 'pack', href: '/pack', label: 'Packs', icon: Layers, showLabel: 'sm', mobileHide: true },
+  { key: 'pack', href: '/pack', label: 'Packs', icon: Layers, showLabel: 'sm' },
   { key: 'print-pages', href: '/print-pages', label: 'Gallery', icon: LayoutGrid, showLabel: 'sm' },
-  { key: 'library', href: '/library', label: 'My Pages', icon: FolderHeart, showLabel: 'sm', mobileHide: true },
+  { key: 'library', href: '/library', label: 'My Library', icon: FolderHeart, showLabel: 'sm' },
   { key: 'shop', href: '/shop', label: 'Shop', icon: ShoppingBag, showLabel: 'md' },
 ]
 

@@ -989,7 +989,7 @@ export default function Home() {
                       <RotateCcw className="w-4 h-4" /> Create Another
                     </button>
                     <Link href="/library" className="btn-secondary flex-1">
-                      <BookOpen className="w-4 h-4" /> My Pages
+                      <BookOpen className="w-4 h-4" /> My Library
                     </Link>
                   </div>
 
