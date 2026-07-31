@@ -163,7 +163,7 @@ Decide "kind" by what the child is really meant to practise:
 
 Key judgement: understand the REAL learning goal, then choose the format that teaches it best — don't force a concept into a colouring grid. Phonics with drawable examples → "letter"; sight/function/named words → "words"; a theme to colour → "pictorial"; a concept or open-ended "make me an activity sheet" → "composed". When the parent names specific words/examples, use THOSE.
 
-Rules: age-appropriate and child-safe; no copyrighted characters or brands; "items"/"objects" must be drawable nouns; text blocks may use any words. Always give a warm, specific "title".
+Rules: age-appropriate and child-safe; no copyrighted characters or brands; "items"/"objects" must be drawable nouns; text blocks may use any words. Always give a warm, specific "title". Every drawable noun must be SPECIFIC and UNAMBIGUOUS so its picture can only be one thing — prefer "saucepan" not "pot", "wooden spoon" not "spoon", "school bus" not "bus"; avoid words with two meanings.
 
 Examples:
 {"kind":"composed","title":"Nouns are naming words","activities":[{"type":"note","text":"A noun is a person, place or thing"},{"type":"pictures","instruction":"Colour and name","items":["dog","house","ball","apple"],"label":true},{"type":"circleWords","instruction":"Circle the nouns","words":["dog","run","house","happy","ball","jump"]},{"type":"writeLines","instruction":"Write three naming words above","count":3}]}
@@ -334,6 +334,7 @@ Each sheet has a short "title" (CAPS-friendly, A-Z only, max 4 words) and 3-4 "a
 
 RULES — read carefully:
 - PICTURE THEMES (animals, food, vegetables, space, seasons, transport, the seaside, minibeasts…): pick ONE shared set of 4-6 excellent, iconic, drawable nouns for the whole pack and REUSE THE SAME nouns across sheets (colour them on sheet 1, count them on sheet 2, find/trace their words on sheet 3). Do NOT invent a new object set per sheet — the same objects tie the pack together and keep it cheap to print.
+- Every drawable noun MUST be SPECIFIC and UNAMBIGUOUS so the picture can only be one thing. Prefer the precise word: "saucepan" or "frying pan" not "pot"; "wooden spoon" not "spoon"; "school bus" not "bus"; "apple" not "fruit". Avoid words with two common meanings (pot = plant pot or cooking pot; bat = animal or cricket bat) — name the exact thing you mean. Every item is a real, inanimate-or-animal OBJECT, never an abstract idea.
 - Every sheet MUST include at least one COLOUR or COUNT-AND-COLOUR block (pictures / countPictures / countObjects), especially for ages 3-6, and MUST mix 3-4 DIFFERENT activity families — never repeat one task.
 - The sheets should PROGRESS: recognise/colour → practise (count, trace, sort) → apply (write, sentence, word search).
 - Every activity must genuinely relate to the topic. Never drop in off-topic filler.

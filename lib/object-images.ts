@@ -26,10 +26,11 @@ const supabase = createClient(
 // instant download. The library warms itself as new objects are requested.
 export function objectCacheKey(obj: string): string {
   const slug = obj.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
-  // v3 namespace: forces a one-time re-generation of every object through the
-  // dark-background/border gate (added after the "caterpillar in a black box"
-  // report), so any previously-cached bad blob is left behind.
-  return `object-cache/v3/${slug || 'obj'}.png`
+  // Namespace bump forces a one-time re-generation of every object so prompt
+  // fixes reach previously-cached images. v3: the dark-background/border gate
+  // ("caterpillar in a black box"). v4: no faces/limbs on inanimate objects and
+  // disambiguated nouns (after a "pot" rendered as a plant pot with legs).
+  return `object-cache/v4/${slug || 'obj'}.png`
 }
 
 // Hard per-object budget. Objects generate in parallel, so ANY single object
